@@ -39,6 +39,12 @@ func env(key, fallback string) string {
 }
 
 func Run() {
+	if len(os.Args) == 2 && os.Args[1] == "healthcheck" {
+		if err := webHealthcheck(); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "generate-admin-mfa" {
 		if len(os.Args) != 3 {
 			log.Fatal("usage: harbormail generate-admin-mfa ADMIN_EMAIL")

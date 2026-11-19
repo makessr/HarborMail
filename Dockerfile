@@ -26,5 +26,5 @@ WORKDIR /var/lib/harbormail
 ENV HARBOR_WEB=0.0.0.0:8080 HARBOR_SMTP=0.0.0.0:2525 HARBOR_DB=/var/lib/harbormail/harbor.db
 EXPOSE 8080 2525 2465 2587 2993 2995
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD ["wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+    CMD ["/usr/local/bin/harbormail", "healthcheck"]
 ENTRYPOINT ["/usr/local/bin/harbormail"]

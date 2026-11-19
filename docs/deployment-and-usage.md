@@ -202,7 +202,7 @@ MySQL 密码文件用于首次初始化。已有数据卷的密码在 MySQL 内�
 | `HARBOR_ACME_HTTP` | HTTP-01 验证的监听地址，默认 `127.0.0.1:8081` |
 | `HARBOR_ACME_EMAIL` | 可选的 ACME 账号联系邮箱 |
 | `HARBOR_ACME_DIRECTORY` | 可选的 ACME HTTPS Directory URL，留空使用 Let's Encrypt 生产环境 |
-| `HARBOR_WEB_TLS` | 设为 `off` 时由反向代理终结 Web TLS，SMTP 继续使用证书 |
+| `HARBOR_WEB_TLS` | Compose 默认 `off`，由反向代理终结 Web TLS。启用 PEM 或 ACME 后设为 `on`，可由 Harbor 直接提供 HTTPS |
 | `HARBOR_SECURE_COOKIE` | 反向代理终结 Web TLS 时设为 `true` |
 | `HARBOR_TRUSTED_PROXIES` | 可选。以逗号分隔的可信反向代理 IP 或 CIDR，供 Web 登录限速识别来源 |
 | `HARBOR_METRICS` | 可选的私有 Prometheus 指标监听地址，例如 `127.0.0.1:9091` |
@@ -358,6 +358,8 @@ docker compose -f compose.yaml -f compose.acme.yaml up -d --build --wait
 ```
 
 默认验证请求由主机上的反向代理转发到 `127.0.0.1:8081`。代理应优先转发挑战路径，再执行其他 HTTP 跳转规则。将 Web 邮箱经 HTTPS 反向代理接入时，开启 `HARBOR_SECURE_COOKIE=true`，并为代理的 Web HTTPS 入口配置证书。如果直接公开挑战端口，可设置 `HARBOR_ACME_BIND=0.0.0.0` 和 `HARBOR_ACME_PORT=80`。非容器部署直接设置 `HARBOR_ACME_HTTP`，认证请求始终从公网 80 或 443 进入。
+
+由 Harbor 直接提供 Web HTTPS 时，在 Compose 的 `.env` 设置 `HARBOR_WEB_TLS=on`。容器通过回环地址探测 HTTPS 和数据库可用性。ACME 模式使用 `HARBOR_ACME_HOSTS` 的第一个主机名校验证书。使用私有 CA 时，把 CA 根证书加入容器的信任库。PEM 模式核对服务端证书与 `HARBOR_CERT` 配置的叶证书一致。
 
 Harbor 在启动时检查缓存目录能否写入。出现 `HARBOR_ACME_CACHE is not writable` 时，检查目录权限与挂载的读写状态。首次签发成功后客户端即可建立受信任的 TLS 连接。续签成功后，新建连接使用新证书，无需重启 Harbor。容器重建时保留 `harbor_data` 卷。 [Go autocert](https://pkg.go.dev/golang.org/x/crypto%40v0.59.0/acme/autocert)
 
