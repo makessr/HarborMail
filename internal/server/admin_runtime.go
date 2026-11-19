@@ -37,7 +37,8 @@ func (a *app) adminRuntime(w http.ResponseWriter, r *http.Request, owner string)
 		"email": owner, "at": now.UnixMilli(), "startedAt": processStarted.UnixMilli(),
 		"platform": runtime.GOOS, "process": process, "heapBytes": samples[0].Value.Uint64(),
 		"gcCycles": samples[1].Value.Uint64(), "goroutines": runtime.NumGoroutine(),
-		"cpuParallelism": runtime.GOMAXPROCS(0), "mail": mail, "database": map[string]any{
+		"cpuParallelism": runtime.GOMAXPROCS(0), "mail": mail, "outboxPaused": a.pauseOutbox || a.recoveryMode,
+		"database": map[string]any{
 			"driver": a.dbDriver, "ready": dbReady, "probeMillis": probeMillis,
 			"open": stats.OpenConnections, "inUse": stats.InUse, "idle": stats.Idle,
 			"limit": stats.MaxOpenConnections, "waitCount": stats.WaitCount,

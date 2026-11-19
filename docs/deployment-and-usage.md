@@ -184,6 +184,7 @@ MySQL 密码文件用于首次初始化。已有数据卷的密码在 MySQL 内�
 | `HARBOR_WEB` | 网页监听地址，默认 `127.0.0.1:8080` |
 | `HARBOR_SMTP` | 收信监听地址，默认 `127.0.0.1:2525` |
 | `HARBOR_RECOVERY_MODE` | 默认 `false`。设为 `true` 后仅开放 Web 校验，停止邮件协议与后台投递。见[恢复演练](../ops/README.md#恢复与校验) |
+| `HARBOR_PAUSE_OUTBOX` | 默认 `false`。设为 `true` 后暂停处理发件队列，保留网页和已启用的邮件协议。共享数据库的所有实例均须设置 |
 | `HARBOR_SUBMISSION` | 客户端发信监听地址，使用 STARTTLS，通常为 `:587`。默认关闭 |
 | `HARBOR_SUBMISSIONS` | 客户端发信监听地址，使用隐式 TLS，通常为 `:465`。默认关闭 |
 | `HARBOR_POP3S` | 客户端收信监听地址，使用隐式 TLS，通常为 `:995`。默认关闭 |

@@ -68,6 +68,7 @@ function setupAdminRuntime() {
     ]);
     renderDetails("admin-runtime-workers", [
       ["Go 协程", data.goroutines], ["GC 次数", data.gcCycles], ["Go 并行度", data.cpuParallelism],
+      ["发件队列", data.outboxPaused ? "暂停" : "运行中"],
       ["最久队列等待", data.mail ? duration(data.mail.oldestDueSeconds) : "不可用"],
       ["投递结果待确认", data.mail?.uncertain ?? "不可用"],
       ["训练失败样本", data.mail?.failedTraining ?? "不可用"]

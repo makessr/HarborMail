@@ -38,6 +38,7 @@ type app struct {
 	domain              string
 	secure              bool
 	recoveryMode        bool
+	pauseOutbox         bool
 	relay               domainRelay
 	webLogin            webLoginGuard
 	clientLogin         webLoginGuard

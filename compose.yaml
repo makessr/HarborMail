@@ -19,6 +19,7 @@ services:
       HARBOR_DOMAIN: ${HARBOR_DOMAIN:-harbor.test}
       HARBOR_DB_DRIVER: sqlite
       HARBOR_RECOVERY_MODE: ${HARBOR_RECOVERY_MODE:-false}
+      HARBOR_PAUSE_OUTBOX: ${HARBOR_PAUSE_OUTBOX:-false}
       HARBOR_CONTENT_INDEX: ${HARBOR_CONTENT_INDEX:-false}
       HARBOR_HARD_QUOTA: ${HARBOR_HARD_QUOTA:-false}
       HARBOR_ACCOUNTS_FILE: /run/secrets/accounts_json

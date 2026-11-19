@@ -98,6 +98,13 @@ func Run() {
 	default:
 		log.Fatal("HARBOR_RECOVERY_MODE must be true or false")
 	}
+	switch os.Getenv("HARBOR_PAUSE_OUTBOX") {
+	case "true":
+		a.pauseOutbox = true
+	case "", "false":
+	default:
+		log.Fatal("HARBOR_PAUSE_OUTBOX must be true or false")
+	}
 	domainRelays, err := fileSetting("HARBOR_DOMAIN_RELAYS")
 	if err != nil {
 		log.Fatal(err)
@@ -312,7 +319,11 @@ func (a *app) startMailServices(tlsConfig *tls.Config) error {
 	}
 	log.Printf("SMTP listening on %s", listener.Addr())
 	go func() { log.Fatal(a.smtpServer(a, tlsConfig).Serve(listener)) }()
-	go a.runOutbox()
+	if a.pauseOutbox {
+		log.Print("Outbox is paused: queued mail will not be processed")
+	} else {
+		go a.runOutbox()
+	}
 	if a.spamTrainer != nil {
 		go a.runSpamFeedback()
 	}

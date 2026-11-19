@@ -154,4 +154,11 @@ mv -T -- /var/lib/node_exporter/textfile/harbor-backup.tmp /var/lib/node_exporte
 3. MySQL 创建空库，恢复账户按需具有建表和导入权限。执行 `mysql --defaults-extra-file=/受限目录/restore.cnf --max-allowed-packet=64M harbor_mail < /备份目录/harbor-日期.sql`。核对导入退出状态和服务端日志，确认必要的应用账号及最小权限已恢复。
 4. 用只读 SQL 核对 `letters`、`outbox`、`outbox_schedule`、`custom_folders`、`web_letter_recipients` 和 `web_outbox_envelopes` 的记录数和样本。核对后台账号 `managed_accounts`、账号状态 `account_access`、密码重置状态 `account_password_overrides`、后台别名 `managed_aliases` 和管理审计表。开放服务前核对备份之后的账号创建、停用、密码重置、凭据撤销和别名变更。启动投递进程前，先用中继日志核对旧队列结果，并确定已实际投递任务的处置方式，防止重复投递。
 5. 在隔离恢复副本上以 `HARBOR_RECOVERY_MODE=true` 启动 Harbor。Compose 部署把该值设置在演练环境的 `.env` 中，使用该演练项目对应的 Compose 文件启动。核对日志中的 `Recovery mode`、健康端点、网页登录、旧邮件及附件、已发与定时邮件。校验模式保留登录与退出，屏蔽 Web 数据修改，停用 SMTP、提交、IMAP、POP3、投递、稍后处理与垃圾邮件训练，要求关闭自动 ACME。应用启动仍可能迁移数据库，网页登录仍会写入会话。只对恢复副本使用该模式。
-6. 用只读 SQL 核对恢复的 IMAP 目录和 UID。需要用客户端验收时，另用隔离副本并处置旧队列，确认网络出口已阻断后，关闭校验模式启动协议服务。记录恢复耗时和最新可读数据时间。生产切换要停止所有旧实例再切换数据路径或 DSN，先确认健康和队列处置，再逐步开放流量。
+6. 用只读 SQL 核对恢复的 IMAP 目录和 UID。需要用客户端验收时，保持网络隔离，设置 `HARBOR_RECOVERY_MODE=false` 和 `HARBOR_PAUSE_OUTBOX=true` 后重建 Harbor 容器。此时网页与已配置的邮件协议可用，发件箱接受入队请求，定时发件和外发任务都继续等待。通过管理后台「运行监控」确认发件队列显示「暂停」。记录恢复耗时和最新可读数据时间。
+
+### 切换与回滚
+
+1. 暂停外部写入并停止所有连接原库的 Harbor 实例。记录原镜像版本、Compose 文件顺序、环境文件和数据路径。保留原数据目录或 MySQL 库及对应凭据。
+2. 使用新的数据目录或恢复库启动。SQLite 绑定挂载可通过 `HARBOR_DATA_PATH` 指向新目录。MySQL 使用新的 DSN 文件，通过独立的 `HARBOR_SECRETS_DIR` 为对应部署指定文件。各实例统一设置 `HARBOR_PAUSE_OUTBOX=true`。保留原配置与数据，禁止让意外启动的旧实例访问恢复库。
+3. 检查 `/healthz`、登录、样本邮件、邮件协议及发件箱。将恢复的队列与中继日志对照，处置已成功投递和结果待确认的任务。确认可切换后，在所有实例将 `HARBOR_PAUSE_OUTBOX` 改为 `false`，重建 Harbor 容器，再逐步开放流量。
+4. 回滚时再次关闭外部写入并停止所有 Harbor 实例。若恢复库已接受新写入，先保留该库并记录新增邮件、队列及账号变更，以便对账。恢复原数据目录或 DSN，用支持暂停队列且与原库兼容的镜像启动。逐实例确认「发件队列」显示「暂停」，核对队列并决定如何处理分叉后，再恢复投递和外部写入。
