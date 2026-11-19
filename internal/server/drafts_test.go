@@ -62,7 +62,9 @@ func testRenamedMailboxDraft(t *testing.T, driver, source string) {
 		t.Fatal(err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/drafts/id/send", nil)
+	// Keep this fixture away from tests that claim whichever job is due next.
+	planned := strconv.FormatInt(time.Now().Add(time.Hour).Unix(), 10)
+	req := httptest.NewRequest(http.MethodPost, "/api/drafts/id/send?sendAt="+planned, nil)
 	req.Header.Set("If-Match", "1")
 	req.SetPathValue("id", strconv.FormatInt(id, 10))
 	response := httptest.NewRecorder()
@@ -71,9 +73,15 @@ func testRenamedMailboxDraft(t *testing.T, driver, source string) {
 		t.Fatalf("send migrated draft: HTTP %d %s", response.Code, response.Body)
 	}
 	var queued, stored []byte
-	if err := db.QueryRow(`SELECT raw FROM outbox WHERE sender=?`, newOwner).Scan(&queued); err != nil {
+	var jobID int64
+	if err := db.QueryRow(`SELECT id,raw FROM outbox WHERE sender=?`, newOwner).Scan(&jobID, &queued); err != nil {
 		t.Fatal(err)
 	}
+	defer func() {
+		if _, err := a.restoreScheduled(ctx, newOwner, jobID); err != nil {
+			t.Errorf("remove the scheduled fixture from the shared queue: %v", err)
+		}
+	}()
 	if err := db.QueryRow(`SELECT raw FROM letters WHERE id=? AND owner=?`, id, newOwner).Scan(&stored); err != nil || !bytes.Equal(raw, stored) {
 		t.Fatalf("the original draft was changed: %v", err)
 	}

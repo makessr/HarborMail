@@ -1,0 +1,62 @@
+name: Verify Harbor Mail
+
+on:
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Test SQLite and MySQL
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          export MYSQL_ROOT_PASSWORD MYSQL_PASSWORD
+          MYSQL_ROOT_PASSWORD=$(openssl rand -hex 24)
+          MYSQL_PASSWORD=$(openssl rand -hex 24)
+          printf '::add-mask::%s\n' "$MYSQL_ROOT_PASSWORD" "$MYSQL_PASSWORD"
+          database=$(docker run -d --tmpfs /var/lib/mysql -p 127.0.0.1::3306 \
+            -e MYSQL_ROOT_PASSWORD -e MYSQL_PASSWORD -e MYSQL_USER=harbor -e MYSQL_DATABASE=harbor_test \
+            mysql:8.4 --log-bin-trust-function-creators=1)
+          trap 'docker rm -fv "$database" >/dev/null' EXIT
+          ready=false
+          for attempt in {1..90}; do
+            if docker exec "$database" mysqladmin ping -h 127.0.0.1 --silent >/dev/null 2>&1; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          if [[ $ready != true ]]; then
+            printf 'Isolated MySQL did not start\n' >&2
+            exit 1
+          fi
+          address=$(docker port "$database" 3306/tcp)
+          HARBOR_TEST_MYSQL_DSN="harbor:$MYSQL_PASSWORD@tcp($address)/harbor_test" go test ./... -count=1
+          go vet ./...
+      - name: Check Web and operations files
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          find web -name '*.js' -print0 | xargs -0 -n 1 node --check
+          bash -n ops/backup.sh
+          export HARBOR_DATA_PATH=/tmp/harbor-data HARBOR_MYSQL_DATA_PATH=/tmp/harbor-mysql
+          export HARBOR_ACME_HOSTS=mail.harbor.test
+          docker compose -f compose.yaml -f compose.ops.yaml config --quiet
+          docker compose -f compose.yaml -f compose.mysql.yaml -f compose.registry.yaml \
+            -f compose.ops.yaml -f compose.mysql.ops.yaml config --quiet
+          docker compose -f compose.yaml -f compose.mysql.yaml -f compose.acme.yaml config --quiet
+          docker run --rm --network none --volume "$PWD:/src:ro" --workdir /src \
+            --entrypoint /bin/promtool prom/prometheus:v3.5.0 test rules ops/prometheus-rules.test.yaml

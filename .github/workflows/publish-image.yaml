@@ -8,7 +8,12 @@ permissions:
   packages: write
 
 jobs:
+  checks:
+    uses: ./.github/workflows/verify.yaml
+    permissions:
+      contents: read
   publish:
+    needs: checks
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     steps:

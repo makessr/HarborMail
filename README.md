@@ -52,6 +52,8 @@ Harbor Mail 镜像为 `ghcr.io/makessr/harbormail:latest`。[镜像包页面](ht
 
 在源码目录运行 `go test ./...`。Windows 可用于本地开发和构建 Linux 目标，详见 [Windows 开发说明](docs/deployment-and-usage.md#windows-开发)。
 
+GitHub 的 `Verify Harbor Mail` 工作流统一执行 Go 回归、SQLite 与 MySQL 8.4 验证、前端和运维脚本语法检查及 Prometheus 告警规则测试。拉取请求与镜像、二进制发布都会运行这套检查，也可从 Actions 手动运行。
+
 | 目录 | 内容 |
 | --- | --- |
 | `cmd/harbormail/` | 单二进制入口 |
