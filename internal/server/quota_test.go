@@ -151,4 +151,21 @@ func testHardQuota(t *testing.T, driver, source string) {
 		t.Fatalf("persisted quota: enabled=%v err=%v", enabled, err)
 	}
 	checkUsage(350_000)
+
+	if _, err := db.Exec(`DROP TRIGGER quota_letters_insert`); err != nil {
+		t.Fatal(err)
+	}
+	if err := insert(150_000); err != nil {
+		t.Fatal(err)
+	}
+	checkUsage(350_000)
+	enabled, err = initHardQuota(db, driver, false)
+	if err != nil || !enabled {
+		t.Fatalf("quota repair: enabled=%v err=%v", enabled, err)
+	}
+	checkUsage(500_000)
+	if err := insert(600_000); !isQuotaExceeded(err) {
+		t.Fatalf("expected repaired quota trigger to enforce existing limit, got %v", err)
+	}
+	checkUsage(500_000)
 }

@@ -33,12 +33,15 @@ var quotaTables = []quotaTable{{"letters", "owner"}, {"outbox", "sender"}}
 func initHardQuota(db *sql.DB, driver string, enabled bool) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
-	var active bool
-	if err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM mailbox_quota_meta WHERE id=1)`).Scan(&active); err != nil {
-		return false, err
-	}
-	if !enabled && !active {
-		return false, nil
+	const activeQuota = "EXISTS(SELECT 1 FROM mailbox_quota_meta WHERE id=1)"
+	if !enabled {
+		var active bool
+		if err := db.QueryRowContext(ctx, "SELECT "+activeQuota).Scan(&active); err != nil {
+			return false, err
+		}
+		if !active {
+			return false, nil
+		}
 	}
 	if driver == "mysql" {
 		conn, err := db.Conn(ctx)
@@ -59,9 +62,10 @@ func initHardQuota(db *sql.DB, driver string, enabled bool) (bool, error) {
 			_, _ = conn.ExecContext(unlock, `SELECT RELEASE_LOCK(CONCAT('harbor-quota-',LEFT(SHA2(DATABASE(),256),40)))`)
 		}()
 		var count int
-		if err := conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.triggers
+		var active bool
+		if err := conn.QueryRowContext(ctx, `SELECT COUNT(*), `+activeQuota+` FROM information_schema.triggers
 			WHERE trigger_schema=DATABASE() AND trigger_name IN
-			('quota_letters_insert','quota_letters_update','quota_letters_delete','quota_outbox_insert','quota_outbox_update','quota_outbox_delete')`).Scan(&count); err != nil {
+			('quota_letters_insert','quota_letters_update','quota_letters_delete','quota_outbox_insert','quota_outbox_update','quota_outbox_delete')`).Scan(&count, &active); err != nil {
 			return false, err
 		}
 		if count == 6 && active {
@@ -77,6 +81,9 @@ func initHardQuota(db *sql.DB, driver string, enabled bool) (bool, error) {
 			return false, err
 		}
 		defer tx.Rollback()
+		if err := lockIMAPUIDs(ctx, tx); err != nil {
+			return false, err
+		}
 		return true, rebuildQuota(ctx, tx, true)
 	}
 	tx, err := db.BeginTx(ctx, nil)
@@ -88,8 +95,9 @@ func initHardQuota(db *sql.DB, driver string, enabled bool) (bool, error) {
 		return false, err
 	}
 	var count int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN
-		('quota_letters_insert','quota_letters_update','quota_letters_delete','quota_outbox_insert','quota_outbox_update','quota_outbox_delete')`).Scan(&count); err != nil {
+	var active bool
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*), `+activeQuota+` FROM sqlite_master WHERE type='trigger' AND name IN
+		('quota_letters_insert','quota_letters_update','quota_letters_delete','quota_outbox_insert','quota_outbox_update','quota_outbox_delete')`).Scan(&count, &active); err != nil {
 		return false, err
 	}
 	if count == 6 && active {
