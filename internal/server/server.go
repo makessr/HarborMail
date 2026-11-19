@@ -15,9 +15,11 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"harbormail/web"
@@ -262,25 +264,31 @@ func Run() {
 			log.Fatal(err)
 		}
 	}
-	if err := a.listenMetrics(os.Getenv("HARBOR_METRICS")); err != nil {
-		log.Fatal(err)
-	}
 	tlsConfig, managed, err := configureTLS()
 	if err != nil {
 		log.Fatal(err)
 	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := a.serve(ctx, tlsConfig, managed); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func (a *app) serve(ctx context.Context, tlsConfig *tls.Config, managed *managedTLS) error {
+	runtime := newServiceRuntime()
+	defer runtime.shutdown()
+	a.stopping = runtime.ctx.Done()
+	if err := a.listenMetrics(runtime, os.Getenv("HARBOR_METRICS")); err != nil {
+		return err
+	}
 	if managed != nil {
-		if err := managed.listenChallenge(); err != nil {
-			log.Fatal(err)
+		if err := managed.listenChallenge(runtime); err != nil {
+			return err
 		}
 	}
 	webTLS := tlsConfig != nil && os.Getenv("HARBOR_WEB_TLS") != "off"
 	a.secure = webTLS || os.Getenv("HARBOR_SECURE_COOKIE") == "true"
-	if a.recoveryMode {
-		log.Print("Recovery mode: mail listeners and background mail jobs are disabled")
-	} else if err := a.startMailServices(tlsConfig); err != nil {
-		log.Fatal(err)
-	}
 	listen := env("HARBOR_WEB", "127.0.0.1:8080")
 	server := &http.Server{
 		Addr: listen, Handler: a.routes(),
@@ -289,11 +297,7 @@ func Run() {
 	}
 	webListener, err := net.Listen("tcp", listen)
 	if err != nil {
-		log.Fatal(err)
-	}
-	log.Printf("Webmail listening on %s", webListener.Addr())
-	if managed != nil {
-		managed.warmCertificates()
+		return err
 	}
 	if webTLS {
 		server.TLSConfig = tlsConfig.Clone()
@@ -301,22 +305,38 @@ func Run() {
 			server.TLSConfig.GetCertificate = managed.certificate
 			server.TLSConfig.NextProtos = managed.manager.TLSConfig().NextProtos
 		}
-		log.Fatal(server.ServeTLS(webListener, "", ""))
 	}
-	log.Fatal(server.Serve(webListener))
+	if a.recoveryMode {
+		log.Print("Recovery mode: mail listeners and background mail jobs are disabled")
+	} else if err := a.startMailServices(runtime, tlsConfig); err != nil {
+		_ = webListener.Close()
+		return err
+	}
+	log.Printf("Webmail listening on %s", webListener.Addr())
+	runtime.serveHTTP("webmail", server, webListener)
+	if managed != nil {
+		managed.warmCertificates(runtime.ctx)
+	}
+	select {
+	case <-ctx.Done():
+		log.Print("Stopping Harbor Mail")
+		return nil
+	case err := <-runtime.failures:
+		return err
+	}
 }
 
-func (a *app) startMailServices(tlsConfig *tls.Config) error {
-	if err := a.listenSubmission(os.Getenv("HARBOR_SUBMISSION"), tlsConfig, false); err != nil {
+func (a *app) startMailServices(runtime *serviceRuntime, tlsConfig *tls.Config) error {
+	if err := a.listenSubmission(runtime, os.Getenv("HARBOR_SUBMISSION"), tlsConfig, false); err != nil {
 		return err
 	}
-	if err := a.listenSubmission(os.Getenv("HARBOR_SUBMISSIONS"), tlsConfig, true); err != nil {
+	if err := a.listenSubmission(runtime, os.Getenv("HARBOR_SUBMISSIONS"), tlsConfig, true); err != nil {
 		return err
 	}
-	if err := a.listenPOP3S(os.Getenv("HARBOR_POP3S"), tlsConfig); err != nil {
+	if err := a.listenPOP3S(runtime, os.Getenv("HARBOR_POP3S"), tlsConfig); err != nil {
 		return err
 	}
-	if err := a.listenIMAPS(os.Getenv("HARBOR_IMAPS"), tlsConfig); err != nil {
+	if err := a.listenIMAPS(runtime, os.Getenv("HARBOR_IMAPS"), tlsConfig); err != nil {
 		return err
 	}
 	listener, err := net.Listen("tcp", env("HARBOR_SMTP", "127.0.0.1:2525"))
@@ -324,21 +344,21 @@ func (a *app) startMailServices(tlsConfig *tls.Config) error {
 		return err
 	}
 	log.Printf("SMTP listening on %s", listener.Addr())
-	go func() { log.Fatal(a.smtpServer(a, tlsConfig).Serve(listener)) }()
+	runtime.serveSMTP("SMTP", a.smtpServer(a, tlsConfig), listener)
 	if a.pauseOutbox {
 		log.Print("Outbox is paused: queued mail will not be processed")
 	} else {
-		go a.runOutbox()
+		runtime.worker(func(ctx context.Context) { a.runOutbox(ctx, a.connectSenderRelay) })
 	}
 	if a.spamTrainer != nil {
-		go a.runSpamFeedback()
+		runtime.worker(a.runSpamFeedback)
 	}
-	go a.runSnoozes()
-	go func() {
-		if err := a.backfillThreads(context.Background()); err != nil {
+	runtime.worker(a.runSnoozes)
+	runtime.worker(func(ctx context.Context) {
+		if err := a.backfillThreads(ctx); err != nil && ctx.Err() == nil {
 			log.Print("index existing mail conversations: ", err)
 		}
-	}()
+	})
 	return nil
 }
 

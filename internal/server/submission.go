@@ -19,7 +19,7 @@ import (
 	"github.com/emersion/go-smtp"
 )
 
-func (a *app) listenSubmission(addr string, config *tls.Config, implicit bool) error {
+func (a *app) listenSubmission(runtime *serviceRuntime, addr string, config *tls.Config, implicit bool) error {
 	if addr == "" {
 		return nil
 	}
@@ -39,7 +39,7 @@ func (a *app) listenSubmission(addr string, config *tls.Config, implicit bool) e
 		mode = "implicit TLS"
 	}
 	log.Printf("SMTP submission (%s) listening on %s", mode, listener.Addr())
-	go func() { log.Fatal(server.Serve(listener)) }()
+	runtime.serveSMTP("SMTP submission", server, listener)
 	return nil
 }
 
@@ -83,6 +83,9 @@ func (s *submission) Auth(mechanism string) (sasl.Server, error) {
 
 func (s *submission) Mail(from string, _ *smtp.MailOptions) error {
 	s.Reset()
+	if err := s.app.rejectNewSMTPMail(); err != nil {
+		return err
+	}
 	if s.owner == "" {
 		return &smtp.SMTPError{Code: 530, EnhancedCode: smtp.EnhancedCode{5, 7, 0}, Message: "Authentication required"}
 	}

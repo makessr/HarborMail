@@ -125,7 +125,7 @@ func (m *managedTLS) certificate(hello *tls.ClientHelloInfo) (*tls.Certificate, 
 	return nil, errors.New("TLS hostname is not configured for ACME")
 }
 
-func (m *managedTLS) listenChallenge() error {
+func (m *managedTLS) listenChallenge(runtime *serviceRuntime) error {
 	addr := env("HARBOR_ACME_HTTP", "127.0.0.1:8081")
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -140,11 +140,11 @@ func (m *managedTLS) listenChallenge() error {
 		MaxHeaderBytes:    16 << 10,
 	}
 	log.Printf("ACME HTTP challenge listening on %s", listener.Addr())
-	go func() { log.Fatal(server.Serve(listener)) }()
+	runtime.serveHTTP("ACME HTTP challenge", server, listener)
 	return nil
 }
 
-func (m *managedTLS) warmCertificates() {
+func (m *managedTLS) warmCertificates(ctx context.Context) {
 	for _, host := range m.hosts {
 		go func() {
 			// Start the renewal timer even when the host receives no TLS traffic.
@@ -154,14 +154,21 @@ func (m *managedTLS) warmCertificates() {
 				SupportedCurves:  []tls.CurveID{tls.CurveP256},
 				SignatureSchemes: []tls.SignatureScheme{tls.ECDSAWithP256AndSHA256},
 			}
-			for {
+			timer := time.NewTimer(30 * time.Minute)
+			defer timer.Stop()
+			for ctx.Err() == nil {
 				_, err := m.certificate(hello)
 				if err == nil {
 					log.Printf("ACME certificate ready for %s", host)
 					return
 				}
 				log.Printf("prepare ACME certificate for %s: %v", host, err)
-				time.Sleep(30 * time.Minute)
+				timer.Reset(30 * time.Minute)
+				select {
+				case <-ctx.Done():
+					return
+				case <-timer.C:
+				}
 			}
 		}()
 	}

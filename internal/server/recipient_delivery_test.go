@@ -46,7 +46,7 @@ func testRecoverRecipientDelivery(t *testing.T, driver, source string) {
 			t.Fatal(err)
 		}
 		for range 2 {
-			if err := a.recoverOutbox(); err != nil {
+			if err := a.recoverOutbox(t.Context()); err != nil {
 				t.Fatal(err)
 			}
 		}

@@ -9,6 +9,7 @@ services:
         HARBOR_GO_PROXY: ${HARBOR_GO_PROXY:-https://proxy.golang.org,direct}
         HARBOR_GO_SUMDB: ${HARBOR_GO_SUMDB:-sum.golang.org}
     restart: unless-stopped
+    stop_grace_period: 125s
     read_only: true
     cap_drop: [ALL]
     security_opt:

@@ -131,16 +131,20 @@ func (a *app) restoreDueSnoozes(ctx context.Context, cutoff int64) error {
 	return a.commitMailbox(tx, owners...)
 }
 
-func (a *app) runSnoozes() {
+func (a *app) runSnoozes(stop context.Context) {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
-	for {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	for stop.Err() == nil {
+		ctx, cancel := context.WithTimeout(stop, 10*time.Second)
 		err := a.restoreDueSnoozes(ctx, time.Now().Unix())
 		cancel()
-		if err != nil {
+		if err != nil && stop.Err() == nil {
 			log.Print("restore snoozed mail: ", err)
 		}
-		<-ticker.C
+		select {
+		case <-stop.Done():
+			return
+		case <-ticker.C:
+		}
 	}
 }

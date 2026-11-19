@@ -307,7 +307,7 @@ func testOutboxRelay(t *testing.T, driver, source string) {
 	if _, err := a.db.Exec(`UPDATE outbox SET state='sending', lease=0 WHERE id=?`, stale); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.recoverOutbox(); err != nil {
+	if err := a.recoverOutbox(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	checkState(stale, "uncertain")

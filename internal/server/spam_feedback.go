@@ -249,16 +249,18 @@ func (trainer *rspamdTrainer) learn(ctx context.Context, job *spamFeedbackJob, b
 	return spamTrainingRetry{}, fmt.Errorf("controller rejected sample (HTTP %d)", status)
 }
 
-func (a *app) runSpamFeedback() {
+func (a *app) runSpamFeedback(stop context.Context) {
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
-	for {
-		for {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	for stop.Err() == nil {
+		for stop.Err() == nil {
+			ctx, cancel := context.WithTimeout(stop, 5*time.Second)
 			job, err := a.claimSpamFeedback(ctx)
 			cancel()
 			if err != nil {
-				log.Print("spam feedback claim: ", err)
+				if stop.Err() == nil {
+					log.Print("spam feedback claim: ", err)
+				}
 				break
 			}
 			if job == nil {
@@ -269,7 +271,11 @@ func (a *app) runSpamFeedback() {
 				break
 			}
 		}
-		<-ticker.C
+		select {
+		case <-stop.Done():
+			return
+		case <-ticker.C:
+		}
 	}
 }
 

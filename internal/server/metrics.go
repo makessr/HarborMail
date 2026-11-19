@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func (a *app) listenMetrics(addr string) error {
+func (a *app) listenMetrics(runtime *serviceRuntime, addr string) error {
 	if addr == "" {
 		return nil
 	}
@@ -25,7 +25,7 @@ func (a *app) listenMetrics(addr string) error {
 		IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10,
 	}
 	log.Printf("Metrics listening on %s", listener.Addr())
-	go func() { log.Fatal(server.Serve(listener)) }()
+	runtime.serveHTTP("metrics", server, listener)
 	return nil
 }
 

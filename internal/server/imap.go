@@ -23,7 +23,7 @@ import (
 	"github.com/emersion/go-message"
 )
 
-func (a *app) listenIMAPS(addr string, config *tls.Config) error {
+func (a *app) listenIMAPS(runtime *serviceRuntime, addr string, config *tls.Config) error {
 	if addr == "" {
 		return nil
 	}
@@ -39,7 +39,12 @@ func (a *app) listenIMAPS(addr string, config *tls.Config) error {
 	service.AutoLogout = server.MinAutoLogout
 	service.MaxLiteralSize = mailLimit
 	log.Printf("IMAPS listening on %s", listener.Addr())
-	go func() { log.Fatal(service.Serve(listener)) }()
+	done := runtime.serve("IMAPS", func() error { return service.Serve(listener) })
+	runtime.stops = append(runtime.stops, func(context.Context) {
+		_ = listener.Close()
+		<-done
+		_ = service.Close()
+	})
 	return nil
 }
 

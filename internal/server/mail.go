@@ -29,6 +29,7 @@ type app struct {
 	dbDriver            string
 	adminCache          *adminRedisCache
 	events              mailboxEvents
+	stopping            <-chan struct{}
 	spamScanner         *rspamdScanner
 	spamTrainer         *rspamdTrainer
 	sharedMailboxEvents bool
@@ -158,6 +159,9 @@ type delivery struct {
 
 func (s *delivery) Mail(from string, options *smtp.MailOptions) error {
 	s.Reset()
+	if err := s.app.rejectNewSMTPMail(); err != nil {
+		return err
+	}
 	s.sender = from
 	if options != nil {
 		s.size = options.Size

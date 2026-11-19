@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-func (a *app) listenPOP3S(addr string, config *tls.Config) error {
+func (a *app) listenPOP3S(runtime *serviceRuntime, addr string, config *tls.Config) error {
 	if addr == "" {
 		return nil
 	}
@@ -29,21 +29,32 @@ func (a *app) listenPOP3S(addr string, config *tls.Config) error {
 		return fmt.Errorf("listen for POP3S: %w", err)
 	}
 	log.Printf("POP3S listening on %s", listener.Addr())
-	go func() {
+	runtime.serve("POP3S", func() error {
 		server := popServer{app: a, slots: make(chan struct{}, 64)}
+		ctx, cancel := context.WithCancel(runtime.ctx)
+		var connections sync.WaitGroup
+		defer func() {
+			cancel()
+			connections.Wait()
+		}()
 		for {
 			conn, err := listener.Accept()
 			if err != nil {
-				log.Fatal("accept POP3S: ", err)
+				return err
 			}
 			select {
 			case server.slots <- struct{}{}:
-				go server.serve(conn.(*tls.Conn))
+				connections.Go(func() {
+					stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+					defer stop()
+					server.serve(conn.(*tls.Conn))
+				})
 			default:
 				_ = conn.Close()
 			}
 		}
-	}()
+	})
+	runtime.stops = append(runtime.stops, func(context.Context) { _ = listener.Close() })
 	return nil
 }
 

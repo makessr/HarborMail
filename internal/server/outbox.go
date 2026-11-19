@@ -71,14 +71,16 @@ func insertOutbox(writer outboxWriter, m letter, raw []byte, state string, due i
 	return result.LastInsertId()
 }
 
-func (a *app) runOutbox() {
+func (a *app) runOutbox(ctx context.Context, connectRelay func(context.Context, string) (*smtp.Client, func(), error)) {
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
-	for {
-		if err := a.recoverOutbox(); err != nil {
-			log.Print("outbox recovery: ", err)
+	for ctx.Err() == nil {
+		if err := a.recoverOutbox(ctx); err != nil {
+			if ctx.Err() == nil {
+				log.Print("outbox recovery: ", err)
+			}
 		} else {
-			for {
+			for ctx.Err() == nil {
 				job, err := a.claimOutbox()
 				if err != nil {
 					log.Print("outbox claim: ", err)
@@ -88,22 +90,26 @@ func (a *app) runOutbox() {
 					break
 				}
 				connect := func(ctx context.Context) (*smtp.Client, func(), error) {
-					return a.connectSenderRelay(ctx, job.message.From)
+					return connectRelay(ctx, job.message.From)
 				}
 				if err := a.processOutbox(job, connect); err != nil {
 					log.Print("outbox delivery state: ", err)
 				}
 			}
 		}
-		<-ticker.C
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
 	}
 }
 
-func (a *app) recoverOutbox() error {
-	for {
+func (a *app) recoverOutbox(ctx context.Context) error {
+	for ctx.Err() == nil {
 		var job outboxJob
 		m := &job.message
-		err := a.db.QueryRow(`SELECT id,sender,recipient,subject,claim FROM outbox
+		err := a.db.QueryRowContext(ctx, `SELECT id,sender,recipient,subject,claim FROM outbox
 			WHERE state='sending' AND lease<=? ORDER BY lease,id LIMIT 1`, time.Now().Unix()).
 			Scan(&m.ID, &m.From, &m.To, &m.Subject, &job.claim)
 		if errors.Is(err, sql.ErrNoRows) {
@@ -116,6 +122,7 @@ func (a *app) recoverOutbox() error {
 			return err
 		}
 	}
+	return ctx.Err()
 }
 
 func (a *app) claimOutbox() (*outboxJob, error) {

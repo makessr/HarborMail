@@ -37,6 +37,8 @@
 
 为数据挂载独立且容量固定的文件系统，例如 LVM 逻辑卷或云盘。将挂载写入主机的持久配置，并为 Compose 启动服务设置相应的 systemd `RequiresMountsFor=`。启动前用 `findmnt --mountpoint` 检查挂载来源，避免主机重启后数据被写入根分区。备份放在另一块文件系统，并保留异地副本。
 
+Linux 单文件由 systemd 托管时，为 Harbor 服务设置 `TimeoutStopSec=125s`。Compose 已在 `harbor` 服务配置同样的停止宽限。更新前执行正常停止，让正在执行的任务有时间写回结果。超过期限或进程异常退出时，发件箱继续用持久化状态和租约恢复。
+
 | 挂载示例 | 内容 | 可调整的起点 |
 | --- | --- | --- |
 | `/srv/harbor-data` | SQLite 数据库及 WAL，或 MySQL 模式下的 Harbor 数据，含 ACME 缓存 | SQLite 50 GiB，MySQL 模式 2 GiB |

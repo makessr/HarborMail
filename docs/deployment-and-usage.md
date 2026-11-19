@@ -160,6 +160,8 @@ MySQL 密码文件用于首次初始化。已有数据卷的密码在 MySQL 内�
 
 按需在 `-f compose.yaml` 后追加覆盖文件。查看日志、重启、升级和停止服务时沿用部署时的文件顺序与项目名。
 
+收到 `SIGTERM` 或 `Ctrl+C` 后，Harbor 停止监听和领取新任务，最多等待两分钟，让当前 Web 请求、SMTP 会话和已领取的外发任务收尾。已连接的 SMTP 客户端仍可完成当前事务，新事务会收到 `421`。IMAP、POP3 和网页 SSE 连接会断开，客户端可在服务回来后重连。Compose 为 Harbor 容器保留 125 秒的停止时间。
+
 需要从源码构建时，省略 `compose.registry.yaml`，启动时使用 `--build`。构建主机可通过 `HARBOR_GO_PROXY` 和 `HARBOR_GO_SUMDB` 设置 Go 模块代理与校验服务。
 
 - **TLS** 证书放在 `tls/fullchain.pem` 和 `tls/privkey.pem`，可用 `HARBOR_TLS_DIR` 指定其他目录。证书须覆盖客户端使用的邮件主机名，挂载目录和证书文件须能被容器 UID `10001` 读取；私钥应通过受限的属主或组权限提供。证书更换后重新创建 Harbor 容器。

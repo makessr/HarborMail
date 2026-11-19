@@ -121,6 +121,8 @@ func (a *app) streamMailboxEvents(w http.ResponseWriter, r *http.Request, owner 
 		select {
 		case <-r.Context().Done():
 			return
+		case <-a.stopping:
+			return
 		case <-heartbeat.C:
 			frame = ": heartbeat\n\n"
 		case <-signal:
