@@ -183,26 +183,32 @@ func (a *app) adminSetHardQuota(w http.ResponseWriter, r *http.Request, actor st
 	a.setStorageLimit(w, r, actor, true)
 }
 
-// The caller holds the mailbox write lock. A previously accepted queue job
-// must be able to keep its Sent copy after the administrator lowers its limit.
 func (a *app) insertQueuedSent(ctx context.Context, tx *sql.Tx, m letter, raw []byte) error {
-	if !a.hardQuota {
+	return a.saveQueuedCopy(ctx, tx, m.From, func() error {
 		return insert(tx, m.From, m, "sent", raw)
+	})
+}
+
+// The caller holds the mailbox write lock. Queued mail already accepted into
+// storage can still become a sent copy or draft after the quota is lowered.
+func (a *app) saveQueuedCopy(ctx context.Context, tx *sql.Tx, owner string, save func() error) error {
+	if !a.hardQuota {
+		return save()
 	}
 	var limit int64
-	err := tx.QueryRowContext(ctx, `SELECT COALESCE((SELECT limit_mib FROM mailbox_quota WHERE owner=?),0)`, m.From).Scan(&limit)
+	err := tx.QueryRowContext(ctx, `SELECT COALESCE((SELECT limit_mib FROM mailbox_quota WHERE owner=?),0)`, owner).Scan(&limit)
 	if err != nil {
 		return err
 	}
 	if limit == 0 {
-		return insert(tx, m.From, m, "sent", raw)
+		return save()
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE mailbox_quota SET limit_mib=0 WHERE owner=?`, m.From); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE mailbox_quota SET limit_mib=0 WHERE owner=?`, owner); err != nil {
 		return err
 	}
-	if err := insert(tx, m.From, m, "sent", raw); err != nil {
+	if err := save(); err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE mailbox_quota SET limit_mib=? WHERE owner=?`, limit, m.From)
+	_, err = tx.ExecContext(ctx, `UPDATE mailbox_quota SET limit_mib=? WHERE owner=?`, limit, owner)
 	return err
 }

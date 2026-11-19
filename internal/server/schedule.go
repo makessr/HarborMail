@@ -224,8 +224,12 @@ func (a *app) restoreScheduled(ctx context.Context, owner string, id int64) (int
 	if err != nil {
 		return 0, err
 	}
-	draft, err := insertWebDraft(ctx, tx, owner, m, raw)
-	if err != nil {
+	var draft int64
+	if err := a.saveQueuedCopy(ctx, tx, owner, func() error {
+		var err error
+		draft, err = insertWebDraft(ctx, tx, owner, m, raw)
+		return err
+	}); err != nil {
 		return 0, err
 	}
 	return draft, a.commitMailbox(tx, owner)
