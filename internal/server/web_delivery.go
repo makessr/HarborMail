@@ -140,9 +140,15 @@ func (a *app) processWebLocals(job *outboxJob, hasExternal bool) (bool, error) {
 	}
 	id := job.message.ID
 	guard := ` WHERE id=? AND claim=? AND state='preparing' AND lease>?`
+	continueToRelay := hasExternal && a.hasRelayFor(job.message.From)
 	statement := `DELETE FROM outbox`
 	if hasExternal {
 		statement = `UPDATE outbox SET lease=lease`
+		if !continueToRelay {
+			// Release the claim with the local copies, so a later worker can
+			// resume the external delivery as soon as a relay is configured.
+			statement = `UPDATE outbox SET state='queued',claim='',lease=0`
+		}
 	}
 	result, err := tx.ExecContext(ctx, statement+guard, id, job.claim, time.Now().Unix())
 	if err := requireAffectedRow(result, err); err != nil {
@@ -176,5 +182,5 @@ func (a *app) processWebLocals(job *outboxJob, hasExternal bool) (bool, error) {
 		return false, err
 	}
 	job.localDone = true
-	return hasExternal, nil
+	return continueToRelay, nil
 }

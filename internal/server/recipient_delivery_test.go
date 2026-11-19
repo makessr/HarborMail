@@ -27,7 +27,7 @@ func testRecoverRecipientDelivery(t *testing.T, driver, source string) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	a := &app{db: db, domain: "harbor.test"}
+	a := &app{db: db, dbDriver: driver, domain: "harbor.test"}
 	sender := token()[:16] + "@harbor.test"
 	retryAt := time.Now().Add(time.Hour).Unix()
 	for _, otherState := range []string{"accepted", "queued"} {

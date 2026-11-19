@@ -28,7 +28,7 @@ func testUndoSend(t *testing.T, driver, source string) {
 	defer db.Close()
 	sender := token()[:16] + "@undo.harbor.test"
 	recipient := "recipient-" + sender
-	a := &app{db: db, domain: "harbor.test", accounts: map[string][]byte{sender: nil, recipient: nil}}
+	a := &app{db: db, dbDriver: driver, domain: "harbor.test", accounts: map[string][]byte{sender: nil, recipient: nil}}
 	ctx := t.Context()
 	send := func(query, to string, want int) map[string]int64 {
 		t.Helper()

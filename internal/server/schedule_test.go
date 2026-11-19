@@ -25,7 +25,7 @@ func TestScheduledDelivery(t *testing.T) {
 
 func testScheduledDelivery(t *testing.T, driver, source string) {
 	const sender, recipient, alias = "sender@scheduled.harbor.test", "owner@scheduled.harbor.test", "alias@scheduled.harbor.test"
-	a := &app{domain: "harbor.test", accounts: map[string][]byte{sender: nil, recipient: nil}, aliases: map[string]string{alias: recipient}}
+	a := &app{dbDriver: driver, domain: "harbor.test", accounts: map[string][]byte{sender: nil, recipient: nil}, aliases: map[string]string{alias: recipient}}
 	open := func() {
 		t.Helper()
 		var err error

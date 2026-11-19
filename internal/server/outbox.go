@@ -126,8 +126,17 @@ func (a *app) claimOutbox() (*outboxJob, error) {
 	query := `SELECT id,sender FROM outbox WHERE ((state IN ('queued','scheduled','undo') AND due<=?)
 		OR (state='preparing' AND lease<=?))`
 	if a.relay.Address == "" {
+		// Mixed envelopes can still deliver their local targets without a relay.
+		localTarget := `EXISTS (SELECT 1 FROM json_each(
+			CASE WHEN json_valid(e.envelope) THEN e.envelope ELSE '{}' END, '$.Targets') AS target
+			WHERE CASE WHEN target.type='object' THEN json_extract(target.value,'$.Owner')<>'' ELSE FALSE END)`
+		if a.dbDriver == "mysql" {
+			localTarget = `JSON_SEARCH(CASE WHEN JSON_VALID(e.envelope) THEN e.envelope ELSE '{}' END,
+				'one','_%',NULL,'$.Targets[*].Owner') IS NOT NULL`
+		}
 		query += ` AND (EXISTS (SELECT 1 FROM outbox_schedule s WHERE s.outbox_id=outbox.id AND s.local_owner<>'')
-			OR EXISTS (SELECT 1 FROM web_outbox_envelopes e WHERE e.outbox_id=outbox.id AND e.has_external=FALSE)
+			OR EXISTS (SELECT 1 FROM web_outbox_envelopes e WHERE e.outbox_id=outbox.id
+				AND (e.has_external=FALSE OR (e.local_done=FALSE AND ` + localTarget + `)))
 			OR (EXISTS (SELECT 1 FROM outbox_recipient_progress p WHERE p.outbox_id=outbox.id AND p.state IN ('accepted','failed','uncertain'))
 				AND NOT EXISTS (SELECT 1 FROM outbox_recipient_progress p WHERE p.outbox_id=outbox.id AND p.state IN ('queued','sending')))
 			OR (stamp<=? AND NOT EXISTS (SELECT 1 FROM outbox_schedule s WHERE s.outbox_id=outbox.id AND s.send_at>?))`

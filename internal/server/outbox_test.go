@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -35,7 +36,7 @@ func testOutboxWithoutRelay(t *testing.T, driver, source string) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	a := &app{db: db, domain: "harbor.test",
+	a := &app{db: db, dbDriver: driver, domain: "harbor.test",
 		domainRelays: map[string]domainRelay{"other.harbor.test": {Address: "relay.other.harbor.test:587"}}}
 	const sender = "sender@harbor.test"
 	now := time.Now()
@@ -107,6 +108,79 @@ func testOutboxWithoutRelay(t *testing.T, driver, source string) {
 	if _, err := a.restoreScheduled(t.Context(), sender, scheduled); err != nil {
 		t.Fatalf("clean up the scheduled job before another test enables a relay: %v", err)
 	}
+}
+
+func TestMixedOutboxDeliversLocallyWithoutRelay(t *testing.T) {
+	t.Run("sqlite", func(t *testing.T) {
+		testMixedOutboxWithoutRelay(t, "sqlite", filepath.Join(t.TempDir(), "mail.db"))
+	})
+	if dsn := os.Getenv("HARBOR_TEST_MYSQL_DSN"); dsn != "" {
+		t.Run("mysql", func(t *testing.T) { testMixedOutboxWithoutRelay(t, "mysql", dsn) })
+	}
+}
+
+func testMixedOutboxWithoutRelay(t *testing.T, driver, source string) {
+	db, err := openDB(driver, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	sender := token()[:16] + "@harbor.test"
+	recipient := "recipient-" + sender
+	a := &app{db: db, dbDriver: driver, domain: "harbor.test",
+		accounts: map[string][]byte{sender: nil, recipient: nil}}
+	a.relay.Address = "relay.harbor.test:587"
+	r := httptest.NewRequest(http.MethodPost, "/api/letters", strings.NewReader(
+		fmt.Sprintf(`{"to":%q,"subject":"Mixed delivery","body":"test body"}`, recipient+",external@example.test")))
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	a.send(w, r, sender)
+	var queued struct{ Queued int64 }
+	if err := json.Unmarshal(w.Body.Bytes(), &queued); err != nil || w.Code != http.StatusAccepted || queued.Queued == 0 {
+		t.Fatalf("queue mixed mail: HTTP %d, %s (%v)", w.Code, w.Body, err)
+	}
+	a.relay.Address = ""
+	claim := func() *outboxJob {
+		t.Helper()
+		job, err := a.claimOutbox()
+		if err != nil || job == nil || job.message.ID != queued.Queued {
+			t.Fatalf("could not claim mixed job %d: %+v (%v)", queued.Queued, job, err)
+		}
+		return job
+	}
+	// The local leg must finish without attempting SMTP.
+	if err := a.processOutbox(claim(), nil); err != nil {
+		t.Fatal(err)
+	}
+	var state string
+	var localDone bool
+	if err := db.QueryRow(`SELECT o.state,e.local_done FROM outbox o JOIN web_outbox_envelopes e ON e.outbox_id=o.id
+		WHERE o.id=? AND o.claim='' AND o.lease=0`, queued.Queued).Scan(&state, &localDone); err != nil || state != "queued" || !localDone {
+		t.Fatalf("local progress=%v, external state=%q (%v)", localDone, state, err)
+	}
+	checkCopies := func() {
+		t.Helper()
+		for owner, folder := range map[string]string{recipient: "inbox", sender: "sent"} {
+			var copies int
+			err := db.QueryRow(`SELECT COUNT(*) FROM letters WHERE owner=? AND folder=? AND subject='Mixed delivery'`,
+				owner, folder).Scan(&copies)
+			if err != nil || copies != 1 {
+				t.Fatalf("%s copies for %s = %d (%v)", folder, owner, copies, err)
+			}
+		}
+	}
+	checkCopies()
+	if job, err := a.claimOutbox(); job != nil || err != nil {
+		t.Fatalf("remaining external delivery was claimed with no relay: %+v (%v)", job, err)
+	}
+	a.relay.Address = "relay.harbor.test:587"
+	if err := a.processOutbox(claim(), testRelay(t, a, true, 250)); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT state FROM outbox WHERE id=?`, queued.Queued).Scan(&state); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("mixed job remained in state %q after acceptance: %v", state, err)
+	}
+	checkCopies()
 }
 
 func TestOutboxRelay(t *testing.T) {
