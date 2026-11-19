@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http/httptest"
 	"path/filepath"
@@ -81,10 +82,26 @@ func TestIMAPIdlePushesCommittedDelivery(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor("* 1 EXISTS")
-	send("DONE")
+	send("dOnE\r\nA4 NOOP")
 	waitFor("A3 OK")
-	send("A4 NOOP")
 	waitFor("A4 OK")
+
+	send("A5 CREATE Team")
+	waitFor("A5 OK")
+	send("A6 SELECT Team")
+	waitFor("A6 OK")
+	var folder string
+	if err := db.QueryRow(`SELECT folder FROM custom_folders WHERE owner=? AND lookup='team'`, owner).Scan(&folder); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.deleteCustomFolder(t.Context(), owner, folder); err != nil {
+		t.Fatal(err)
+	}
+	send("A7 IDLE")
+	waitFor("* BYE Selected mailbox no longer exists")
+	if line, err := reader.ReadString('\n'); !errors.Is(err, io.EOF) {
+		t.Fatalf("expected the server to close the connection, got %q, %v", line, err)
+	}
 }
 
 func TestIMAPCopyAppendsAndRollsBackOnStaleSource(t *testing.T) {

@@ -61,7 +61,10 @@ func (*imapIdle) Handle(conn server.Conn) error {
 	}
 	if mailbox != nil {
 		signal = mailbox.app.events.watch(mailbox.owner)
-		if err := refresh(true); errors.Is(err, errIMAPIdleFolderGone) {
+		if err := refresh(true); err != nil && !errors.Is(err, errIMAPStorage) {
+			if errors.Is(err, errIMAPIdleFolderGone) {
+				return disconnectIMAPIdle(conn, err.Error())
+			}
 			return err
 		}
 	}
@@ -80,8 +83,10 @@ func (*imapIdle) Handle(conn server.Conn) error {
 	readFinished := false
 	defer func() {
 		if !readFinished {
-			session.State = imap.LogoutState
-			_ = conn.Close()
+			if session.State != imap.LogoutState {
+				session.State = imap.LogoutState
+				_ = conn.Close()
+			}
 			<-read
 		}
 	}()
@@ -102,11 +107,9 @@ func (*imapIdle) Handle(conn server.Conn) error {
 				return nil
 			}
 			if errors.Is(err, errIMAPIdleExpectedDone) {
-				_ = conn.WriteResp(&imap.StatusResp{Type: imap.StatusRespBye, Info: err.Error()})
+				return disconnectIMAPIdle(conn, err.Error())
 			}
-			session.State = imap.LogoutState
-			_ = conn.Close()
-			return &imap.ErrStatusResp{}
+			return disconnectIMAPIdle(conn, "")
 		case <-signal:
 			signal = mailbox.app.events.watch(mailbox.owner)
 			err = refresh(true)
@@ -118,13 +121,21 @@ func (*imapIdle) Handle(conn server.Conn) error {
 			}
 		}
 		if errors.Is(err, errIMAPIdleFolderGone) {
-			_ = conn.WriteResp(&imap.StatusResp{Type: imap.StatusRespBye, Info: err.Error()})
-			return &imap.ErrStatusResp{}
+			return disconnectIMAPIdle(conn, err.Error())
 		}
 		if err != nil && !errors.Is(err, errIMAPStorage) && !errors.Is(err, context.Canceled) {
 			return err
 		}
 	}
+}
+
+func disconnectIMAPIdle(conn server.Conn, reason string) error {
+	if reason != "" {
+		_ = conn.WriteResp(&imap.StatusResp{Type: imap.StatusRespBye, Info: reason})
+	}
+	conn.Context().State = imap.LogoutState
+	_ = conn.Close()
+	return &imap.ErrStatusResp{}
 }
 
 func readIdleDone(reader io.Reader) error {
