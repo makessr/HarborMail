@@ -45,7 +45,11 @@
 
 这些是实例存储上限。容量应覆盖原始 MIME、目录或客户端复制、投递队列、索引、WAL 或 MySQL binlog，以及增长余量。不要依靠删除邮件立即回收数据库文件。使用空间达到 80% 时安排扩容，达到 90% 时当班处理并检查写失败。禁止手动删除 WAL、binlog 或数据库内部文件。
 
-在 `.env` 填写 `HARBOR_DATA_PATH=/srv/harbor-data`，MySQL 同时填写 `HARBOR_MYSQL_DATA_PATH=/srv/harbor-mysql`。Harbor 数据目录须可由 UID/GID `10001:10001` 写入。MySQL 目录须符合部署所用镜像的 `mysql` 用户权限。预先创建目录和挂载。覆盖文件按以下顺序加载。
+在 `.env` 填写 `HARBOR_DATA_PATH=/srv/harbor-data`，MySQL 同时填写 `HARBOR_MYSQL_DATA_PATH=/srv/harbor-mysql`。Harbor 数据目录须可由 UID/GID `10001:10001` 写入。MySQL 目录须符合部署所用镜像的 `mysql` 用户权限。
+
+启动前创建目录并挂载文件系统，再用宿主机的 `findmnt` 核实挂载来源。Compose 会拒绝不存在的绑定源。使用 `compose.ops.yaml` 时，Harbor 在连接数据库、开放端口前以容器身份创建并删除一个临时文件。出现 `HARBOR_CHECK_DATA_DIR is not writable` 时，检查宿主机路径的属主、权限和挂载读写状态。
+
+覆盖文件按以下顺序加载。
 
 ```text
 docker compose -f compose.yaml -f compose.ops.yaml up -d --build --wait

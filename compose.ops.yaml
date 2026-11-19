@@ -2,6 +2,7 @@ services:
   harbor:
     environment:
       HARBOR_METRICS: 0.0.0.0:9091
+      HARBOR_CHECK_DATA_DIR: /var/lib/harbormail
     ports:
       - target: 9091
         published: "${HARBOR_METRICS_PORT:-9091}"

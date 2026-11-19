@@ -70,6 +70,11 @@ func Run() {
 		fmt.Println(string(hash))
 		return
 	}
+	if dir := os.Getenv("HARBOR_CHECK_DATA_DIR"); dir != "" {
+		if err := checkDataDir(dir); err != nil {
+			log.Fatal("HARBOR_CHECK_DATA_DIR is not writable: ", err)
+		}
+	}
 	domain := strings.ToLower(env("HARBOR_DOMAIN", "harbor.test"))
 	if !regexp.MustCompile(`^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$`).MatchString(domain) {
 		log.Fatal("invalid HARBOR_DOMAIN")

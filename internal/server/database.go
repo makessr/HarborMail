@@ -343,6 +343,15 @@ var mysqlSchema = []string{
 	) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin`,
 }
 
+func checkDataDir(dir string) error {
+	probe, err := os.CreateTemp(dir, ".harbor-write-check-*")
+	if err != nil {
+		return err
+	}
+	_, writeErr := probe.WriteString("ok\n")
+	return errors.Join(writeErr, probe.Close(), os.Remove(probe.Name()))
+}
+
 func openDB(driver, source string) (*sql.DB, error) {
 	var db *sql.DB
 	var schema []string
