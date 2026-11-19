@@ -285,7 +285,7 @@ func requireEmptyMigrationTarget(ctx context.Context, target *sql.Conn) error {
 		if err := rows.Scan(&name, &engine); err != nil {
 			return err
 		}
-		if (!slices.Contains(migrationTables, name) && name != "mailbox_revisions") || !strings.EqualFold(engine, "InnoDB") {
+		if (!slices.Contains(migrationTables, name) && name != "mailbox_revisions" && name != "login_rate_buckets") || !strings.EqualFold(engine, "InnoDB") {
 			return fmt.Errorf("target has an unexpected or non-transactional table: %s", name)
 		}
 		names = append(names, name)

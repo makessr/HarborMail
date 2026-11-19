@@ -1,11 +1,11 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"net"
 	"net/netip"
 	"strings"
-	"time"
 )
 
 func (a *app) authenticateProtocol(peer net.Addr, username, password string, protocol mailProtocol) (string, error) {
@@ -30,9 +30,9 @@ func (a *app) authenticateProtocol(peer net.Addr, username, password string, pro
 		}
 	}
 	login, _ := address(strings.ToLower(strings.TrimSpace(username)))
-	now := time.Now()
-	if source.IsValid() && (a.clientLogin.allow(now, source, "", false) > 0 ||
-		(login != "" && a.clientLogin.allow(now, source, login, true) > 0)) {
+	ctx := context.Background()
+	if source.IsValid() && (a.clientLogin.reserve(ctx, source, "", false) > 0 ||
+		(login != "" && a.clientLogin.reserve(ctx, source, login, true) > 0)) {
 		a.webLogin.recordProtocol(source, "", "blocked", name)
 		return "", errLoginBusy
 	}

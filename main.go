@@ -177,6 +177,11 @@ func main() {
 		log.Fatal(err)
 	}
 	defer a.db.Close()
+	if driver == "mysql" {
+		limiter := &mysqlLoginLimiter{db: a.db}
+		a.webLogin.shared, a.webLogin.scope = limiter, "web"
+		a.clientLogin.shared, a.clientLogin.scope = limiter, "protocol"
+	}
 	redisURL, err := fileSetting("HARBOR_REDIS_URL")
 	if err != nil {
 		log.Fatal(err)
@@ -321,8 +326,7 @@ func (a *app) cookie(w http.ResponseWriter, value string, age int) {
 
 func (a *app) login(w http.ResponseWriter, r *http.Request) {
 	source := loginSource(r, a.webLogin.proxies)
-	now := time.Now()
-	if retry := a.webLogin.allow(now, source, "", false); retry > 0 {
+	if retry := a.webLogin.reserve(r.Context(), source, "", false); retry > 0 {
 		a.rejectWebLoginRate(w, source, "", retry)
 		return
 	}
@@ -335,7 +339,7 @@ func (a *app) login(w http.ResponseWriter, r *http.Request) {
 	if len(email) > 254 {
 		email = ""
 	}
-	if retry := a.webLogin.allow(time.Now(), source, email, true); retry > 0 {
+	if retry := a.webLogin.reserve(r.Context(), source, email, true); retry > 0 {
 		a.rejectWebLoginRate(w, source, "", retry)
 		return
 	}

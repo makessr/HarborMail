@@ -192,11 +192,13 @@ MySQL 密码文件用于首次初始化。已有数据卷的密码在 MySQL 内�
 
 「运行监控」位于 `/admin/runtime`。Windows 与 Linux 显示 Harbor Mail 进程 CPU、常驻内存和 Go 堆对象内存，另有数据库连接池、探测耗时、队列等待及训练失败数。CPU 以一个逻辑核心满载为 100%，多核可超过 100%。运行监控页打开且可见时每十秒采样一次，最多保留本页最近 30 个样本，可暂停。MySQL 和 Rspamd 进程需单独监控，长期采集用 `HARBOR_METRICS` 与主机监控。[Windows 工作集](https://learn.microsoft.com/en-us/windows/win32/procthread/process-working-set) · [Linux 进程指标](https://www.kernel.org/doc/html/v6.16/filesystems/proc.html) · [Go 运行时指标](https://pkg.go.dev/runtime/metrics)
 
-「安全」位于 `/admin/security`，显示本实例 Web、SMTP 提交、IMAP 和 POP3 登录统计及最近 100 条记录。Web 登录与邮件客户端分别计数，三个邮件协议共享客户端计数。每五分钟同一来源最多 30 次，同一来源向同一账号最多 8 次。Web 超限返回 HTTP 429 和 `Retry-After`，邮件客户端收到临时认证失败。IPv6 按 /64 聚合，邮件协议使用 TCP 对端地址。计数和记录保存在进程内存，重启清空，多个实例各自执行。
+「安全」位于 `/admin/security`，显示本实例 Web、SMTP 提交、IMAP 和 POP3 登录统计及最近 100 条记录。Web 登录与邮件客户端分别计数，三个邮件协议共享客户端计数。每五分钟同一来源最多 30 次，同一来源向同一账号最多 8 次。Web 超限返回 HTTP 429 和 `Retry-After`，邮件客户端收到临时认证失败。IPv6 按 /64 聚合，邮件协议使用 TCP 对端地址。SQLite 部署使用进程内限速。共享 MySQL 的 Harbor Mail 实例共用限速窗口，数据库无法确认额度时暂缓认证。后台登录统计与近期记录按实例展示，重启清空。
 
 为管理员启用网页登录第二因素时，在受控终端运行 `harbormail generate-admin-mfa admin@example.com`。将生成的种子录入支持 TOTP 的认证器，把配置 JSON 存入权限受限的 `HARBOR_ADMIN_MFA_FILE`，并离线保存一次性恢复码。多个管理员的配置合并到同一个 JSON 对象。共享数据库的所有实例须使用相同配置，并同步重启。种子启用或轮换会使旧管理员网页会话失效。验证码和恢复码均在登录会话成功入库时一次性消耗。认证器遗失时可用恢复码登录，再由服务器运维轮换种子。配置和恢复码均是凭据，避免进入日志或仓库。[TOTP 标准](https://www.rfc-editor.org/rfc/rfc6238.html)
 
 默认使用直接连接的来源。Web 服务位于反向代理之后时，应让后端仅允许可信代理访问，把这些代理的实际来源 IP 写入 `HARBOR_TRUSTED_PROXIES`，并让代理覆盖或正确追加 `X-Forwarded-For`。共享代理或多个实例部署可同时在代理层实施统一限速。[可信代理选择规则](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/X-Forwarded-For#selecting_an_ip_address)
+
+升级共享 MySQL 的部署时，将所有实例更新至支持共享限速的版本。程序启动时会自动创建限速表。
 
 「域名」位于 `/admin/domains`，显示后台登记的域名，以及由已有主邮箱和别名汇总出的域名。管理员可以先登记域名，再检查 DNS、查看关联账号或直接创建邮箱。新增和移除须重新验证管理员主邮箱密码，域名登记与审计随 SQLite 或 MySQL 保存。后台只允许移除没有主邮箱和别名的登记。新增域名后，公网收发仍需按[接入真实域名](#接入真实域名)完成 DNS 和中继配置。
 

@@ -156,6 +156,12 @@ var sqliteSchema = []string{
 }
 
 var mysqlSchema = []string{
+	`CREATE TABLE IF NOT EXISTS login_rate_buckets (
+		bucket BINARY(32) NOT NULL PRIMARY KEY,
+		attempts INT NOT NULL,
+		expires BIGINT NOT NULL,
+		KEY login_rate_expiry (expires)
+	) ENGINE=InnoDB`,
 	`CREATE TABLE IF NOT EXISTS mailbox_revisions (
 		owner VARCHAR(254) CHARACTER SET ascii COLLATE ascii_bin NOT NULL PRIMARY KEY,
 		revision BIGINT NOT NULL

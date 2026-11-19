@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -41,6 +42,8 @@ type loginEvent struct {
 }
 
 type webLoginGuard struct {
+	shared    *mysqlLoginLimiter
+	scope     string
 	proxies   []netip.Prefix
 	mutex     sync.Mutex
 	buckets   map[loginBucketKey]loginBucket
@@ -49,6 +52,13 @@ type webLoginGuard struct {
 	next      int
 	size      int
 	totals    map[string]uint64
+}
+
+func (g *webLoginGuard) reserve(ctx context.Context, source netip.Prefix, email string, perAccount bool) time.Duration {
+	if g.shared != nil {
+		return g.shared.reserve(ctx, g.scope, loginBucketKey{source: source, login: email, perAccount: perAccount})
+	}
+	return g.allow(time.Now(), source, email, perAccount)
 }
 
 func parseTrustedProxies(value string) ([]netip.Prefix, error) {
@@ -189,5 +199,6 @@ func (a *app) adminSecurity(w http.ResponseWriter, _ *http.Request, actor string
 	reply(w, http.StatusOK, map[string]any{
 		"email": actor, "events": events, "totals": totals, "windowSeconds": int(loginWindow.Seconds()),
 		"sourceLimit": loginSourceLimit, "pairLimit": loginPairLimit, "trustedProxies": len(g.proxies),
+		"sharedLimit": g.shared != nil,
 	})
 }

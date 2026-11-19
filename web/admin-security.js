@@ -52,7 +52,7 @@ function setupAdminSecurity() {
         ["同一来源", "每窗口 " + data.sourceLimit + " 次"],
         ["同一来源与账号", "每窗口 " + data.pairLimit + " 次"],
         ["可信代理地址或网段", data.trustedProxies ? data.trustedProxies + " 项" : "未配置，使用连接来源"],
-        ["适用范围", "本实例分开计算 Web 与邮件客户端的登录次数"]
+        ["适用范围", data.sharedLimit ? "共享 MySQL 的实例共用限速，Web 与邮件客户端分别计数" : "本实例分开计算 Web 与邮件客户端的登录次数"]
       ]);
       events = data.events;
       render();
