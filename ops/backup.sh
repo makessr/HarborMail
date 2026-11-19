@@ -59,12 +59,31 @@ verify_sqlite() {
 }
 
 verify_mysql_dump() {
-  local dump=$1
+  local dump=$1 table available
+  # Required tables from the first public schema. Keep the list compatible
+  # with existing complete snapshots as newer releases add tables.
+  local -a required=(
+    account_access account_password_overrides admin_account_actions admin_alias_actions
+    admin_delivery_resolutions admin_delivery_retries admin_mfa_used app_passwords
+    contacts custom_folders draft_creation_keys imap_deleted imap_uid_state imap_uids
+    letters mail_label_links mail_labels mail_rules mail_snoozes mail_templates mail_threads
+    mailbox_preferences mailbox_quota mailbox_quota_meta mailbox_retirements mailbox_revisions
+    mailbox_send_delay mailbox_storage_alerts managed_accounts managed_aliases managed_domains
+    outbox outbox_recipient_progress outbox_schedule saved_searches sessions signature_settings
+    spam_feedback web_drafts web_letter_recipients web_outbox_envelopes web_session_details
+  )
+  local -a missing=()
   [[ -s $dump ]] || fail 'MySQL dump is empty'
   # mysqldump can exit successfully while omitting tables invisible to its account.
-  grep -Eq '^CREATE TABLE (IF NOT EXISTS )?`letters`[[:space:]]*\(' "$dump" &&
-    grep -Eq '^CREATE TABLE (IF NOT EXISTS )?`outbox`[[:space:]]*\(' "$dump" ||
-    fail 'MySQL dump is missing the letters or outbox table; check the source database and backup grants'
+  available=$(sed -nE 's/^CREATE TABLE (IF NOT EXISTS )?`([a-z_]+)`[[:space:]]*\(.*/\2/p' "$dump")
+  for table in "${required[@]}"; do
+    if ! grep -Fxq -- "$table" <<< "$available"; then
+      missing+=("$table")
+    fi
+  done
+  if (( ${#missing[@]} > 0 )); then
+    fail "MySQL dump is missing required Harbor Mail tables: ${missing[*]}. Check the source database and backup grants."
+  fi
 }
 
 read_back() (
