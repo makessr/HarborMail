@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -88,37 +90,60 @@ func testRecoverRecipientDelivery(t *testing.T, driver, source string) {
 		t.Fatalf("expected one notice for the fully classified job: %d (%v)", notices, err)
 	}
 
-	// Older workers requeued recovered jobs even with no addresses left to try.
-	stuck, err := a.enqueue(m, []byte("Subject: older recovered job\r\n\r\nSynthetic body"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	tx, err := db.Begin()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer tx.Rollback()
-	envelope := webEnvelope{Targets: []webTarget{{Address: "one@example.test"}, {Address: "two@example.test"}}}
-	if err := saveWebEnvelope(t.Context(), tx, stuck, envelope); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tx.Exec(`INSERT INTO outbox_recipient_progress(outbox_id,sender,recipient,state,attempts,due,smtp_code)
-		VALUES(?,?,'one@example.test','uncertain',1,0,0),(?,?,'two@example.test','accepted',1,0,250)`,
-		stuck, sender, stuck, sender); err != nil {
-		t.Fatal(err)
-	}
-	if err := tx.Commit(); err != nil {
-		t.Fatal(err)
-	}
-	job, err := a.claimOutbox()
-	if err != nil || job == nil || job.message.ID != stuck {
-		t.Fatalf("could not claim an older recovered job with no remaining deliveries: %v", err)
-	}
-	if err := a.processOutbox(job, nil); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.QueryRow(`SELECT state FROM outbox WHERE id=?`, stuck).Scan(&state); err != nil || state != "uncertain" {
-		t.Fatalf("older recovered job: state=%s (%v)", state, err)
+	for _, tc := range []struct {
+		recipientState string
+		jobState       string
+		want           string
+	}{
+		{"uncertain", "queued", "uncertain"}, // Older workers requeued recovered jobs.
+		{"accepted", "preparing", "sent"},
+		{"failed", "preparing", "failed"},
+	} {
+		t.Run(tc.want, func(t *testing.T) {
+			m := letter{From: sender, To: "one@example.test", Subject: "interrupted-" + tc.want, Date: time.Now().Unix()}
+			stuck, err := a.enqueue(m, []byte("Subject: "+m.Subject+"\r\n\r\nSynthetic body"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			tx, err := db.Begin()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer tx.Rollback()
+			envelope := webEnvelope{Targets: []webTarget{{Address: "one@example.test"}, {Address: "two@example.test"}}}
+			if err := saveWebEnvelope(t.Context(), tx, stuck, envelope); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := tx.Exec(`UPDATE outbox SET state=?,lease=0 WHERE id=?`, tc.jobState, stuck); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := tx.Exec(`INSERT INTO outbox_recipient_progress(outbox_id,sender,recipient,state,attempts,due,smtp_code)
+				VALUES(?,?,'one@example.test',?,1,0,0),(?,?,'two@example.test','accepted',1,0,250)`,
+				stuck, sender, tc.recipientState, stuck, sender); err != nil {
+				t.Fatal(err)
+			}
+			if err := tx.Commit(); err != nil {
+				t.Fatal(err)
+			}
+			job, err := a.claimOutbox()
+			if err != nil || job == nil || job.message.ID != stuck {
+				t.Fatalf("no claim for task %d with results recorded: %+v (%v)", stuck, job, err)
+			}
+			if err := a.processOutbox(job, nil); err != nil {
+				t.Fatal(err)
+			}
+			err = db.QueryRow(`SELECT state FROM outbox WHERE id=?`, stuck).Scan(&state)
+			if tc.want == "sent" {
+				var archived int
+				archiveErr := db.QueryRow(`SELECT COUNT(*) FROM letters WHERE owner=? AND folder='sent' AND subject=?`,
+					sender, m.Subject).Scan(&archived)
+				if !errors.Is(err, sql.ErrNoRows) || archiveErr != nil || archived != 1 {
+					t.Fatalf("sent task: queue error=%v, archived=%d (%v)", err, archived, archiveErr)
+				}
+			} else if err != nil || state != tc.want {
+				t.Fatalf("task state=%s, want %s (%v)", state, tc.want, err)
+			}
+		})
 	}
 }
 

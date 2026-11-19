@@ -127,10 +127,10 @@ func (a *app) claimOutbox() (*outboxJob, error) {
 	if a.relay.Address == "" {
 		query += ` AND (EXISTS (SELECT 1 FROM outbox_schedule s WHERE s.outbox_id=outbox.id AND s.local_owner<>'')
 			OR EXISTS (SELECT 1 FROM web_outbox_envelopes e WHERE e.outbox_id=outbox.id AND e.has_external=FALSE)
-			OR (EXISTS (SELECT 1 FROM outbox_recipient_progress p WHERE p.outbox_id=outbox.id AND p.state='uncertain')
+			OR (EXISTS (SELECT 1 FROM outbox_recipient_progress p WHERE p.outbox_id=outbox.id AND p.state IN ('accepted','failed','uncertain'))
 				AND NOT EXISTS (SELECT 1 FROM outbox_recipient_progress p WHERE p.outbox_id=outbox.id AND p.state IN ('queued','sending')))
 			OR (stamp<=? AND NOT EXISTS (SELECT 1 FROM outbox_schedule s WHERE s.outbox_id=outbox.id AND s.send_at>?))`
-		// A sender without a relay may still have deliveries to close.
+		// A sender without a relay may still have completed or expired deliveries to close.
 		expiredBefore := now.Add(-outboxMaxAge).Unix()
 		args = append(args, expiredBefore, expiredBefore)
 		for domain := range a.domainRelays {
