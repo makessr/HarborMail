@@ -57,6 +57,15 @@ verify_sqlite() {
     fail 'The snapshot does not contain the Harbor Mail tables'
 }
 
+verify_mysql_dump() {
+  local dump=$1
+  [[ -s $dump ]] || fail 'MySQL dump is empty'
+  # mysqldump can exit successfully while omitting tables invisible to its account.
+  grep -Eq '^CREATE TABLE (IF NOT EXISTS )?`letters`[[:space:]]*\(' "$dump" &&
+    grep -Eq '^CREATE TABLE (IF NOT EXISTS )?`outbox`[[:space:]]*\(' "$dump" ||
+    fail 'MySQL dump is missing the letters or outbox table; check the source database and backup grants'
+}
+
 read_back() {
   local snapshot=$1 destination=$2
   restic restore "$snapshot" --target "$destination" --verify >&2
@@ -72,6 +81,7 @@ if [[ $mode == verify ]]; then
   if [[ -f $scratch/restored/harbor.db ]]; then
     verify_sqlite "$scratch/restored/harbor.db"
   elif [[ -f $scratch/restored/harbor.sql ]]; then
+    verify_mysql_dump "$scratch/restored/harbor.sql"
     : "${HARBOR_BACKUP_VERIFY_CNF:?Set the separate, isolated verification server client config}"
     : "${HARBOR_BACKUP_VERIFY_DB:?Set an empty isolated verification database}"
     [[ $HARBOR_BACKUP_VERIFY_DB =~ ^harbor_verify_[a-zA-Z0-9_]{1,40}$ ]] || fail 'Use a dedicated harbor_verify_ database'
@@ -111,7 +121,7 @@ case "${HARBOR_BACKUP_DRIVER:-}" in
     command -v mysqldump >/dev/null || fail 'mysqldump is required'
     mysqldump "--defaults-extra-file=$HARBOR_BACKUP_MYSQL_CNF" --single-transaction --quick --no-tablespaces --skip-triggers \
       --set-gtid-purged=OFF --hex-blob --max-allowed-packet=64M "$HARBOR_BACKUP_MYSQL_DB" > "$scratch/export/harbor.sql"
-    [[ -s $scratch/export/harbor.sql ]] || fail 'MySQL dump is empty'
+    verify_mysql_dump "$scratch/export/harbor.sql"
     artifact=harbor.sql
     ;;
   *) fail 'Set HARBOR_BACKUP_DRIVER to sqlite or mysql' ;;
@@ -131,7 +141,7 @@ if [[ -n ${HARBOR_BACKUP_METRIC_DIR:-} ]]; then
   marker_tmp=$(mktemp -- "$HARBOR_BACKUP_METRIC_DIR/.harbor-backup.XXXXXXXX")
   printf 'harbor_backup_last_success_timestamp_seconds %s\n' "$(date +%s)" > "$marker_tmp"
   chmod 0644 -- "$marker_tmp"
-  mv -f -- "$marker_tmp" "$HARBOR_BACKUP_METRIC_DIR/harbor-backup.prom"
+  mv -fT -- "$marker_tmp" "$HARBOR_BACKUP_METRIC_DIR/harbor-backup.prom"
   marker_tmp=
 fi
 printf 'Created and read back Harbor Mail snapshot %s\n' "$snapshot"

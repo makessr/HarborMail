@@ -93,7 +93,7 @@ Linux 主机可用 `bash ops/backup.sh backup` 生成数据库快照、上传到
 
 按实际安装路径调整 `ops/harbor-backup.service` 和 `ops/harbor-backup.timer`。这两个模板只调度备份。在单独的维护任务中先运行 `bash ops/backup.sh plan` 查看保留计划，再使用具备仓库删除权限的凭据运行 `bash ops/backup.sh prune` 执行 14 个日备和 4 个周备保留策略。
 
-用 `bash ops/backup.sh verify SNAPSHOT_ID` 验证指定快照。SQLite 会校验数据库完整性。MySQL 需要在隔离服务器预建空的 `harbor_verify_*` 数据库，设置 `HARBOR_BACKUP_VERIFY_DB` 和 `HARBOR_BACKUP_VERIFY_CNF`，验证账户只应有该库权限。脚本导入后读取邮件和队列计数，保留验证库供复查。自动转储不带 MySQL 触发器，Harbor 首次从恢复库启动时会按已启用的配额设置重建触发器和用量，避免恢复时依赖原服务器的触发器属主。自建触发器、部署配置及配套密钥按下文独立备份。[Restic 相对路径](https://restic.readthedocs.io/en/stable/040_backup.html#absolute-and-relative-paths) · [Restic 保留策略](https://restic.readthedocs.io/en/stable/060_forget.html)
+用 `bash ops/backup.sh verify SNAPSHOT_ID` 验证指定快照。SQLite 会校验数据库完整性。MySQL 转储在上传和验证导入前会检查 `letters` 与 `outbox` 的建表语句。验证导入需在隔离服务器预建空的 `harbor_verify_*` 数据库，设置 `HARBOR_BACKUP_VERIFY_DB` 和 `HARBOR_BACKUP_VERIFY_CNF`，验证账户只应有该库权限。脚本导入后读取邮件和队列计数，保留验证库供复查。自动转储会跳过 MySQL 触发器，Harbor 首次从恢复库启动时会按已启用的配额设置重建触发器和用量，避免恢复时依赖原服务器的触发器属主。自建触发器、部署配置及配套密钥按下文独立备份。 [Restic 相对路径](https://restic.readthedocs.io/en/stable/040_backup.html#absolute-and-relative-paths) · [Restic 保留策略](https://restic.readthedocs.io/en/stable/060_forget.html)
 
 起始目标为每日一次，保留 14 个日备和 4 个周备，异地保存加密副本。此频率的恢复点目标为 24 小时，以演练量出的恢复耗时确定恢复时间目标。要求更小的丢失窗口时，增加备份频率或使用 MySQL 的 binlog 时间点恢复方案。
 
@@ -122,7 +122,7 @@ password=填入备份账号密码
 protocol=socket
 ```
 
-以 MySQL 8.4 客户端转储。运行时暂停结构迁移。使用 `--hex-blob` 保留邮件原始数据。将下列文件参数和命令同样配置给每日调度任务。[MySQL 转储选项](https://dev.mysql.com/doc/refman/8.4/en/mysqldump.html)
+下面是使用 Compose 在 MySQL 容器内手动转储的示例。自动备份服务会在运行 `backup.sh` 的环境里直接调用 MySQL 客户端，因此其 `HARBOR_BACKUP_MYSQL_CNF` 必须指向该环境可读取的客户端配置，库地址或 socket 也须从该环境可达。转储期间暂停结构迁移，使用 `--hex-blob` 保留邮件原始数据。 [MySQL 转储选项](https://dev.mysql.com/doc/refman/8.4/en/mysqldump.html)
 
 ```sh
 umask 077
@@ -133,12 +133,12 @@ docker compose -f compose.yaml -f compose.mysql.yaml -f compose.ops.yaml -f comp
 
 ### 成功标记与配套数据
 
-数据库快照和异地副本确认可读后，使用 `sha256sum` 校验回读样本。把成功时间写到 node_exporter 目录下临时文件，原子改名为 `harbor-backup.prom`。该目录应允许备份账户写、node_exporter 读，和其他用途隔离。[node_exporter textfile collector](https://github.com/prometheus/node_exporter#textfile-collector)
+数据库快照和异地副本确认可读后，使用 `sha256sum` 校验回读样本。把成功时间写到 node_exporter 目录下临时文件，原子改名为 `harbor-backup.prom`。如果同名路径是目录，发布标记会报错，让调度器记录失败。指标目录应允许备份账户写、node_exporter 读，和其他用途隔离。 [node_exporter textfile collector](https://github.com/prometheus/node_exporter#textfile-collector)
 
 ```sh
 printf 'harbor_backup_last_success_timestamp_seconds %s\n' "$(date +%s)" > /var/lib/node_exporter/textfile/harbor-backup.tmp
 chmod 0644 /var/lib/node_exporter/textfile/harbor-backup.tmp
-mv /var/lib/node_exporter/textfile/harbor-backup.tmp /var/lib/node_exporter/textfile/harbor-backup.prom
+mv -T -- /var/lib/node_exporter/textfile/harbor-backup.tmp /var/lib/node_exporter/textfile/harbor-backup.prom
 ```
 
 另外加密备份部署环境、账号与别名配置、应用及中继凭据、TLS PEM 或 ACME 缓存、代理配置。ACME 缓存内含私钥，须限制访问。Rspamd 训练数据按其后端的备份流程处理，数据库中的反馈状态无法替代已训练的数据。不要在异地副本报告或监控标签里写凭据。
