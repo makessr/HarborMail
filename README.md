@@ -2,7 +2,7 @@
 
 <img src="web/harbor-mail-logo.png" alt="" width="72" height="72">
 
-Harbor Mail 是用 Go 编写的自建域名邮箱，提供中文 Web 邮箱、管理后台和标准邮件协议。前端资源内嵌在程序中，部署时用一个可执行文件或 Docker Compose 即可启动。
+Harbor Mail 是面向 Linux 部署的自建域名邮箱，提供中文 Web 邮箱、管理后台和标准邮件协议。Go 程序内嵌前端资源，支持单二进制或 Docker Compose 部署。
 
 ## 功能
 
@@ -14,21 +14,23 @@ Harbor Mail 是用 Go 编写的自建域名邮箱，提供中文 Web 邮箱、�
 | 管理后台 | 多域名、域管理员、邮箱与别名管理、容量配额、投递队列、运行监控、审计和管理员 MFA |
 | 数据与部署 | SQLite、MySQL、可选 Redis 后台缓存、数据库迁移、备份与恢复工具 |
 
-## Docker 快速启动
+## Linux 单二进制启动
 
-需要 Docker Engine、BuildKit 和 Docker Compose。命令示例使用 PowerShell 7，Linux 凭据初始化见[生产运行手册](ops/README.md#首次启动与上线验收)。
+在有 Go 1.27.4 或更新版本的构建机上执行：
 
-```powershell
+```bash
 git clone https://github.com/makessr/HarborMail.git
-Set-Location HarborMail
-docker compose -f compose.yaml build harbor
-if ($LASTEXITCODE -ne 0) { throw 'Harbor Mail 镜像构建失败' }
-$null = New-Item -ItemType Directory -Force secrets
-$hash = Read-Host '输入邮箱密码（12–72 字节）' -MaskInput |
-  docker run --rm -i harbormail:local hash-password
-if ($LASTEXITCODE -ne 0) { throw '密码哈希生成失败' }
-@{ 'hello@harbor.test' = $hash } | ConvertTo-Json -Compress |
-  Set-Content -Encoding utf8NoBOM -NoNewline ./secrets/accounts.json
+cd HarborMail
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o harbormail .
+```
+
+ARM64 服务器把 `GOARCH=amd64` 改为 `GOARCH=arm64`。将生成的 `harbormail` 复制到 Linux 服务器，按[原生启动说明](docs/deployment-and-usage.md#linux-单二进制)创建首个账号，然后运行 `./harbormail`。默认使用 SQLite，运行服务器只需要二进制、账号配置和可写的数据目录。Go 仅用于构建。
+
+## Linux Docker Compose
+
+在 Linux 主机的项目目录按[部署指南](docs/deployment-and-usage.md#创建首个邮箱)创建账号文件，再启动：
+
+```bash
 docker compose -f compose.yaml up -d --wait
 ```
 
@@ -47,16 +49,9 @@ docker compose -f compose.yaml -f compose.mysql.yaml ps
 
 该配置同时启动 MySQL 8.4 与 Redis。Redis 用于后台统计缓存，服务不可用时回源 MySQL。网页邮箱支持共享 MySQL 的多实例同步。
 
-## 从源码构建
+## 开发与测试
 
-需要 Go 1.27.4 或更新版本。
-
-```sh
-go build -o harbormail .
-go test ./...
-```
-
-Windows 构建时可使用 `go build -o harbormail.exe .`。[配置账号并运行](docs/deployment-and-usage.md#本地启动)
+在源码目录运行 `go test ./...`。Windows 可用于本地开发和构建 Linux 目标，详见 [Windows 开发说明](docs/deployment-and-usage.md#windows-开发)。
 
 ## 文档与验收
 

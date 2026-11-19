@@ -8,7 +8,29 @@ Web 邮箱提供登录、搜索、阅读、回复、转发、星标、归档、�
 
 ## 本地启动
 
-需要 Go 1.27.4 或更新版本。以下命令适用于 PowerShell 7，从项目目录运行。
+### Linux 单二进制
+
+按[项目首页](../README.md#linux-单二进制启动)构建目标架构的 `harbormail`，将其放在 Linux 服务账号可运行的目录。以下 Bash 示例用于首次生成账号配置，已有配置可直接复用。
+
+```bash
+(
+  set -e
+  umask 077
+  mkdir -p secrets
+  read -rsp '输入邮箱密码（12–72 字节）: ' mailbox_password
+  printf '\n'
+  hash=$(printf '%s\n' "$mailbox_password" | ./harbormail hash-password)
+  unset mailbox_password
+  printf '{"hello@harbor.test":"%s"}\n' "$hash" > secrets/accounts.json
+)
+HARBOR_ACCOUNTS_FILE="$PWD/secrets/accounts.json" ./harbormail
+```
+
+默认监听 `127.0.0.1:8080`（Web）和 `127.0.0.1:2525`（SMTP），SQLite 会在工作目录下创建 `data/harbor.db`。可以用 `HARBOR_DB` 指定持久数据路径，以服务账号运行并保证其可写。使用 MySQL 时按[数据库配置](#使用-mysql)设置环境变量。远程部署时按[接入真实域名](#接入真实域名)配置 Web 反向代理和 SMTP。
+
+### Windows 开发
+
+Windows 用于本地开发。需要 Go 1.27.4 或更新版本。以下命令从项目目录在 PowerShell 7 中运行。
 
 ```powershell
 go build -o harbormail.exe .
@@ -20,38 +42,53 @@ $env:HARBOR_ACCOUNTS = @{ 'hello@harbor.test' = $accountHash } | ConvertTo-Json 
 
 打开 [本地 Web 邮箱](http://127.0.0.1:8080)，使用 `hello@harbor.test` 和刚设置的密码登录。给自己发一封邮件，然后切换到收件箱，即可验证基本收发。已有旧安装的 PowerShell 用户可以通过 `pwsh` 启动 PowerShell 7。
 
-Linux/macOS 下用 `go build -o harbormail .` 构建。把密码通过标准输入传给 `./harbormail hash-password`，将生成的哈希填入 `HARBOR_ACCOUNTS` 后运行 `./harbormail`。账号地址使用小写，账号列表随服务启动读取。删除账号或替换其密码哈希后，旧登录会话失效。
+账号地址使用小写，账号列表随服务启动读取。删除账号或替换其密码哈希后，旧登录会话失效。
 
 ## Docker Compose 部署
 
-使用支持 Linux 容器和 BuildKit 的 Docker Engine 与 Compose。从项目目录运行。Windows 可使用 Docker Desktop 的 WSL 2 后端，在 PowerShell 7 中用 `docker version` 确认有 Server 输出，再用 `docker compose version` 确认 Compose 可用。Linux 生产主机的凭据权限、挂载、监控和备份见[生产运行手册](../ops/README.md)。
+在 Linux 服务器上使用 Docker Engine、BuildKit 与 Compose。从项目目录运行。生产主机的凭据权限、挂载、监控和备份见[生产运行手册](../ops/README.md)。Windows 本机容器开发可使用 Docker Desktop 的 WSL 2 后端。
 
 ### 创建首个邮箱
 
-下面是在新部署中创建账号文件的 PowerShell 7 示例。已有部署使用原有账号文件。若构建主机需要 Go 模块镜像，可通过 `HARBOR_GO_PROXY` 和 `HARBOR_GO_SUMDB` 设置代理与校验服务。
+Linux 新部署可用下面的 Bash 示例创建账号文件。已有部署使用原有文件。若构建主机需要 Go 模块镜像，可通过 `HARBOR_GO_PROXY` 和 `HARBOR_GO_SUMDB` 设置代理与校验服务。
 
-```powershell
-docker compose build harbor
-if ($LASTEXITCODE -ne 0) { throw 'Harbor Mail 镜像构建失败' }
-$null = New-Item -ItemType Directory -Force secrets
-$accountHash = Read-Host '输入邮箱密码（12–72 字节）' -MaskInput | docker run --rm -i harbormail:local hash-password
-if ($LASTEXITCODE -ne 0) { throw '密码哈希生成失败' }
-@{ 'hello@harbor.test' = $accountHash } | ConvertTo-Json -Compress | Set-Content -Encoding utf8NoBOM ./secrets/accounts.json
+```bash
+(
+  set -e
+  umask 077
+  docker compose -f compose.yaml build harbor
+  mkdir -p secrets
+  read -rsp '输入邮箱密码（12–72 字节）: ' mailbox_password
+  printf '\n'
+  hash=$(printf '%s\n' "$mailbox_password" | docker run --rm -i harbormail:local hash-password)
+  unset mailbox_password
+  printf '{"hello@harbor.test":"%s"}\n' "$hash" > secrets/accounts.json
+)
+sudo chgrp 10001 secrets/accounts.json
+sudo chmod 0640 secrets/accounts.json
 ```
 
 如需查看管理后台，把 `HARBOR_ADMINS=hello@harbor.test` 加到项目目录的 `.env`。管理员地址须是账号文件里的主邮箱。若本机已有服务占用默认端口，可在 `.env` 设置 `HARBOR_WEB_PORT=18080` 和 `HARBOR_SMTP_PORT=12525`，并在下面的验收步骤使用对应端口。
 
 ### 启动 MySQL 与 Redis
 
-首次部署时，在已创建的 `secrets` 目录生成 MySQL 凭据。示例密码使用十六进制字符，可直接写入 DSN。PowerShell 的 `-NoNewline` 避免 MySQL 初始化时把 Windows 行尾的回车算进密码。
+首次部署时，在已创建的 `secrets` 目录生成 MySQL 凭据。下面的 Bash 示例需要 OpenSSL。密码使用十六进制字符，可直接写入 DSN。
 
-```powershell
-$mysqlPassword = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(24))
-$mysqlRootPassword = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(24))
-$mysqlPassword | Set-Content -Encoding utf8NoBOM -NoNewline ./secrets/mysql-password
-$mysqlRootPassword | Set-Content -Encoding utf8NoBOM -NoNewline ./secrets/mysql-root-password
-"harbor:${mysqlPassword}@tcp(mysql:3306)/harbor_mail" | Set-Content -Encoding utf8NoBOM -NoNewline ./secrets/mysql-dsn
+```bash
+(
+  set -e
+  umask 077
+  mysql_password=$(openssl rand -hex 24)
+  mysql_root_password=$(openssl rand -hex 24)
+  printf '%s' "$mysql_password" > secrets/mysql-password
+  printf '%s' "$mysql_root_password" > secrets/mysql-root-password
+  printf 'harbor:%s@tcp(mysql:3306)/harbor_mail' "$mysql_password" > secrets/mysql-dsn
+)
+sudo chgrp 10001 secrets/mysql-dsn
+sudo chmod 0640 secrets/mysql-dsn
 ```
+
+用 PowerShell 准备开发环境凭据时，三个文件都使用 `Set-Content -Encoding utf8NoBOM -NoNewline`，避免 MySQL 将 Windows 行尾的回车算进密码。
 
 ```text
 docker compose -f compose.yaml -f compose.mysql.yaml config --quiet
