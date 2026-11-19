@@ -21,7 +21,7 @@ Harbor Mail 是面向 Linux 部署的自建域名邮箱，提供中文 Web 邮�
 ```bash
 git clone https://github.com/makessr/HarborMail.git
 cd HarborMail
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o harbormail .
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o harbormail ./cmd/harbormail
 ```
 
 ARM64 服务器把 `GOARCH=amd64` 改为 `GOARCH=arm64`。将生成的 `harbormail` 复制到 Linux 服务器，按[原生启动说明](docs/deployment-and-usage.md#linux-单二进制)创建首个账号，然后运行 `./harbormail`。默认使用 SQLite，运行服务器只需要二进制、账号配置和可写的数据目录。Go 仅用于构建。
@@ -42,6 +42,17 @@ Harbor Mail 镜像为 `ghcr.io/makessr/harbormail:latest`。[镜像包页面](ht
 ## 开发与测试
 
 在源码目录运行 `go test ./...`。Windows 可用于本地开发和构建 Linux 目标，详见 [Windows 开发说明](docs/deployment-and-usage.md#windows-开发)。
+
+| 目录 | 内容 |
+| --- | --- |
+| `cmd/harbormail/` | 单二进制入口 |
+| `internal/server/` | Web API、邮件协议、邮箱业务、数据存储及相应的 Go 测试 |
+| `internal/processstats/` | Linux、Windows 的进程资源指标 |
+| `web/` | 邮箱界面及浏览器静态资源 |
+| `ops/` | 备份、监控和其他运维配置 |
+| `docs/` | 部署指南及文档资源 |
+
+`compose*.yaml` 和 `Dockerfile` 位于仓库根目录。
 
 ## 文档与验收
 

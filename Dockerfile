@@ -7,12 +7,12 @@ ARG HARBOR_GO_SUMDB=sum.golang.org
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN GOPROXY="$HARBOR_GO_PROXY" GOSUMDB="$HARBOR_GO_SUMDB" go mod download
-COPY *.go ./
-COPY admin.html ./
+COPY cmd/ cmd/
+COPY internal/ internal/
 COPY web/ web/
 RUN CGO_ENABLED=0 GOOS="$TARGETOS" GOARCH="$TARGETARCH" \
     GOPROXY="$HARBOR_GO_PROXY" GOSUMDB="$HARBOR_GO_SUMDB" \
-    go build -trimpath -ldflags="-s -w" -o /out/harbormail .
+    go build -trimpath -ldflags="-s -w" -o /out/harbormail ./cmd/harbormail
 
 FROM alpine:3.23
 RUN apk add --no-cache ca-certificates \

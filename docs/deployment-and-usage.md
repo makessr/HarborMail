@@ -33,7 +33,7 @@ HARBOR_ACCOUNTS_FILE="$PWD/secrets/accounts.json" ./harbormail
 Windows 用于本地开发。需要 Go 1.27.4 或更新版本。以下命令从项目目录在 PowerShell 7 中运行。
 
 ```powershell
-go build -o harbormail.exe .
+go build -o harbormail.exe ./cmd/harbormail
 $accountHash = Read-Host '输入用于本地邮箱的密码（12–72 字节）' -MaskInput | .\harbormail.exe hash-password
 if ($LASTEXITCODE -ne 0) { throw '密码哈希生成失败' }
 $env:HARBOR_ACCOUNTS = @{ 'hello@harbor.test' = $accountHash } | ConvertTo-Json -Compress
@@ -144,6 +144,7 @@ MySQL 密码文件用于首次初始化。已有数据卷的密码在 MySQL 内�
 | `HARBOR_DOMAIN` | SMTP 服务名，默认 `harbor.test`，公开部署时设为邮件主机的 FQDN |
 | `HARBOR_WEB` | 网页监听地址，默认 `127.0.0.1:8080` |
 | `HARBOR_SMTP` | 收信监听地址，默认 `127.0.0.1:2525` |
+| `HARBOR_RECOVERY_MODE` | 默认 `false`。设为 `true` 后仅开放 Web 校验，停止邮件协议与后台投递。见[恢复演练](../ops/README.md#恢复与校验) |
 | `HARBOR_SUBMISSION` | 客户端发信监听地址，使用 STARTTLS，通常为 `:587`。默认关闭 |
 | `HARBOR_SUBMISSIONS` | 客户端发信监听地址，使用隐式 TLS，通常为 `:465`。默认关闭 |
 | `HARBOR_POP3S` | 客户端收信监听地址，使用隐式 TLS，通常为 `:995`。默认关闭 |
@@ -186,7 +187,7 @@ MySQL 密码文件用于首次初始化。已有数据卷的密码在 MySQL 内�
 
 管理员登录后进入 `/admin`，可查看邮箱账号、角色、别名、服务配置和投递队列统计。选择「我的邮箱」可回到个人邮箱。普通用户登录后进入个人邮箱，后台页面和管理 API 均由服务端验证角色。账号、别名及管理员角色通过服务器配置文件或环境变量维护。
 
-请在服务启动后，从浏览器访问实际 Web 地址的 `/admin`。本机默认是 `http://127.0.0.1:8080/admin`。源码中的 `admin.html` 是嵌入式页面模板，必须通过 Harbor Mail 服务访问。
+请在服务启动后，从浏览器访问实际 Web 地址的 `/admin`。本机默认是 `http://127.0.0.1:8080/admin`。源码中的 `internal/server/admin.html` 是嵌入式页面模板，必须通过 Harbor Mail 服务访问。
 
 概览显示当前队列分布、最久到期等待、最近队列任务和近 7 天管理操作。管理操作按 UTC 自然日汇总。可按队列状态或任务编号下钻，管理操作明细在审计页。
 

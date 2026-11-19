@@ -23,7 +23,7 @@ const state = {
   folder: "inbox", label: 0, savedSearch: null, current: null, next: 0, pages: 0, loading: false, query: "",
   request: 0, reading: 0, folderRequest: 0, htmlMode: false,
   filterValues: {}, batchMode: false, batchPending: false, batchRevision: 0, selected: new Set(),
-  conversationRequest: 0,
+  conversationRequest: 0, recoveryMode: false,
 };
 const folders = {
   inbox: "收件箱", snoozed: "稍后处理", all: "全部邮件", starred: "星标", drafts: "草稿箱", outbox: "发件箱", sent: "已发送", archive: "归档",
@@ -122,7 +122,9 @@ function showLogin() {
   byId("login").hidden = false;
 }
 
-async function openSession({ email, role }, keepMailbox = false) {
+async function openSession({ email, role, recoveryMode = false }, keepMailbox = false) {
+  state.recoveryMode = recoveryMode;
+  byId("mail-recovery-mode").hidden = !recoveryMode;
   const url = new URL(location.href);
   const adminDenied = url.searchParams.get("notice") === "admin-forbidden";
   if (adminDenied) {
@@ -662,7 +664,7 @@ async function openLetter(id, focusSubject = false) {
     refreshOutboxUndoExpiry();
     if (focusSubject) byId("subject").focus();
     void loadConversation(item, true);
-    if (activeMailboxPreferences.readMode === "auto" && !item.read && !item.delivery && item.folder !== "drafts") {
+    if (!state.recoveryMode && activeMailboxPreferences.readMode === "auto" && !item.read && !item.delivery && item.folder !== "drafts") {
       await api("letters/" + id, "PATCH", { read: true });
       if (request === state.reading && state.current?.id === id) {
         renderLetter({ ...state.current, read: true });
