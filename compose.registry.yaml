@@ -1,0 +1,4 @@
+services:
+  harbor:
+    image: ghcr.io/makessr/harbormail:latest
+    build: !reset null
