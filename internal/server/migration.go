@@ -94,6 +94,14 @@ func runSQLiteMigration(args []string, output io.Writer) error {
 	if inFlight != 0 {
 		return errors.New("source has in-flight delivery tasks; stop the service and reconcile those tasks before migration")
 	}
+	if slices.ContainsFunc(tables, func(table migrationTable) bool { return table.name == "outbox_recipient_progress" }) {
+		if err := read.QueryRowContext(ctx, `SELECT COUNT(*) FROM outbox_recipient_progress WHERE state='sending'`).Scan(&inFlight); err != nil {
+			return fmt.Errorf("read source recipient progress: %w", err)
+		}
+		if inFlight != 0 {
+			return errors.New("source has in-flight recipient confirmations; reconcile them before migration")
+		}
+	}
 	dsn, err := fileSetting("HARBOR_MIGRATION_MYSQL_DSN")
 	if err != nil {
 		return err
@@ -128,7 +136,7 @@ func runSQLiteMigration(args []string, output io.Writer) error {
 	if err := connection.QueryRowContext(ctx, `SELECT GET_LOCK(CONCAT('harbor-migrate-',LEFT(SHA2(DATABASE(),256),40)),0)`).Scan(&locked); err != nil || locked.Int64 != 1 {
 		return errors.New("could not obtain the MySQL migration lock")
 	}
-	if err := requireEmptyMigrationTarget(ctx, connection); err != nil {
+	if err := requireEmptyMigrationTarget(ctx, connection, tables); err != nil {
 		return err
 	}
 	if !*apply {
@@ -273,7 +281,7 @@ func readMigrationTables(ctx context.Context, source *sql.Tx) ([]migrationTable,
 	return tables, nil
 }
 
-func requireEmptyMigrationTarget(ctx context.Context, target *sql.Conn) error {
+func requireEmptyMigrationTarget(ctx context.Context, target *sql.Conn, sourceTables []migrationTable) error {
 	rows, err := target.QueryContext(ctx, `SELECT table_name,COALESCE(engine,'') FROM information_schema.tables WHERE table_schema=DATABASE()`)
 	if err != nil {
 		return err
@@ -305,6 +313,19 @@ func requireEmptyMigrationTarget(ctx context.Context, target *sql.Conn) error {
 		}
 		if occupied {
 			return fmt.Errorf("target is already populated: %s", name)
+		}
+	}
+	for _, table := range sourceTables {
+		if !slices.Contains(names, table.name) {
+			continue
+		}
+		columns, err := target.QueryContext(ctx, "SELECT "+strings.Join(table.columns, ",")+" FROM "+
+			migrationQuote(table.name)+" WHERE 1=0")
+		if err != nil {
+			return fmt.Errorf("target table %s does not support the source columns: %w", table.name, err)
+		}
+		if err := columns.Close(); err != nil {
+			return fmt.Errorf("check target table %s: %w", table.name, err)
 		}
 	}
 	return nil

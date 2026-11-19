@@ -302,9 +302,9 @@ Docker 的 MySQL 模式已包含 Redis。如果使用已有 Redis，将 `compose
 ### 从 SQLite 迁移到 MySQL
 
 1. 停止源和目标 Harbor Mail，核对正在投递的队列任务并生成一致的 SQLite 快照。保留现有账号配置和其他部署凭据。
-2. 建立独立、空的 MySQL 数据库。将目标 DSN 通过 `HARBOR_MIGRATION_MYSQL_DSN_FILE` 或 `HARBOR_MIGRATION_MYSQL_DSN` 提供。执行 `harbormail migrate-sqlite --sqlite /path/to/harbor.db` 做只读预检。未设目标 DSN 时只预检源文件。
-3. 在相同命令上加 `--apply`。程序以只读快照读取 SQLite，拒绝带正在投递任务的源库及已写入数据的目标库。迁入后的记录按主键顺序核对 SHA-256，再提交 MySQL 事务。初始化完成的空表可供失败后重试。连接在提交时中断，应先核对目标有无已提交的数据。
-4. 先以隔离监听地址启动目标验证邮箱、附件、文件夹和队列，再切换接入。保留 SQLite 和既有配置供回退。目标处理新邮件后，回退前须协调新邮件和队列的去向。
+2. 建立独立、空的 MySQL 数据库。将目标 DSN 通过 `HARBOR_MIGRATION_MYSQL_DSN_FILE` 或 `HARBOR_MIGRATION_MYSQL_DSN` 提供。执行 `harbormail migrate-sqlite --sqlite /path/to/harbor.db` 做只读预检。设置目标 DSN 时，预检还会检查已有目标表是否具备待迁移的列。
+3. 在相同命令上加 `--apply`。源库有正在投递的任务、还在等待 SMTP 最终确认的收件人，或目标库已有数据时，程序会拒绝迁移。迁入后的记录按主键顺序核对 SHA-256，再提交 MySQL 事务。初始化完成的空表可供失败后重试。连接在提交时中断，应先核对目标有无已提交的数据。
+4. 先以隔离监听地址和 `HARBOR_PAUSE_OUTBOX=true` 启动目标，验证邮箱、附件、文件夹和队列，按中继记录核对待确认的投递。确认切换后再恢复投递。保留 SQLite 和既有配置供回退。目标处理新邮件后，回退前须协调新邮件和队列的去向。 [恢复与回滚](../ops/README.md#切换与回滚)
 
 ## 接入邮件客户端
 
