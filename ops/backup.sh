@@ -8,7 +8,9 @@ mode=${1:-}
 case "$mode" in
   backup|prune|plan) [[ $# == 1 ]] || fail "Usage: backup.sh $mode" ;;
   verify) [[ $# == 2 && $2 =~ ^[0-9a-f]{8,64}$ ]] || fail 'Usage: backup.sh verify SNAPSHOT_ID' ;;
-  *) fail 'Usage: backup.sh {backup|plan|prune|verify SNAPSHOT_ID}' ;;
+  export) [[ $# == 3 && $2 =~ ^[0-9a-f]{8,64}$ && $3 == /* ]] ||
+    fail 'Usage: backup.sh export SNAPSHOT_ID /absolute/new-directory' ;;
+  *) fail 'Usage: backup.sh {backup|plan|prune|verify SNAPSHOT_ID|export SNAPSHOT_ID /absolute/new-directory}' ;;
 esac
 
 : "${HARBOR_BACKUP_WORK:?Set HARBOR_BACKUP_WORK to a private, persistent directory}"
@@ -39,10 +41,12 @@ work_root=$(realpath -- "$HARBOR_BACKUP_WORK")
 scratch=$(mktemp -d -- "$work_root/harbor.XXXXXXXX")
 [[ $(realpath -- "$scratch") == "$work_root"/harbor.* ]] || fail 'Invalid temporary backup directory'
 marker_tmp=
+restore_stage=
 cleanup() {
   local result=$?
   trap - EXIT
   if [[ -n $marker_tmp ]]; then rm -f -- "$marker_tmp"; fi
+  if [[ -n $restore_stage ]]; then rm -rf -- "$restore_stage"; fi
   rm -rf -- "$scratch"
   exit "$result"
 }
@@ -115,7 +119,16 @@ read_back() (
   printf '%s\n' "$artifact"
 )
 
-if [[ $mode == verify ]]; then
+if [[ $mode == verify || $mode == export ]]; then
+  restored="$scratch/restored"
+  if [[ $mode == export ]]; then
+    restore_name=$(basename -- "$3")
+    [[ $restore_name != / && $restore_name != . && $restore_name != .. ]] || fail 'Invalid restore directory name'
+    restore_parent=$(realpath -e -- "$(dirname -- "$3")") || fail 'Restore parent directory must exist'
+    [[ -d $restore_parent ]] || fail 'Restore parent must be a directory'
+    destination="${restore_parent%/}/$restore_name"
+    [[ ! -e $destination && ! -L $destination ]] || fail 'Restore destination already exists'
+  fi
   snapshot=$(restic snapshots --json "$2" |
     jq -er --arg instance "$HARBOR_BACKUP_INSTANCE" --arg tag "$tag" '
       select(length == 1)
@@ -124,11 +137,28 @@ if [[ $mode == verify ]]; then
       | .id
     ') || fail 'Snapshot not found or does not belong to this Harbor Mail instance'
   [[ $snapshot =~ ^[0-9a-f]{64}$ ]] || fail 'Restic returned an invalid snapshot ID'
-  artifact=$(read_back "$snapshot" "$scratch/restored")
+  if [[ $mode == export ]]; then
+    restore_stage=$(mktemp -d -- "$restore_parent/.harbor-restore.XXXXXXXX")
+    restored="$restore_stage/snapshot"
+  fi
+  artifact=$(read_back "$snapshot" "$restored")
   if [[ $artifact == harbor.db ]]; then
-    verify_sqlite "$scratch/restored/harbor.db"
+    verify_sqlite "$restored/harbor.db"
   else
-    verify_mysql_dump "$scratch/restored/harbor.sql"
+    verify_mysql_dump "$restored/harbor.sql"
+  fi
+  if [[ $mode == export ]]; then
+    publish="$restore_stage/publish"
+    mkdir -m 0700 -- "$publish"
+    chmod 0600 -- "$restored/$artifact" "$restored/SHA256SUMS"
+    mv -- "$restored/$artifact" "$restored/SHA256SUMS" "$publish/"
+    # Publish both files together on the destination filesystem.
+    mv -nT -- "$publish" "$destination" || fail 'Could not publish restore directory'
+    [[ ! -d $publish ]] || fail 'Restore destination already exists'
+    printf 'Exported Harbor Mail snapshot %s to %s\n' "$snapshot" "$destination"
+    exit
+  fi
+  if [[ $artifact == harbor.sql ]]; then
     : "${HARBOR_BACKUP_VERIFY_CNF:?Set the separate, isolated verification server client config}"
     : "${HARBOR_BACKUP_VERIFY_DB:?Set an empty isolated verification database}"
     [[ $HARBOR_BACKUP_VERIFY_DB =~ ^harbor_verify_[a-zA-Z0-9_]{1,40}$ ]] || fail 'Use a dedicated harbor_verify_ database'
@@ -141,7 +171,7 @@ if [[ $mode == verify ]]; then
       --max-allowed-packet=64M "$HARBOR_BACKUP_VERIFY_DB")
     tables=$("${mysql_verify[@]}" -e 'SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE();')
     [[ $tables == 0 ]] || fail 'The verification database must be empty'
-    "${mysql_verify[@]}" < "$scratch/restored/harbor.sql"
+    "${mysql_verify[@]}" < "$restored/harbor.sql"
     "${mysql_verify[@]}" -e 'SELECT COUNT(*) AS messages FROM letters; SELECT COUNT(*) AS queue_tasks FROM outbox;'
   fi
   printf 'Verified Harbor Mail snapshot %s\n' "$2"

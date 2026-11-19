@@ -70,7 +70,7 @@ GitHub 的 `Verify Harbor Mail` 工作流统一执行 Go 回归、SQLite 与 MyS
 ## 文档与验收
 
 - [部署与使用指南](docs/deployment-and-usage.md)涵盖配置、邮件客户端、Web 功能和数据库迁移。
-- [生产运行手册](ops/README.md)涵盖 Linux 部署、站点验收、监控告警和备份恢复。
+- [生产运行手册](ops/README.md)涵盖 Linux 部署、站点验收和监控告警，另见 [从 Restic 导出恢复包](ops/README.md#从-restic-导出恢复包)。
 - [接入真实域名](docs/deployment-and-usage.md#接入真实域名)涵盖 DNS、邮件 TLS、中继和公网接入。
 
 已在本地 Docker 验证 MySQL 与 Redis 部署、SMTP 收信、Redis 停机回源及双实例网页同步。正式域名的公网收发、TLS 续签和灾难恢复需要在目标环境验收。

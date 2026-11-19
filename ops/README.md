@@ -99,7 +99,7 @@ Linux 主机可用 `bash ops/backup.sh backup` 生成数据库快照、上传到
 
 用 `bash ops/backup.sh verify SNAPSHOT_ID` 验证指定快照。恢复演练应沿用快照生成时的 `HARBOR_BACKUP_INSTANCE`，脚本会核对 Restic 主机名和实例标签。回读时只提取数据库产物和校验清单，并核对清单中的 SHA-256 对应这份数据库。
 
-SQLite 和 MySQL 都会在上传与验证快照时检查首个公开版本的必备表，覆盖账号、别名、文件夹与 IMAP UID、邮件和投递队列。检查失败时会列出缺失的表。SQLite 还会运行数据库完整性检查。早于首个公开版本的 SQLite 快照可能缺少这些表，应在隔离副本上升级后再生成新快照。
+SQLite 和 MySQL 都会在上传、验证和导出时检查首个公开版本的必备表，覆盖账号、别名、文件夹与 IMAP UID、邮件和投递队列。检查失败时会列出缺失的表。SQLite 还会运行数据库完整性检查。早于首个公开版本的 SQLite 快照可能缺少这些表，应在隔离副本上升级后再生成新快照。
 
 MySQL 备份账户需读取整个 Harbor 数据库，以涵盖后续版本增加的表。验证导入需在隔离服务器预建空的 `harbor_verify_*` 数据库，设置 `HARBOR_BACKUP_VERIFY_DB` 和 `HARBOR_BACKUP_VERIFY_CNF`，验证账户只应有该库权限。脚本导入后读取邮件和队列计数，保留验证库供复查。自动转储会跳过 MySQL 触发器，Harbor 首次从恢复库启动时会按已启用的配额设置重建触发器和用量，避免恢复时依赖原服务器的触发器属主。自建触发器、部署配置及配套密钥按下文独立备份。 [Restic 恢复选项](https://restic.readthedocs.io/en/stable/050_restore.html)
 
@@ -153,9 +153,22 @@ mv -T -- /var/lib/node_exporter/textfile/harbor-backup.tmp /var/lib/node_exporte
 
 ## 恢复与校验
 
+### 从 Restic 导出恢复包
+
+在隔离的 Linux 环境沿用备份时的实例名和 Restic 仓库配置。将示例中的 `SNAPSHOT_ID` 换成记录里的快照 ID。目标必须是绝对路径，其父目录须已存在，且应由恢复操作账户控制。
+
+```sh
+bash ops/backup.sh export SNAPSHOT_ID /srv/harbor-recovery/restore-drill
+(cd /srv/harbor-recovery/restore-drill && sha256sum -c SHA256SUMS)
+```
+
+导出成功后，目标目录包含 `harbor.db` 或 `harbor.sql`，以及 `SHA256SUMS`。脚本校验快照归属、校验和和必备表，成功后一次性创建目标目录。目录权限为 `0700`，文件权限为 `0600`。已有文件、目录和符号链接会使导出失败。MySQL 导出仅需仓库访问，实际导入按下面的隔离恢复步骤执行。
+
+### 在隔离环境验证恢复
+
 1. 先在隔离环境校验 SHA-256。保留当前数据库和卷，阻断演练环境的公网 SMTP 与中继出站流量。记录备份时间以及恢复期间的收信、退信和待投递队列。
 2. SQLite 在停服后将已校验快照放入新的数据目录并命名为 `harbor.db`。给目录和文件设置正确属主及文件权限。恢复目标目录只含该快照的配套文件，不能混入原数据库的 `-wal` 和 `-shm`。用 `sqlite3 -readonly ... 'PRAGMA integrity_check;'` 验证副本。
-3. MySQL 创建空库，恢复账户按需具有建表和导入权限。执行 `mysql --defaults-extra-file=/受限目录/restore.cnf --max-allowed-packet=64M harbor_mail < /备份目录/harbor-日期.sql`。核对导入退出状态和服务端日志，确认必要的应用账号及最小权限已恢复。
+3. MySQL 在隔离服务器创建空库，恢复账户按需具有建表和导入权限。执行 `mysql --defaults-extra-file=/受限目录/restore.cnf --max-allowed-packet=64M harbor_verify_drill < /srv/harbor-recovery/restore-drill/harbor.sql`。核对导入退出状态和服务端日志，确认必要的应用账号及最小权限已恢复。
 4. 用只读 SQL 核对 `letters`、`outbox`、`outbox_schedule`、`custom_folders`、`web_letter_recipients` 和 `web_outbox_envelopes` 的记录数和样本。核对后台账号 `managed_accounts`、账号状态 `account_access`、密码重置状态 `account_password_overrides`、后台别名 `managed_aliases` 和管理审计表。开放服务前核对备份之后的账号创建、停用、密码重置、凭据撤销和别名变更。启动投递进程前，先用中继日志核对旧队列结果，并确定已实际投递任务的处置方式，防止重复投递。
 5. 在隔离恢复副本上以 `HARBOR_RECOVERY_MODE=true` 启动 Harbor。Compose 部署把该值设置在演练环境的 `.env` 中，使用该演练项目对应的 Compose 文件启动。核对日志中的 `Recovery mode`、健康端点、网页登录、旧邮件及附件、已发与定时邮件。校验模式保留登录与退出，屏蔽 Web 数据修改，停用 SMTP、提交、IMAP、POP3、投递、稍后处理与垃圾邮件训练，要求关闭自动 ACME。应用启动仍可能迁移数据库，网页登录仍会写入会话。只对恢复副本使用该模式。
 6. 用只读 SQL 核对恢复的 IMAP 目录和 UID。需要用客户端验收时，保持网络隔离，设置 `HARBOR_RECOVERY_MODE=false` 和 `HARBOR_PAUSE_OUTBOX=true` 后重建 Harbor 容器。此时网页与已配置的邮件协议可用，发件箱接受入队请求，定时发件和外发任务都继续等待。通过管理后台「运行监控」确认发件队列显示「暂停」。记录恢复耗时和最新可读数据时间。
