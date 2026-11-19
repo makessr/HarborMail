@@ -66,12 +66,14 @@ MySQL Compose 部署同时启动 Redis，运行在 Harbor Mail 专用内部网�
 | --- | --- |
 | 指标抓取连续失败 | 2 分钟。看 Harbor 容器、Web `/healthz`、数据库可达性和监控路径 |
 | 已到期邮件仍未领取 | 最老 5 分钟且持续 5 分钟。检查出站 worker 日志、数据库和 SMTP 中继 |
-| 投递结果未知记录增长 | 核对中继日志及实际投递结果，再决定是否重发 |
+| 待确认的投递邮件数增长 | 按邮件计数。同一封邮件有多个待确认地址时只计一次，其他地址仍在重试时也计入。核对中继日志，再决定如何处置 |
 | 垃圾训练失败记录增长 | 检查 Rspamd 控制器的连接、认证和配置 |
 | 挂载可用空间低于 20% | 10 分钟。用 `df -h`、`df -i` 和数据库日志定位增长 |
 | 备份完成时间缺失或超过 26 小时 | 检查调度、空间、上传和最后可恢复的副本 |
 
 另从接入网络探测 SMTP 25、提交端口、IMAPS、POP3S 和公开 Web HTTPS。启用证书到期日告警，例如剩余 21 天。检查这些探针自身和告警接收方的心跳。项目例程使用 Docker `local` 日志轮转，MySQL binlog、外部代理日志和监控数据仍需各自限制保留期。
+
+在仓库根目录运行 `promtool test rules ops/prometheus-rules.test.yaml`，验证告警规则的触发和恢复。 [Prometheus 规则测试](https://prometheus.io/docs/prometheus/latest/configuration/unit_testing_rules/)
 
 ## 备份
 

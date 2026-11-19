@@ -57,7 +57,14 @@ func (a *app) operationalCounts(ctx context.Context, now int64) (operationalCoun
 	err := a.db.QueryRowContext(ctx, `SELECT COALESCE(MIN(due), ?) FROM outbox
 		WHERE state IN ('queued','scheduled','undo') AND due<=?`, now, now).Scan(&oldest)
 	if err == nil {
-		err = a.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM outbox WHERE state='uncertain'`).Scan(&stats.Uncertain)
+		// Recipient-level uncertainty can coexist with retries for other addresses.
+		// Count the message once, even if both levels report uncertainty.
+		err = a.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM (
+			SELECT id FROM outbox WHERE state='uncertain'
+			UNION
+			SELECT o.id FROM outbox_recipient_progress p JOIN outbox o ON o.id=p.outbox_id
+			WHERE p.state='uncertain'
+		) unresolved`).Scan(&stats.Uncertain)
 	}
 	if err == nil {
 		err = a.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM spam_feedback WHERE state='failed'`).Scan(&stats.FailedTraining)

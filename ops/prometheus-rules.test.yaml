@@ -1,0 +1,97 @@
+rule_files:
+  - prometheus-rules.yaml
+
+evaluation_interval: 1m
+
+tests:
+  - name: Queue growth, overdue mail and application scrape failure
+    interval: 1m
+    input_series:
+      - series: 'up{job="harbor-mail"}'
+        values: '1 0+0x2 1+0x8'
+      - series: 'harbor_outbox_oldest_due_seconds{job="harbor-mail"}'
+        values: '0 301+0x5 0+0x5'
+      - series: 'harbor_outbox_uncertain_messages{job="harbor-mail"}'
+        values: '0 0 1+0x4 0+0x4'
+      - series: 'harbor_spam_training_failed_samples{job="harbor-mail"}'
+        values: '0 0 1+0x4 0+0x4'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: HarborMetricsUnavailable
+      - eval_time: 3m
+        alertname: HarborMetricsUnavailable
+        exp_alerts:
+          - exp_labels: {job: harbor-mail, severity: critical}
+            exp_annotations: {summary: Harbor Mail 指标抓取失败，检查进程、数据库和抓取网络}
+      - eval_time: 4m
+        alertname: HarborMetricsUnavailable
+      - eval_time: 5m
+        alertname: HarborOutboxOverdue
+      - eval_time: 6m
+        alertname: HarborOutboxOverdue
+        exp_alerts:
+          - exp_labels: {job: harbor-mail, severity: warning}
+            exp_annotations: {summary: 有已到期的邮件等待投递超过五分钟}
+      - eval_time: 7m
+        alertname: HarborOutboxOverdue
+      - eval_time: 2m
+        alertname: HarborUncertainDeliveryIncreased
+        exp_alerts:
+          - exp_labels: {job: harbor-mail, severity: warning}
+            exp_annotations: {summary: 新增投递结果未知的记录，重发前先核对中继}
+      - eval_time: 7m
+        alertname: HarborUncertainDeliveryIncreased
+      - eval_time: 2m
+        alertname: HarborSpamTrainingFailureIncreased
+        exp_alerts:
+          - exp_labels: {job: harbor-mail, severity: warning}
+            exp_annotations: {summary: 新增垃圾邮件训练失败，检查 Rspamd 控制器}
+      - eval_time: 7m
+        alertname: HarborSpamTrainingFailureIncreased
+  - name: Disk, expired backup, missing backup and host scrape failure
+    interval: 1m
+    input_series:
+      - series: 'up{job="harbor-node",instance="disk"}'
+        values: '1+0x11'
+      - series: 'up{job="harbor-node",instance="no-backup"}'
+        values: '1+0x11'
+      - series: 'up{job="harbor-node",instance="down"}'
+        values: '0+0x2 1+0x8'
+      - series: 'node_filesystem_avail_bytes{job="harbor-node",instance="disk",mountpoint="/srv/harbor-mysql"}'
+        values: '19+0x10 20'
+      - series: 'node_filesystem_size_bytes{job="harbor-node",instance="disk",mountpoint="/srv/harbor-mysql"}'
+        values: '100+0x11'
+      - series: 'harbor_backup_last_success_timestamp_seconds{job="harbor-node",instance="disk"}'
+        values: '-93601+0x10 660'
+      - series: 'harbor_backup_last_success_timestamp_seconds{job="harbor-node",instance="no-backup"}'
+        values: '_x11 660'
+      - series: 'harbor_backup_last_success_timestamp_seconds{job="harbor-node",instance="down"}'
+        values: '_x3 180+0x8'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: HarborNodeMetricsUnavailable
+        exp_alerts:
+          - exp_labels: {job: harbor-node, instance: down, severity: critical}
+            exp_annotations: {summary: Harbor Mail 主机的磁盘及备份指标不可用}
+      - eval_time: 3m
+        alertname: HarborNodeMetricsUnavailable
+      - eval_time: 9m
+        alertname: HarborVolumeFreeLow
+      - eval_time: 10m
+        alertname: HarborVolumeFreeLow
+        exp_alerts:
+          - exp_labels: {job: harbor-node, instance: disk, mountpoint: /srv/harbor-mysql, severity: warning}
+            exp_annotations: {summary: Harbor Mail 存储可用空间低于 20%}
+      - eval_time: 11m
+        alertname: HarborVolumeFreeLow
+      - eval_time: 9m
+        alertname: HarborDailyBackupStale
+      - eval_time: 10m
+        alertname: HarborDailyBackupStale
+        exp_alerts:
+          - exp_labels: {job: harbor-node, instance: disk, severity: critical}
+            exp_annotations: {summary: Harbor Mail 最近 26 小时没有已记录的成功备份}
+          - exp_labels: {job: harbor-node, instance: no-backup, severity: critical}
+            exp_annotations: {summary: Harbor Mail 最近 26 小时没有已记录的成功备份}
+      - eval_time: 11m
+        alertname: HarborDailyBackupStale
