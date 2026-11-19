@@ -225,7 +225,7 @@ func (a *app) sendDraft(w http.ResponseWriter, r *http.Request, owner string) {
 	if plan.at != 0 {
 		m.Date = plan.at
 	}
-	raw, err = rewriteOutgoingHeaders(raw, m.Date, m.recipients)
+	raw, err = rewriteOutgoingHeaders(raw, m.Date, m.From, m.recipients)
 	if letterError(w, err) {
 		return
 	}
