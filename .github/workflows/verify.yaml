@@ -49,8 +49,24 @@ jobs:
           go vet ./...
           redis=$(docker run -d -p 127.0.0.1::6379 redis:8.10.3-alpine)
           redis_address=$(docker port "$redis" 6379/tcp)
+          packages=()
+          command -v restic >/dev/null || packages+=(restic)
+          command -v sqlite3 >/dev/null || packages+=(sqlite3)
+          command -v mysqldump >/dev/null || packages+=(mysql-client)
+          if (( ${#packages[@]} != 0 )); then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends "${packages[@]}"
+          fi
+          backup_password=$(openssl rand -hex 24)
+          printf '::add-mask::%s\n' "$backup_password"
+          docker exec -e MYSQL_PWD="$MYSQL_ROOT_PASSWORD" "$database" mysql --user=root -e \
+            "CREATE USER 'harbor_backup'@'%' IDENTIFIED BY '$backup_password';
+            GRANT SELECT, SHOW VIEW ON harbor_test.* TO 'harbor_backup'@'%';
+            CREATE DATABASE harbor_verify_backup;"
           HARBOR_TEST_MYSQL_DSN="harbor:$MYSQL_PASSWORD@tcp($address)/harbor_test" \
-            HARBOR_TEST_REDIS_URL="redis://$redis_address/0" bash .github/scripts/test-systemd.sh
+            HARBOR_TEST_REDIS_URL="redis://$redis_address/0" \
+            HARBOR_TEST_BACKUP_MYSQL_PORT="${address##*:}" HARBOR_TEST_BACKUP_MYSQL_PASSWORD="$backup_password" \
+            HARBOR_TEST_BACKUP_MYSQL_CONTAINER="$database" bash .github/scripts/test-systemd.sh
       - name: Check Web and operations files
         shell: bash
         run: |

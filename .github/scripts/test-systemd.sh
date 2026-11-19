@@ -158,3 +158,4 @@ check_inbox "MySQL native service" read
 sudo systemctl stop harbormail.service
 [[ $(systemctl show --property Result --value harbormail.service) == success ]]
 printf 'MySQL systemd service passed SMTP, Web, restart, and Redis cache checks.\n'
+bash .github/scripts/test-systemd-backup.sh

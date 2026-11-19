@@ -6,6 +6,10 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 User=harbor-backup
+StateDirectory=harbor-backup
+StateDirectoryMode=0700
+Environment=HARBOR_BACKUP_WORK=/var/lib/harbor-backup
+Environment=RESTIC_CACHE_DIR=/var/lib/harbor-backup/cache
 EnvironmentFile=/etc/harbor/backup.env
 ExecStart=/usr/bin/bash /opt/harbor-mail/ops/backup.sh backup
 UMask=0077

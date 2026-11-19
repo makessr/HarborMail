@@ -132,7 +132,42 @@ Linux 主机可用 `bash ops/backup.sh backup` 生成数据库快照、上传到
 | `HARBOR_BACKUP_MYSQL_DB`、`HARBOR_BACKUP_MYSQL_CNF` | MySQL 库名及受限客户端配置绝对路径 |
 | `HARBOR_BACKUP_METRIC_DIR` | 可选，成功回读后原子更新 node_exporter 指标的目录 |
 
-按实际安装路径调整 `ops/harbor-backup.service` 和 `ops/harbor-backup.timer`。这两个模板只调度备份。在单独的维护任务中先运行 `bash ops/backup.sh plan` 查看保留计划，再使用具备仓库删除权限的凭据运行 `bash ops/backup.sh prune` 执行 14 个日备和 4 个周备保留策略。两种操作都以备份时设置的 Restic 主机名和实例标签限定快照范围。 [Restic 保留策略](https://restic.readthedocs.io/en/stable/060_forget.html)
+### 安装定时备份
+
+`harbormail-systemd.tar.gz` 内含备份脚本、服务单元、定时器和环境模板。从项目目录或解包后的目录执行首次安装。服务会自动创建权限为 `0700` 的 `/var/lib/harbor-backup` 作为暂存目录。已有部署可在 `backup.env` 里保留原来的 `HARBOR_BACKUP_WORK`。
+
+```bash
+getent passwd harbor-backup >/dev/null ||
+  sudo useradd --system --user-group --home-dir /var/lib/harbor-backup --shell "$(command -v nologin)" harbor-backup
+sudo install -d -m 0755 /opt/harbor-mail/ops
+sudo install -m 0755 ops/backup.sh /opt/harbor-mail/ops/backup.sh
+sudo install -d -m 0700 /etc/harbor
+sudo install -m 0600 ops/harbor-backup.env.example /etc/harbor/backup.env
+sudoedit /etc/harbor/backup.env
+sudo install -m 0644 ops/harbor-backup.service ops/harbor-backup.timer /etc/systemd/system/
+```
+
+在 `backup.env` 中填写实例名、已初始化的 Restic 仓库和数据库配置。将仓库口令保存为仅 root 可读的 `/etc/harbor/restic-password`。用 `sudo systemctl edit harbor-backup.service` 写入凭据路径。MySQL 模式可让 `harbor-backup` 用户使用仅 root 可读的客户端配置。
+
+```ini
+[Service]
+LoadCredential=restic-password:/etc/harbor/restic-password
+Environment=RESTIC_PASSWORD_FILE=%d/restic-password
+LoadCredential=mysql-backup.cnf:/etc/harbor/mysql-backup.cnf
+Environment=HARBOR_BACKUP_MYSQL_CNF=%d/mysql-backup.cnf
+```
+
+原生 SQLite 模式在 `backup.env` 设为 `HARBOR_BACKUP_DRIVER=sqlite`，并填写 `HARBOR_BACKUP_SQLITE`。在上述 drop-in 保留 Restic 两行，加入 `User=harbormail`。这样可以读取权限为 `0700` 的原生数据目录和正在使用的 SQLite WAL。Compose 的 SQLite 数据须按实际 UID 和挂载方式，确保备份账号能访问数据库及对应 WAL。开启备份成功指标时，指标目录还须供 node_exporter 读取。
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl start harbor-backup.service
+sudo journalctl -u harbor-backup.service -n 30 --no-pager
+sudo systemctl enable --now harbor-backup.timer
+systemctl list-timers harbor-backup.timer
+```
+
+首次手动运行成功后，定时器按主机本地时间每天触发，随机延迟最多 30 分钟，补跑错过的日程。保留策略在独立维护任务执行。先用 `bash ops/backup.sh plan` 查看范围，再用具备仓库删除权限的凭据运行 `bash ops/backup.sh prune`，保留 14 个日备和 4 个周备。两种操作都按实例主机名和标签筛选。 [systemd 定时器](https://www.freedesktop.org/software/systemd/man/256/systemd.timer.html) · [Restic 保留策略](https://restic.readthedocs.io/en/stable/060_forget.html)
 
 用 `bash ops/backup.sh verify SNAPSHOT_ID` 验证指定快照。恢复演练应沿用快照生成时的 `HARBOR_BACKUP_INSTANCE`，脚本会核对 Restic 主机名和实例标签。回读时只提取数据库产物和校验清单，并核对清单中的 SHA-256 对应这份数据库。
 

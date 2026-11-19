@@ -16,6 +16,7 @@ runs:
         GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/harbormail-linux-amd64 ./cmd/harbormail
         GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o dist/harbormail-linux-arm64 ./cmd/harbormail
         GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/harbormail-windows-amd64.exe ./cmd/harbormail
-        tar -czf dist/harbormail-systemd.tar.gz ops/harbormail.service ops/harbormail.env.example
+        tar -czf dist/harbormail-systemd.tar.gz ops/harbormail.service ops/harbormail.env.example \
+          ops/backup.sh ops/harbor-backup.service ops/harbor-backup.timer ops/harbor-backup.env.example
         cd dist
         sha256sum -- harbormail-linux-amd64 harbormail-linux-arm64 harbormail-windows-amd64.exe harbormail-systemd.tar.gz > SHA256SUMS
