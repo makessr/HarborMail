@@ -356,7 +356,7 @@ docker compose -f compose.yaml -f compose.acme.yaml up -d --build --wait
 
 默认验证请求由主机上的反向代理转发到 `127.0.0.1:8081`。代理应优先转发挑战路径，再执行其他 HTTP 跳转规则。将 Web 邮箱经 HTTPS 反向代理接入时，开启 `HARBOR_SECURE_COOKIE=true`，并为代理的 Web HTTPS 入口配置证书。如果直接公开挑战端口，可设置 `HARBOR_ACME_BIND=0.0.0.0` 和 `HARBOR_ACME_PORT=80`。非容器部署直接设置 `HARBOR_ACME_HTTP`，认证请求始终从公网 80 或 443 进入。
 
-Harbor 启动后读取缓存或申请证书。首次签发成功后客户端即可建立受信任的 TLS 连接。续签成功后，新建连接使用新证书，无需重启 Harbor。容器重建时保留 `harbor_data` 卷。[Go autocert](https://pkg.go.dev/golang.org/x/crypto%40v0.59.0/acme/autocert)
+Harbor 在启动时检查缓存目录能否写入。出现 `HARBOR_ACME_CACHE is not writable` 时，检查目录权限与挂载的读写状态。首次签发成功后客户端即可建立受信任的 TLS 连接。续签成功后，新建连接使用新证书，无需重启 Harbor。容器重建时保留 `harbor_data` 卷。 [Go autocert](https://pkg.go.dev/golang.org/x/crypto%40v0.59.0/acme/autocert)
 
 ## 邮箱偏好
 

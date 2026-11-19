@@ -75,6 +75,9 @@ func configureTLS() (*tls.Config, *managedTLS, error) {
 	if err := os.MkdirAll(cache, 0o700); err != nil {
 		return nil, nil, fmt.Errorf("create ACME cache: %w", err)
 	}
+	if err := checkDataDir(cache); err != nil {
+		return nil, nil, fmt.Errorf("HARBOR_ACME_CACHE is not writable: %w", err)
+	}
 	manager := &autocert.Manager{
 		Prompt: autocert.AcceptTOS,
 		Email:  os.Getenv("HARBOR_ACME_EMAIL"),
