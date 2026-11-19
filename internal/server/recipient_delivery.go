@@ -81,7 +81,8 @@ func (a *app) processRecipientDelivery(ctx context.Context, job *outboxJob, addr
 		return err
 	}
 	for _, item := range recipients {
-		if item.State != "queued" || item.Due > time.Now().Unix() || ctx.Err() != nil {
+		now := time.Now()
+		if item.State != "queued" || ctx.Err() != nil || (item.Due > now.Unix() && now.Before(job.expires())) {
 			continue
 		}
 		if err := a.sendToOneRecipient(ctx, job, item, connect); err != nil {

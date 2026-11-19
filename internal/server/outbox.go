@@ -75,11 +75,7 @@ func (a *app) runOutbox() {
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
 	for {
-		var err error
-		if a.relay.Address != "" || len(a.domainRelays) > 0 {
-			err = a.recoverOutbox()
-		}
-		if err != nil {
+		if err := a.recoverOutbox(); err != nil {
 			log.Print("outbox recovery: ", err)
 		} else {
 			for {
@@ -137,7 +133,11 @@ func (a *app) claimOutbox() (*outboxJob, error) {
 		OR (state='preparing' AND lease<=?))`
 	if a.relay.Address == "" {
 		query += ` AND (EXISTS (SELECT 1 FROM outbox_schedule s WHERE s.outbox_id=outbox.id AND s.local_owner<>'')
-			OR EXISTS (SELECT 1 FROM web_outbox_envelopes e WHERE e.outbox_id=outbox.id AND e.has_external=FALSE)`
+			OR EXISTS (SELECT 1 FROM web_outbox_envelopes e WHERE e.outbox_id=outbox.id AND e.has_external=FALSE)
+			OR (stamp<=? AND NOT EXISTS (SELECT 1 FROM outbox_schedule s WHERE s.outbox_id=outbox.id AND s.send_at>?))`
+		// A sender without a relay can still have an expired delivery to close.
+		expiredBefore := now.Add(-outboxMaxAge).Unix()
+		args = append(args, expiredBefore, expiredBefore)
 		for domain := range a.domainRelays {
 			query += " OR sender LIKE ? OR sender LIKE ?"
 			args = append(args, "%@"+domain, "%@"+domain+".")

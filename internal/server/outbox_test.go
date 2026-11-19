@@ -20,6 +20,89 @@ import (
 	"github.com/emersion/go-smtp"
 )
 
+func TestOutboxExpiresWhenSenderRelayIsRemoved(t *testing.T) {
+	t.Run("sqlite", func(t *testing.T) {
+		testOutboxWithoutRelay(t, "sqlite", filepath.Join(t.TempDir(), "mail.db"))
+	})
+	if dsn := os.Getenv("HARBOR_TEST_MYSQL_DSN"); dsn != "" {
+		t.Run("mysql", func(t *testing.T) { testOutboxWithoutRelay(t, "mysql", dsn) })
+	}
+}
+
+func testOutboxWithoutRelay(t *testing.T, driver, source string) {
+	db, err := openDB(driver, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	a := &app{db: db, domain: "harbor.test",
+		domainRelays: map[string]domainRelay{"other.harbor.test": {Address: "relay.other.harbor.test:587"}}}
+	const sender = "sender@harbor.test"
+	now := time.Now()
+	expired := now.Add(-outboxMaxAge - time.Hour).Unix()
+	queue := func(subject string) int64 {
+		t.Helper()
+		m := letter{From: sender, To: "one@example.test", Subject: subject, Body: "Synthetic body", Date: expired}
+		raw, err := encodeLetter(m, a.domain, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		id, err := a.enqueue(m, raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	scheduled := queue("recently due")
+	if _, err := db.Exec(`INSERT INTO outbox_schedule(outbox_id,send_at,local_owner) VALUES(?,?,'')`,
+		scheduled, now.Add(-time.Hour).Unix()); err != nil {
+		t.Fatal(err)
+	}
+	legacy := queue("expired")
+	multi := queue("partially delivered")
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	envelope := webEnvelope{Targets: []webTarget{{Address: "one@example.test"}, {Address: "two@example.test"}}}
+	if err := saveWebEnvelope(t.Context(), tx, multi, envelope); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(`INSERT INTO outbox_recipient_progress(outbox_id,sender,recipient,state,attempts,due,smtp_code)
+		VALUES(?,?,'one@example.test','accepted',1,0,250),(?,?,'two@example.test','queued',1,?,450)`,
+		multi, sender, multi, sender, now.Add(time.Hour).Unix()); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	connect := func(context.Context) (*smtp.Client, func(), error) {
+		t.Fatal("the worker opened a relay connection for expired mail")
+		return nil, nil, nil
+	}
+	for _, id := range []int64{legacy, multi} {
+		job, err := a.claimOutbox()
+		if err != nil || job == nil || job.message.ID != id {
+			t.Fatalf("could not claim expired task %d: %+v (%v)", id, job, err)
+		}
+		if err := a.processOutbox(job, connect); err != nil {
+			t.Fatal(err)
+		}
+		var state string
+		if err := db.QueryRow(`SELECT state FROM outbox WHERE id=?`, id).Scan(&state); err != nil || state != "failed" {
+			t.Fatalf("expired task %d: state=%q (%v)", id, state, err)
+		}
+	}
+	rows, err := readRecipientProgress(t.Context(), db, sender, multi)
+	if err != nil || len(rows) != 2 || rows[0].State != "accepted" || rows[1].State != "failed" {
+		t.Fatalf("unexpected recipient results after expiration: %+v (%v)", rows, err)
+	}
+	if job, err := a.claimOutbox(); job != nil || err != nil {
+		t.Fatalf("recently scheduled job should wait for a relay: %+v (%v)", job, err)
+	}
+}
+
 func TestOutboxRelay(t *testing.T) {
 	t.Run("sqlite", func(t *testing.T) {
 		testOutboxRelay(t, "sqlite", filepath.Join(t.TempDir(), "mail.db"))
