@@ -11,17 +11,25 @@ import (
 	"time"
 )
 
-func visibleCc(raw []byte) string {
+type messageHeaderRecipients struct {
+	To string `json:"to,omitempty"`
+	Cc string `json:"cc,omitempty"`
+}
+
+func visibleRecipients(raw []byte) messageHeaderRecipients {
 	message, err := mail.ReadMessage(bytes.NewReader(raw))
 	if err != nil {
-		return ""
+		return messageHeaderRecipients{}
 	}
-	list, _ := message.Header.AddressList("Cc")
-	addresses := make([]string, 0, len(list))
-	for _, recipient := range list {
-		addresses = append(addresses, recipient.Address)
+	read := func(field string) string {
+		list, _ := message.Header.AddressList(field)
+		addresses := make([]string, 0, len(list))
+		for _, recipient := range list {
+			addresses = append(addresses, recipient.Address)
+		}
+		return strings.Join(addresses, ", ")
 	}
-	return strings.Join(addresses, ", ")
+	return messageHeaderRecipients{To: read("To"), Cc: read("Cc")}
 }
 
 func (a *app) webDeliveryEnvelope(w http.ResponseWriter, ctx context.Context, db folderQueryer, owner string, fields webRecipients) (webEnvelope, bool) {

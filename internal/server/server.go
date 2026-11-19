@@ -701,10 +701,11 @@ func (a *app) read(w http.ResponseWriter, r *http.Request, owner string) {
 	if letterError(w, err) {
 		return
 	}
+	recipients := visibleRecipients(raw)
 	if to.Valid {
 		m.To = to.String
 	} else {
-		m.Cc = visibleCc(raw)
+		m.Cc = recipients.Cc
 	}
 	m.Labels, err = a.mailLabels(r.Context(), owner, m.ID)
 	if labelHTTPError(w, err) {
@@ -718,7 +719,10 @@ func (a *app) read(w http.ResponseWriter, r *http.Request, owner string) {
 	m.HasHTML, m.HasText = view.hasHTML, view.hasText
 	m.ReplyAddress = replyAddress(raw, m.From)
 	m.SenderAddress, m.SenderName = senderContact(m.From)
-	reply(w, 200, m)
+	reply(w, 200, struct {
+		letter
+		HeaderRecipients messageHeaderRecipients `json:"headerRecipients"`
+	}{m, recipients})
 }
 
 func letterID(r *http.Request) int64 {

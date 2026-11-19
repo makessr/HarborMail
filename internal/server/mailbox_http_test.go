@@ -6,9 +6,83 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
+
+func TestLetterDetailKeepsBlindAliasesOutOfForwardHeaders(t *testing.T) {
+	const sender, visible, copied, blind = "sender@harbor.test", "visible@harbor.test", "copy@harbor.test", "blind@harbor.test"
+	const alias = "private-alias@harbor.test"
+	db, err := openDB("sqlite", filepath.Join(t.TempDir(), "mail.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	a := &app{db: db, domain: "harbor.test",
+		accounts: map[string][]byte{sender: {}, visible: {}, copied: {}, blind: {}},
+		aliases:  map[string]string{alias: blind}}
+
+	for _, tc := range []struct {
+		subject string
+		public  messageHeaderRecipients
+	}{
+		{"multiple recipients", messageHeaderRecipients{To: visible, Cc: copied}},
+		{"blind recipient only", messageHeaderRecipients{}},
+	} {
+		t.Run(tc.subject, func(t *testing.T) {
+			payload, err := json.Marshal(map[string]string{
+				"to": tc.public.To, "cc": tc.public.Cc, "bcc": alias, "subject": tc.subject, "body": "Hello",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			r := httptest.NewRequest(http.MethodPost, "/api/letters", strings.NewReader(string(payload)))
+			r.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			a.send(w, r, sender)
+			if w.Code < 200 || w.Code >= 300 {
+				t.Fatalf("send: HTTP %d, %s", w.Code, w.Body)
+			}
+
+			owners := []string{sender, blind}
+			if tc.public.To != "" {
+				owners = append(owners, visible, copied)
+			}
+			for _, owner := range owners {
+				var id int64
+				if err := db.QueryRow("SELECT id FROM letters WHERE owner=? AND subject=?", owner, tc.subject).Scan(&id); err != nil {
+					t.Fatal(err)
+				}
+				r := httptest.NewRequest(http.MethodGet, "/api/letters/"+strconv.FormatInt(id, 10), nil)
+				r.SetPathValue("id", strconv.FormatInt(id, 10))
+				w := httptest.NewRecorder()
+				a.read(w, r, owner)
+				var detail struct {
+					letter
+					HeaderRecipients *messageHeaderRecipients `json:"headerRecipients"`
+				}
+				if err := json.Unmarshal(w.Body.Bytes(), &detail); w.Code != http.StatusOK || err != nil {
+					t.Fatalf("read for %s: HTTP %d, %v", owner, w.Code, err)
+				}
+				if detail.HeaderRecipients == nil || *detail.HeaderRecipients != tc.public {
+					t.Fatalf("read for %s: incorrect public headers: %+v", owner, detail.HeaderRecipients)
+				}
+				wantBcc := ""
+				if owner == sender {
+					wantBcc = alias
+				}
+				if detail.Bcc != wantBcc || (owner == blind && detail.To != alias) {
+					t.Fatalf("read for %s: unexpected stored To %q or Bcc %q", owner, detail.To, detail.Bcc)
+				}
+				raw, err := a.rawLetter(owner, id)
+				if err != nil || strings.Contains(string(raw), alias) || strings.Contains(string(raw), "\nBcc:") {
+					t.Fatalf("unexpected original message for %s: %v", owner, err)
+				}
+			}
+		})
+	}
+}
 
 func TestBatchMailChangesRollbackOnForeignLetter(t *testing.T) {
 	const owner = "owner@harbor.test"

@@ -53,8 +53,11 @@ function forwardSubject(value) {
 }
 
 function forwardQuote(item) {
+  const recipients = item.headerRecipients;
   return forwardDivider + [
-    "发件人：" + item.from, "收件人：" + item.to, ...(item.cc ? ["抄送：" + item.cc] : []),
+    "发件人：" + item.from,
+    ...(recipients?.to ? ["收件人：" + recipients.to] : []),
+    ...(recipients?.cc ? ["抄送：" + recipients.cc] : []),
     "时间：" + fullDate.format(item.date * 1000), "主题：" + (item.subject || "（无主题）"),
     "", item.body].join("\n");
 }
