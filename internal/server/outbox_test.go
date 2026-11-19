@@ -239,7 +239,80 @@ func testOutboxRelay(t *testing.T, driver, source string) {
 	checkState(stale, "uncertain")
 }
 
+func TestOutboxPhasesSyncAcrossInstances(t *testing.T) {
+	dsn := os.Getenv("HARBOR_TEST_MYSQL_DSN")
+	if dsn == "" {
+		t.Skip("set HARBOR_TEST_MYSQL_DSN to a disposable MySQL database")
+	}
+	writerDB, err := openDB("mysql", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writerDB.Close()
+	readerDB, err := openDB("mysql", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer readerDB.Close()
+	writer := &app{db: writerDB, domain: "harbor.test", sharedMailboxEvents: true,
+		relay: domainRelay{Address: "relay.harbor.test:587"}}
+	reader := &app{db: readerDB, sharedMailboxEvents: true}
+	owner := token()[:16] + "@harbor.test"
+	m := letter{From: owner, To: "recipient@example.test", Subject: "shared outbox phases",
+		Body: "test body", Date: time.Now().Unix()}
+	raw, err := encodeLetter(m, writer.domain, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := writer.enqueue(m, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := writer.claimOutbox()
+	if err != nil || job == nil || job.message.ID != id {
+		t.Fatalf("could not claim job %d: %v", id, err)
+	}
+	checkPhase := func(want string, revision int64) error {
+		var state string
+		if err := reader.db.QueryRowContext(t.Context(), `SELECT state FROM outbox WHERE id=? AND sender=?`, id, owner).
+			Scan(&state); err != nil {
+			return err
+		}
+		current, err := reader.mailboxRevision(t.Context(), owner)
+		if err != nil || state != want || current != revision {
+			return fmt.Errorf("state/revision: got %s/%d (%v), want %s/%d", state, current, err, want, revision)
+		}
+		return nil
+	}
+	if err := checkPhase("preparing", 1); err != nil {
+		t.Error(err)
+	}
+	observed := make(chan error, 1)
+	connect := serveTestRelay(t, writer, true, relayFixture{replyCode: 250, afterData: func() {
+		observed <- checkPhase("sending", 2)
+	}})
+	if err := writer.processOutbox(job, connect); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-observed:
+		if err != nil {
+			t.Error(err)
+		}
+	default:
+		t.Fatal("relay did not receive DATA")
+	}
+	if current, err := reader.mailboxRevision(t.Context(), owner); err != nil || current != 3 {
+		t.Errorf("completion revision = %d (%v), want 3", current, err)
+	}
+}
+
 func testRelay(t *testing.T, a *app, implicit bool, replyCode int) relayConnector {
+	t.Helper()
+	return serveTestRelay(t, a, implicit, relayFixture{replyCode: replyCode})
+}
+
+func serveTestRelay(t *testing.T, a *app, implicit bool, response relayFixture) relayConnector {
 	t.Helper()
 	fixture := httptest.NewTLSServer(http.NotFoundHandler())
 	certificate := fixture.TLS.Certificates[0]
@@ -247,7 +320,9 @@ func testRelay(t *testing.T, a *app, implicit bool, replyCode int) relayConnecto
 	roots.AddCert(fixture.Certificate())
 	fixture.Close()
 	server := a.smtpServer(smtp.BackendFunc(func(conn *smtp.Conn) (smtp.Session, error) {
-		return relayFixture{conn: conn, replyCode: replyCode}, nil
+		session := response
+		session.conn = conn
+		return session, nil
 	}), &tls.Config{Certificates: []tls.Certificate{certificate}, MinVersion: tls.VersionTLS12})
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -267,6 +342,7 @@ func testRelay(t *testing.T, a *app, implicit bool, replyCode int) relayConnecto
 type relayFixture struct {
 	conn      *smtp.Conn
 	replyCode int
+	afterData func()
 }
 
 func (r relayFixture) Reset()                                   {}
@@ -280,6 +356,9 @@ func (r relayFixture) Data(body io.Reader) error {
 	}
 	if !strings.Contains(string(raw), "test body") {
 		return &smtp.SMTPError{Code: 554, Message: "Empty test content"}
+	}
+	if r.afterData != nil {
+		r.afterData()
 	}
 	switch r.replyCode {
 	case 0:

@@ -121,8 +121,9 @@ func (a *app) recoverOutbox() error {
 func (a *app) claimOutbox() (*outboxJob, error) {
 	now := time.Now()
 	var id int64
+	var sender string
 	args := []any{now.Unix(), now.Unix()}
-	query := `SELECT id FROM outbox WHERE ((state IN ('queued','scheduled','undo') AND due<=?)
+	query := `SELECT id,sender FROM outbox WHERE ((state IN ('queued','scheduled','undo') AND due<=?)
 		OR (state='preparing' AND lease<=?))`
 	if a.relay.Address == "" {
 		query += ` AND (EXISTS (SELECT 1 FROM outbox_schedule s WHERE s.outbox_id=outbox.id AND s.local_owner<>'')
@@ -139,7 +140,7 @@ func (a *app) claimOutbox() (*outboxJob, error) {
 		}
 		query += ")"
 	}
-	err := a.db.QueryRow(query+` ORDER BY due,id LIMIT 1`, args...).Scan(&id)
+	err := a.db.QueryRow(query+` ORDER BY due,id LIMIT 1`, args...).Scan(&id, &sender)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -147,14 +148,22 @@ func (a *app) claimOutbox() (*outboxJob, error) {
 		return nil, err
 	}
 	job := &outboxJob{claim: token()}
-	result, err := a.db.Exec(`UPDATE outbox SET state='preparing', claim=?, lease=?, attempts=attempts+1
-		WHERE id=? AND ((state IN ('queued','scheduled','undo') AND due<=?) OR (state='preparing' AND lease<=?))`,
-		job.claim, now.Add(outboxLease).Unix(), id, now.Unix(), now.Unix())
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	tx, err := a.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
-	count, err := result.RowsAffected()
-	if err != nil || count == 0 {
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE outbox SET state='preparing', claim=?, lease=?, attempts=attempts+1
+		WHERE id=? AND sender=? AND ((state IN ('queued','scheduled','undo') AND due<=?) OR (state='preparing' AND lease<=?))`,
+		job.claim, now.Add(outboxLease).Unix(), id, sender, now.Unix(), now.Unix())
+	if err := requireAffectedRow(result, err); errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	} else if err != nil {
+		return nil, err
+	}
+	if err := a.commitMailbox(tx, sender); err != nil {
 		return nil, err
 	}
 	m := &job.message
@@ -176,7 +185,6 @@ func (a *app) claimOutbox() (*outboxJob, error) {
 	if job.envelope != nil {
 		m.recipients = &job.envelope.Recipients
 	}
-	a.events.notify(m.From)
 	return job, nil
 }
 
@@ -257,22 +265,31 @@ func (a *app) processOutbox(job *outboxJob, connect relayConnector) error {
 	}
 
 	// Record the point of no safe replay before sending SMTP's DATA terminator.
-	now := time.Now()
-	result, err := a.db.ExecContext(ctx, `UPDATE outbox SET state='sending', lease=?
-		WHERE id=? AND claim=? AND state='preparing' AND lease>?`,
-		now.Add(outboxLease).Unix(), job.message.ID, job.claim, now.Unix())
-	if err != nil {
+	if err := a.markOutboxSending(ctx, job); errors.Is(err, sql.ErrNoRows) {
+		return nil
+	} else if err != nil {
 		return err
 	}
-	count, err := result.RowsAffected()
-	if err != nil || count != 1 {
-		return err
-	}
-	a.events.notify(job.message.From)
 	if err := data.Close(); err != nil {
 		return a.resolveOutboxError(job, err, true)
 	}
 	return a.finishOutbox(job, "sent", "", 0)
+}
+
+func (a *app) markOutboxSending(ctx context.Context, job *outboxJob) error {
+	tx, err := a.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	now := time.Now()
+	result, err := tx.ExecContext(ctx, `UPDATE outbox SET state='sending', lease=?
+		WHERE id=? AND claim=? AND state='preparing' AND lease>?`,
+		now.Add(outboxLease).Unix(), job.message.ID, job.claim, now.Unix())
+	if err := requireAffectedRow(result, err); err != nil {
+		return err
+	}
+	return a.commitMailbox(tx, job.message.From)
 }
 
 func (a *app) resolveOutboxError(job *outboxJob, cause error, submitted bool) error {
