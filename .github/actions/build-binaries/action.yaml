@@ -1,0 +1,20 @@
+name: Build Harbor Mail binaries
+description: Build the Linux and Windows binaries with SHA-256 checksums
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@v6
+      with:
+        go-version-file: go.mod
+    - name: Build binaries and checksums
+      shell: bash
+      env:
+        CGO_ENABLED: '0'
+      run: |
+        set -euo pipefail
+        mkdir -p dist
+        GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/harbormail-linux-amd64 ./cmd/harbormail
+        GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o dist/harbormail-linux-arm64 ./cmd/harbormail
+        GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/harbormail-windows-amd64.exe ./cmd/harbormail
+        cd dist
+        sha256sum -- harbormail-linux-amd64 harbormail-linux-arm64 harbormail-windows-amd64.exe > SHA256SUMS

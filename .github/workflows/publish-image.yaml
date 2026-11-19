@@ -12,6 +12,26 @@ jobs:
     uses: ./.github/workflows/verify.yaml
     permissions:
       contents: read
+  binaries:
+    needs: checks
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/build-binaries
+      - uses: actions/upload-artifact@v7
+        with:
+          name: harbormail-binaries-${{ github.sha }}
+          path: |
+            dist/harbormail-linux-amd64
+            dist/harbormail-linux-arm64
+            dist/harbormail-windows-amd64.exe
+            dist/SHA256SUMS
+          if-no-files-found: error
   publish:
     needs: checks
     runs-on: ubuntu-latest

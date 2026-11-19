@@ -54,6 +54,8 @@ Harbor Mail 镜像为 `ghcr.io/makessr/harbormail:latest`。[镜像包页面](ht
 
 GitHub 的 `Verify Harbor Mail` 工作流统一执行 Go 回归、SQLite 与 MySQL 8.4 验证、前端和运维脚本语法检查及 Prometheus 告警规则测试。拉取请求与镜像、二进制发布都会运行这套检查，也可从 Actions 手动运行。
 
+`Publish Harbor Mail image` 检查通过后会并行构建 GHCR 镜像和同一提交的单文件程序。登录 GitHub 后，可在该次运行的 **Artifacts** 下载 Linux amd64、Linux arm64、Windows amd64 和 `SHA256SUMS`。推送 `vMAJOR.MINOR.PATCH` 版本标签时，同一构建流程会把单文件上传到 GitHub Releases。
+
 | 目录 | 内容 |
 | --- | --- |
 | `cmd/harbormail/` | 单二进制入口 |
