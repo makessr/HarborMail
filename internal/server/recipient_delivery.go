@@ -144,7 +144,7 @@ func (a *app) recordRecipientResult(job *outboxJob, item recipientProgress, caus
 	code := 0
 	if errors.As(cause, &smtpError) {
 		code = smtpError.Code
-		if code >= 500 && code < 600 {
+		if code >= 500 && code < 600 && !errors.Is(cause, errRelayAuthentication) {
 			return a.recordRecipientAttempt(job, item, phase, "failed", code, 0)
 		}
 	}

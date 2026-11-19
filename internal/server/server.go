@@ -87,7 +87,7 @@ func Run() {
 	if err := json.Unmarshal([]byte(accountJSON), &configured); err != nil || len(configured) == 0 {
 		log.Fatal("set HARBOR_ACCOUNTS or HARBOR_ACCOUNTS_FILE to account JSON mapping email addresses to bcrypt hashes")
 	}
-	a := &app{accounts: make(map[string][]byte), domain: domain, relay: os.Getenv("HARBOR_RELAY")}
+	a := &app{accounts: make(map[string][]byte), domain: domain}
 	switch os.Getenv("HARBOR_RECOVERY_MODE") {
 	case "true":
 		a.recoveryMode = true
@@ -114,10 +114,19 @@ func Run() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	if a.relay != "" {
-		a.relayPassword, err = fileSetting("HARBOR_RELAY_PASSWORD")
+	if addr := os.Getenv("HARBOR_RELAY"); addr != "" {
+		password, err := fileSetting("HARBOR_RELAY_PASSWORD")
 		if err != nil {
 			log.Fatal(err)
+		}
+		a.relay = domainRelay{
+			Address:  addr,
+			TLS:      env("HARBOR_RELAY_TLS", "starttls"),
+			User:     os.Getenv("HARBOR_RELAY_USER"),
+			Password: password,
+		}
+		if err := a.relay.validate(); err != nil {
+			log.Fatal("invalid global SMTP relay configuration: ", err)
 		}
 	}
 	for key, hash := range configured {

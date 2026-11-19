@@ -146,14 +146,14 @@ func testScheduledDelivery(t *testing.T, driver, source string) {
 		t.Fatal(err)
 	}
 
-	a.relay = "relay.harbor.test:587"
+	a.relay.Address = "relay.harbor.test:587"
 	external := send(param, "external@example.test", http.StatusAccepted)
 	advance(external)
-	a.relay = ""
+	a.relay.Address = ""
 	if job, err := a.claimOutbox(); job != nil || err != nil {
 		t.Fatalf("external job claimed while relay was disabled: %+v (%v)", job, err)
 	}
-	a.relay = "relay.harbor.test:587"
+	a.relay.Address = "relay.harbor.test:587"
 	job = claim(external)
 	if err := a.processOutbox(job, testRelay(t, a, true, 250)); err != nil {
 		t.Fatal(err)

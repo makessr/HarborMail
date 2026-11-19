@@ -15,7 +15,7 @@ func TestOutboxRetriesOnlyTransientRecipient(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	a := &app{db: db, domain: "harbor.test", relay: "relay.harbor.test:587"}
+	a := &app{db: db, domain: "harbor.test", relay: domainRelay{Address: "relay.harbor.test:587"}}
 	const sender = "sender@harbor.test"
 	item := letter{From: sender, To: "a@example.test", Subject: "separate delivery", Body: "test body", Date: time.Now().Unix()}
 	raw, err := encodeLetter(item, a.domain, nil)

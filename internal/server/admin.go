@@ -137,7 +137,7 @@ func (a *app) replyOverview(w http.ResponseWriter, owner string, snapshot adminO
 		Database        string `json:"database"`
 		RelayConfigured bool   `json:"relayConfigured"`
 		SpamScanning    bool   `json:"spamScanning"`
-	}{snapshot, owner, a.domain, a.dbDriver, a.relay != "" || len(a.domainRelays) > 0, a.spamScanner != nil})
+	}{snapshot, owner, a.domain, a.dbDriver, a.relay.Address != "" || len(a.domainRelays) > 0, a.spamScanner != nil})
 }
 
 func (a *app) adminOverview(w http.ResponseWriter, r *http.Request, owner string) {

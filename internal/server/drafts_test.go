@@ -105,7 +105,7 @@ func TestSendingDraftQueuesExactlyOnce(t *testing.T) {
 	if response := send(); response.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("send without relay: got %d %s", response.Code, response.Body)
 	}
-	a.relay = "relay.example.test:587"
+	a.relay.Address = "relay.example.test:587"
 	if response := send(); response.Code != http.StatusAccepted {
 		t.Fatalf("retry after setting relay: got %d %s", response.Code, response.Body)
 	}

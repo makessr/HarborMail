@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"database/sql"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -29,7 +30,7 @@ func TestOutboxRelay(t *testing.T) {
 }
 
 func testOutboxRelay(t *testing.T, driver, source string) {
-	a := &app{domain: "harbor.test", relay: "relay.harbor.test:587"}
+	a := &app{domain: "harbor.test", relay: domainRelay{Address: "relay.harbor.test:587"}}
 	open := func() {
 		t.Helper()
 		var err error
@@ -111,6 +112,21 @@ func testOutboxRelay(t *testing.T, driver, source string) {
 	if err := a.db.QueryRow(`SELECT count(*) FROM letters WHERE owner=? AND folder='inbox'`, owner).
 		Scan(&notices); err != nil || notices != 2 {
 		t.Fatalf("inbox notices = %d, err = %v", notices, err)
+	}
+
+	authFailed := queue("relay password changed")
+	authJob, err := a.claimOutbox()
+	if err != nil || authJob == nil || authJob.message.ID != authFailed {
+		t.Fatalf("could not claim auth test job %d: %v", authFailed, err)
+	}
+	if err := a.processOutbox(authJob, func(context.Context) (*smtp.Client, func(), error) {
+		return nil, nil, fmt.Errorf("%w: %w", errRelayAuthentication, smtp.ErrAuthFailed)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	retry := checkState(authFailed, "queued")
+	if retry.Attempts != 1 || retry.Due < time.Now().Add(29*time.Minute).Unix() || !strings.Contains(retry.Reason, "中继认证失败") {
+		t.Fatalf("unexpected auth retry: %+v", retry)
 	}
 
 	stale := queue("server interrupted")

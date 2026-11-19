@@ -38,8 +38,7 @@ type app struct {
 	domain              string
 	secure              bool
 	recoveryMode        bool
-	relay               string
-	relayPassword       string
+	relay               domainRelay
 	webLogin            webLoginGuard
 	clientLogin         webLoginGuard
 	contentIndex        int

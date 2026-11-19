@@ -210,8 +210,8 @@ MySQL 密码文件用于首次初始化。已有数据卷的密码在 MySQL 内�
 | `HARBOR_RSPAMD_TRAIN_ACCOUNTS` | 开启训练时必填。用逗号分隔获准提交反馈的主账号地址 |
 | `HARBOR_RSPAMD_TRAIN_PASSWORD` / `HARBOR_RSPAMD_TRAIN_PASSWORD_FILE` | 训练所用控制器权限密码，二选一。文件仅存放实际密码 |
 | `HARBOR_RELAY` | 外部发信中继地址，如 `smtp.provider.example:587` |
-| `HARBOR_RELAY_TLS` | 默认强制 STARTTLS，设为 `implicit` 时使用隐式 TLS（通常为 465） |
-| `HARBOR_RELAY_USER` / `HARBOR_RELAY_PASSWORD` | 中继需要 SMTP AUTH PLAIN 时设置 |
+| `HARBOR_RELAY_TLS` | `starttls`（默认，强制 STARTTLS）或 `implicit`（隐式 TLS，通常为 465） |
+| `HARBOR_RELAY_USER` / `HARBOR_RELAY_PASSWORD` | 中继需要 SMTP AUTH PLAIN 时成对设置。配置缺项会导致启动失败 |
 | `HARBOR_RELAY_PASSWORD_FILE` | 从文件读取中继密码，与 `HARBOR_RELAY_PASSWORD` 二选一 |
 
 ## 管理后台
@@ -309,7 +309,7 @@ Docker 的 MySQL 模式已包含 Redis。如果使用已有 Redis，将 `compose
 
 配置 TLS（PEM 文件或下述 ACME 模式），并启用一个或两个客户端发信端口。端口 587 选择 **STARTTLS**，端口 465 选择 **SSL/TLS**。服务器填写证书匹配的主机名，用户名填写完整邮箱地址，使用登录 Web 邮箱的密码和客户端的「普通密码」认证（SMTP AUTH PLAIN，始终在 TLS 内）。
 
-客户端发件地址必须与登录账号一致。每次 SMTP 提交支持最多 20 个收件人，对外发信使用 `HARBOR_RELAY`，站内直接投递，发件副本显示在 Web 邮箱的「已发送」。公网部署时，可在防火墙或 TCP 代理限制异常连接。
+客户端发件地址必须与登录账号一致。每次 SMTP 提交支持最多 20 个收件人。对外发信优先使用发件域的专用中继，未设置专用中继时使用 `HARBOR_RELAY`。站内直接投递，发件副本显示在 Web 邮箱的「已发送」。公网部署时，可在防火墙或 TCP 代理限制异常连接。
 
 如需客户端收信，设置 `HARBOR_POP3S=:995` 并保留相同的证书配置。收信协议选择 **POP3**，连接安全性选择 **SSL/TLS**，端口 **995**，用完整邮箱地址和 Web 邮箱密码登录。POP3 下载的是收件箱。若客户端设置为下载后删除，只有在客户端正常发送 `QUIT` 后才会把邮件移到 Web 邮箱的废纸篓，可从那里恢复。需要保留收件箱中的原件时，启用客户端的「在服务器上保留副本」。
 
@@ -508,6 +508,7 @@ IMAP 的 **Drafts** 文件夹支持 `APPEND`，原始 MIME 和附件会完整保
 Web 邮箱或 SMTP 客户端提交的外部邮件会先保存到数据库。网页显示「已加入发件箱」表示保管成功，待中继明确接收后才会出现在「已发送」。
 
 - 网络故障或中继返回临时错误时，发件箱显示下次尝试时间。重试间隔从 30 分钟逐步延长至最多 6 小时，最长保留 5 天的重试窗口。
+- 中继在 SMTP AUTH 阶段拒绝登录时，邮件保留在队列中。管理员修正中继凭据后，可在投递队列提前重试。
 - 中继永久拒绝或超过重试期限时，发件箱保留原邮件和失败状态，并在站内收件箱生成通知。
 - 已提交 DATA 结束标记却没收到最终确认时，任务标记为「结果待确认」。服务中断时会在投递租约到期后恢复并显示该状态。先查中继记录再决定是否重发，系统不会自动重投这些邮件。发件箱支持下载原始 `.eml`。
 

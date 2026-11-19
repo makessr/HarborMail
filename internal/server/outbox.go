@@ -76,7 +76,7 @@ func (a *app) runOutbox() {
 	defer ticker.Stop()
 	for {
 		var err error
-		if a.relay != "" || len(a.domainRelays) > 0 {
+		if a.relay.Address != "" || len(a.domainRelays) > 0 {
 			err = a.recoverOutbox()
 		}
 		if err != nil {
@@ -135,7 +135,7 @@ func (a *app) claimOutbox() (*outboxJob, error) {
 	args := []any{now.Unix(), now.Unix()}
 	query := `SELECT id FROM outbox WHERE ((state IN ('queued','scheduled','undo') AND due<=?)
 		OR (state='preparing' AND lease<=?))`
-	if a.relay == "" {
+	if a.relay.Address == "" {
 		query += ` AND (EXISTS (SELECT 1 FROM outbox_schedule s WHERE s.outbox_id=outbox.id AND s.local_owner<>'')
 			OR EXISTS (SELECT 1 FROM web_outbox_envelopes e WHERE e.outbox_id=outbox.id AND e.has_external=FALSE)`
 		for domain := range a.domainRelays {
@@ -283,7 +283,9 @@ func (a *app) processOutbox(job *outboxJob, connect relayConnector) error {
 func (a *app) resolveOutboxError(job *outboxJob, cause error, submitted bool) error {
 	var response *smtp.SMTPError
 	reason := "无法连接 SMTP 中继或投递暂时受阻。"
-	if errors.As(cause, &response) {
+	if errors.Is(cause, errRelayAuthentication) {
+		reason = "SMTP 中继认证失败，请检查中继凭据。"
+	} else if errors.As(cause, &response) {
 		if response.Code >= 500 && response.Code <= 599 {
 			return a.finishOutbox(job, "failed", fmt.Sprintf("SMTP 中继拒绝了邮件（%d）。", response.Code), 0)
 		}
