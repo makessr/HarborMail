@@ -218,33 +218,55 @@ func summarizeRecipients(items []recipientProgress) (state, reason string, due i
 	}
 }
 
-func (a *app) recoverRecipientProgress(job *outboxJob) (bool, error) {
+func (a *app) recoverOutboxJob(job *outboxJob) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	tx, err := a.db.BeginTx(ctx, nil)
 	if err != nil {
-		return false, err
+		return err
 	}
 	defer tx.Rollback()
-	var tracked bool
-	err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM outbox_recipient_progress WHERE outbox_id=? AND state='sending')`,
-		job.message.ID).Scan(&tracked)
-	if err != nil || !tracked {
-		return tracked, err
+	if a.hardQuota {
+		if err := lockIMAPUIDs(ctx, tx); err != nil {
+			return err
+		}
 	}
-	now := time.Now().Unix()
-	result, err := tx.ExecContext(ctx, `UPDATE outbox SET state='queued',due=?,reason=?,claim='',lease=0
-		WHERE id=? AND state='sending' AND claim=? AND lease<=?`, now, "中继确认中断，其他地址可继续投递。",
-		job.message.ID, job.claim, now)
+	m := job.message
+	// Hold the parent row before inspecting recipient results. Another worker
+	// may have recorded SMTP's response since the recovery scan.
+	result, err := tx.ExecContext(ctx, `UPDATE outbox SET lease=lease
+		WHERE id=? AND state='sending' AND claim=? AND lease<=?`,
+		m.ID, job.claim, time.Now().Unix())
 	if err := requireAffectedRow(result, err); errors.Is(err, sql.ErrNoRows) {
-		return true, nil
+		return nil
 	} else if err != nil {
-		return true, err
+		return err
 	}
 	result, err = tx.ExecContext(ctx, `UPDATE outbox_recipient_progress SET state='uncertain',due=0
-		WHERE outbox_id=? AND state='sending'`, job.message.ID)
-	if err := requireAffectedRow(result, err); err != nil {
-		return true, err
+		WHERE outbox_id=? AND sender=? AND state='sending'`, m.ID, m.From)
+	if err != nil {
+		return err
 	}
-	return true, a.commitMailbox(tx, job.message.From)
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	state, reason, due := "uncertain", "服务在等待中继确认时中断，请核对中继记录。", int64(0)
+	if changed > 0 {
+		recipients, err := readRecipientProgress(ctx, tx, m.From, m.ID)
+		if err != nil {
+			return err
+		}
+		state, reason, due = summarizeRecipients(recipients)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE outbox SET state=?,due=?,reason=?,claim='',lease=0 WHERE id=?`,
+		state, due, reason, m.ID); err != nil {
+		return err
+	}
+	if state == "uncertain" {
+		if err := a.insertDeliveryNotice(tx, m, state, reason); err != nil {
+			return err
+		}
+	}
+	return a.commitMailbox(tx, m.From)
 }

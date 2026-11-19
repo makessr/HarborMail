@@ -54,6 +54,9 @@ func testOutboxWithoutRelay(t *testing.T, driver, source string) {
 		return id
 	}
 	scheduled := queue("recently due")
+	if _, err := db.Exec(`UPDATE outbox SET state='scheduled' WHERE id=?`, scheduled); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := db.Exec(`INSERT INTO outbox_schedule(outbox_id,send_at,local_owner) VALUES(?,?,'')`,
 		scheduled, now.Add(-time.Hour).Unix()); err != nil {
 		t.Fatal(err)
@@ -100,6 +103,9 @@ func testOutboxWithoutRelay(t *testing.T, driver, source string) {
 	}
 	if job, err := a.claimOutbox(); job != nil || err != nil {
 		t.Fatalf("recently scheduled job should wait for a relay: %+v (%v)", job, err)
+	}
+	if _, err := a.restoreScheduled(t.Context(), sender, scheduled); err != nil {
+		t.Fatalf("clean up the scheduled job before another test enables a relay: %v", err)
 	}
 }
 

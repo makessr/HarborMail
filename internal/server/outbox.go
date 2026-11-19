@@ -112,14 +112,7 @@ func (a *app) recoverOutbox() error {
 		if err != nil {
 			return err
 		}
-		tracked, err := a.recoverRecipientProgress(&job)
-		if err != nil {
-			return err
-		}
-		if tracked {
-			continue
-		}
-		if err := a.finishOutbox(&job, "uncertain", "服务在等待中继确认时中断，请核对中继记录。", 0); err != nil {
+		if err := a.recoverOutboxJob(&job); err != nil {
 			return err
 		}
 	}
@@ -134,8 +127,10 @@ func (a *app) claimOutbox() (*outboxJob, error) {
 	if a.relay.Address == "" {
 		query += ` AND (EXISTS (SELECT 1 FROM outbox_schedule s WHERE s.outbox_id=outbox.id AND s.local_owner<>'')
 			OR EXISTS (SELECT 1 FROM web_outbox_envelopes e WHERE e.outbox_id=outbox.id AND e.has_external=FALSE)
+			OR (EXISTS (SELECT 1 FROM outbox_recipient_progress p WHERE p.outbox_id=outbox.id AND p.state='uncertain')
+				AND NOT EXISTS (SELECT 1 FROM outbox_recipient_progress p WHERE p.outbox_id=outbox.id AND p.state IN ('queued','sending')))
 			OR (stamp<=? AND NOT EXISTS (SELECT 1 FROM outbox_schedule s WHERE s.outbox_id=outbox.id AND s.send_at>?))`
-		// A sender without a relay can still have an expired delivery to close.
+		// A sender without a relay may still have deliveries to close.
 		expiredBefore := now.Add(-outboxMaxAge).Unix()
 		args = append(args, expiredBefore, expiredBefore)
 		for domain := range a.domainRelays {
@@ -352,22 +347,30 @@ func (a *app) finishOutbox(job *outboxJob, state, reason string, due int64) erro
 			}
 		}
 	case "failed", "uncertain":
-		subject := "邮件投递失败"
-		if state == "uncertain" {
-			subject = "邮件投递结果待确认"
-		}
-		notice := letter{From: "postmaster@" + a.domain, To: m.From, Subject: subject, Date: time.Now().Unix(),
-			Body: fmt.Sprintf("收件人：%s\n原邮件主题：%s\n\n%s\n\n可在 Harbor Mail 的「发件箱」查看原邮件。",
-				m.To, m.Subject, reason)}
-		raw, err := encodeLetter(notice, a.domain, nil)
-		if err != nil {
-			return err
-		}
-		if err := insert(tx, notice.To, notice, "inbox", raw); err != nil && !isQuotaExceeded(err) {
+		if err := a.insertDeliveryNotice(tx, m, state, reason); err != nil {
 			return err
 		}
 	}
 	return a.commitMailbox(tx, m.From)
+}
+
+func (a *app) insertDeliveryNotice(tx *sql.Tx, m letter, state, reason string) error {
+	subject := "邮件投递失败"
+	if state == "uncertain" {
+		subject = "邮件投递结果待确认"
+	}
+	notice := letter{From: "postmaster@" + a.domain, To: m.From, Subject: subject, Date: time.Now().Unix(),
+		Body: fmt.Sprintf("收件人：%s\n原邮件主题：%s\n\n%s\n\n可在 Harbor Mail 的「发件箱」查看原邮件。",
+			m.To, m.Subject, reason)}
+	raw, err := encodeLetter(notice, a.domain, nil)
+	if err != nil {
+		return err
+	}
+	err = insert(tx, notice.To, notice, "inbox", raw)
+	if isQuotaExceeded(err) {
+		return nil
+	}
+	return err
 }
 
 func dialRelay(ctx context.Context, addr string, implicit bool, cfg *tls.Config) (*smtp.Client, func(), error) {
