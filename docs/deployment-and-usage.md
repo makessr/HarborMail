@@ -446,7 +446,7 @@ IMAP 客户端支持 `CREATE`、`RENAME`、`DELETE`、`SUBSCRIBE`、`UNSUBSCRIBE
 
 训练会将原始邮件提交给可信的 [Rspamd 控制器](https://docs.rspamd.com/developers/protocol/)，包括邮件中的附件。控制器应仅供私有网络访问，跨不可信链路使用 HTTPS。配置控制器的 `enable_password` 时，Harbor Mail 需要对应的实际密码。建议启用 Rspamd 的训练缓存以识别重复训练。Compose 部署时把密码保存到 `${HARBOR_SECRETS_DIR}/rspamd-train-password`（默认 `./secrets/`），设置控制器地址和账号后，在现有 Compose 命令中加入 `-f compose.rspamd-learning.yaml`。
 
-反馈与邮件移动同事务入库，控制器请求在后台进行。连接中断、HTTP 408、429 或 5xx 最多尝试五次，间隔依次为 20、40、80、160 秒。控制器明确拒绝或重试耗尽时标记失败，邮件继续保留在用户选择的文件夹。维护者可查看 `spam_feedback.state`、`attempts` 和 Harbor Mail 日志。日志记录反馈编号和错误类别。重新作出符合条件的分类操作可以再次提交失败的反馈。
+反馈与邮件移动同事务入库，控制器请求在后台进行。连接中断、HTTP 408、429 或 5xx 最多尝试五次，默认重试间隔依次为 20、40、80、160 秒。控制器通过 `Retry-After` 要求等待更久时，按其指定时间延后重试，单次最多等一小时。控制器明确拒绝或重试耗尽时标记失败，邮件继续保留在用户选择的文件夹。维护者可查看 `spam_feedback.state`、`attempts` 和 Harbor Mail 日志。日志记录反馈编号和错误类别。重新作出符合条件的分类操作可以再次提交失败的反馈。
 
 ## 邮件会话与回复
 

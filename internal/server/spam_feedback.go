@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -164,13 +165,26 @@ func (a *app) finishSpamFeedback(ctx context.Context, job *spamFeedbackJob, stat
 	return err
 }
 
-func (trainer *rspamdTrainer) learn(ctx context.Context, job *spamFeedbackJob) (bool, error) {
+func spamFeedbackRetryDelay(value string, now time.Time, backoff time.Duration) time.Duration {
+	const maxDelay = time.Hour
+	value = strings.TrimSpace(value)
+	if seconds, err := strconv.ParseUint(value, 10, 64); err == nil {
+		wait := time.Duration(min(seconds, uint64(maxDelay/time.Second))) * time.Second
+		return max(backoff, wait)
+	}
+	if until, err := http.ParseTime(value); err == nil {
+		return max(backoff, min(until.Sub(now), maxDelay))
+	}
+	return backoff
+}
+
+func (trainer *rspamdTrainer) learn(ctx context.Context, job *spamFeedbackJob, backoff time.Duration) (time.Duration, error) {
 	if !trainer.allows(job.owner) || len(job.raw) == 0 || (job.class != "spam" && job.class != "ham") {
-		return false, errors.New("sample unavailable or not permitted")
+		return 0, errors.New("sample unavailable or not permitted")
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, trainer.origin+"/learn"+job.class, bytes.NewReader(job.raw))
 	if err != nil {
-		return false, errors.New("invalid controller request")
+		return 0, errors.New("invalid controller request")
 	}
 	req.Header.Set("Password", trainer.password)
 	req.Header.Set("Content-Type", "message/rfc822")
@@ -180,17 +194,18 @@ func (trainer *rspamdTrainer) learn(ctx context.Context, job *spamFeedbackJob) (
 	}
 	response, err := trainer.client.Do(req)
 	if err != nil {
-		return true, errors.New("controller connection failed")
+		return backoff, errors.New("controller connection failed")
 	}
 	defer response.Body.Close()
 	status := response.StatusCode
 	if status == http.StatusRequestTimeout || status == http.StatusTooManyRequests || status >= 500 {
-		return true, fmt.Errorf("controller HTTP %d", status)
+		delay := spamFeedbackRetryDelay(response.Header.Get("Retry-After"), time.Now(), backoff)
+		return delay, fmt.Errorf("controller HTTP %d", status)
 	}
 	const limit = 16 << 10
 	body, err := io.ReadAll(io.LimitReader(response.Body, limit+1))
 	if err != nil {
-		return true, errors.New("controller response interrupted")
+		return backoff, errors.New("controller response interrupted")
 	}
 	var result struct {
 		Success bool   `json:"success"`
@@ -198,14 +213,14 @@ func (trainer *rspamdTrainer) learn(ctx context.Context, job *spamFeedbackJob) (
 	}
 	if len(body) <= limit && json.Unmarshal(body, &result) == nil {
 		if status == http.StatusOK && result.Success {
-			return false, nil
+			return 0, nil
 		}
 		if (status == http.StatusAlreadyReported || status == http.StatusNotFound) &&
 			strings.HasSuffix(result.Error, " has been already learned as "+job.class+", ignore it") {
-			return false, nil
+			return 0, nil
 		}
 	}
-	return false, fmt.Errorf("controller rejected sample (HTTP %d)", status)
+	return 0, fmt.Errorf("controller rejected sample (HTTP %d)", status)
 }
 
 func (a *app) runSpamFeedback() {
@@ -239,13 +254,14 @@ func (a *app) processSpamFeedback(job *spamFeedbackJob) error {
 		log.Printf("spam feedback id=%d: attempt limit reached", job.id)
 	} else {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		retry, err := a.spamTrainer.learn(ctx, job)
+		backoff := 20 * time.Second << (job.attempts - 1)
+		delay, err := a.spamTrainer.learn(ctx, job, backoff)
 		cancel()
 		if err != nil {
 			state = "failed"
-			if retry && job.attempts < spamFeedbackAttempts {
+			if delay > 0 && job.attempts < spamFeedbackAttempts {
 				state = "pending"
-				due = time.Now().Add(20 * time.Second << (job.attempts - 1)).Unix()
+				due = time.Now().Add(delay).Unix()
 			}
 			log.Printf("spam feedback id=%d state=%s: %v", job.id, state, err)
 		}
