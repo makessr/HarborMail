@@ -28,7 +28,7 @@ exec 9>"$HARBOR_BACKUP_WORK/$tag.lock"
 flock -n 9 || fail 'Another backup or verification is running'
 
 if [[ $mode == plan || $mode == prune ]]; then
-  options=(--tag "$tag" --group-by tags --keep-daily 14 --keep-weekly 4)
+  options=(--host "$HARBOR_BACKUP_INSTANCE" --tag "$tag" --group-by tags --keep-daily 14 --keep-weekly 4)
   if [[ $mode == plan ]]; then options+=(--dry-run); else options+=(--prune); fi
   restic forget "${options[@]}"
   exit

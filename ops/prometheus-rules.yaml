@@ -9,7 +9,9 @@ groups:
         annotations:
           summary: Harbor Mail 指标抓取失败，检查进程、数据库和抓取网络
       - alert: HarborOutboxOverdue
-        expr: harbor_outbox_oldest_due_seconds{job="harbor-mail"} > 300
+        expr: |
+          (harbor_outbox_oldest_due_seconds{job="harbor-mail"} > 300)
+          unless on(job, instance) (harbor_outbox_paused{job="harbor-mail"} == 1)
         for: 5m
         labels:
           severity: warning

@@ -69,7 +69,7 @@ MySQL Compose 部署同时启动 Redis，运行在 Harbor Mail 专用内部网�
 | 信号 | 起始阈值与处置 |
 | --- | --- |
 | 指标抓取连续失败 | 2 分钟。看 Harbor 容器、Web `/healthz`、数据库可达性和监控路径 |
-| 已到期邮件仍未领取 | 最老 5 分钟且持续 5 分钟。检查出站 worker 日志、数据库和 SMTP 中继 |
+| 邮件等待领取或恢复超时 | 到期或投递租约过期后等待超过 5 分钟，持续 5 分钟时告警。主动暂停投递或开启恢复模式的实例会继续提供队列指标，该实例暂不触发此告警。检查出站 worker 日志、数据库和 SMTP 中继 |
 | 待确认的投递邮件数增长 | 按邮件计数。同一封邮件有多个待确认地址时只计一次，其他地址仍在重试时也计入。核对中继日志，再决定如何处置 |
 | 垃圾训练失败记录增长 | 检查 Rspamd 控制器的连接、认证和配置 |
 | 挂载可用空间低于 20% | 10 分钟。用 `df -h`、`df -i` 和数据库日志定位增长 |
@@ -95,7 +95,7 @@ Linux 主机可用 `bash ops/backup.sh backup` 生成数据库快照、上传到
 | `HARBOR_BACKUP_MYSQL_DB`、`HARBOR_BACKUP_MYSQL_CNF` | MySQL 库名及受限客户端配置绝对路径 |
 | `HARBOR_BACKUP_METRIC_DIR` | 可选，成功回读后原子更新 node_exporter 指标的目录 |
 
-按实际安装路径调整 `ops/harbor-backup.service` 和 `ops/harbor-backup.timer`。这两个模板只调度备份。在单独的维护任务中先运行 `bash ops/backup.sh plan` 查看保留计划，再使用具备仓库删除权限的凭据运行 `bash ops/backup.sh prune` 执行 14 个日备和 4 个周备保留策略。
+按实际安装路径调整 `ops/harbor-backup.service` 和 `ops/harbor-backup.timer`。这两个模板只调度备份。在单独的维护任务中先运行 `bash ops/backup.sh plan` 查看保留计划，再使用具备仓库删除权限的凭据运行 `bash ops/backup.sh prune` 执行 14 个日备和 4 个周备保留策略。两种操作都以备份时设置的 Restic 主机名和实例标签限定快照范围。 [Restic 保留策略](https://restic.readthedocs.io/en/stable/060_forget.html)
 
 用 `bash ops/backup.sh verify SNAPSHOT_ID` 验证指定快照。恢复演练应沿用快照生成时的 `HARBOR_BACKUP_INSTANCE`，脚本会核对 Restic 主机名和实例标签。回读时只提取数据库产物和校验清单，并核对清单中的 SHA-256 对应这份数据库。SQLite 会校验数据库完整性。
 

@@ -40,6 +40,11 @@ func (a *app) metrics(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	fmt.Fprintf(w, "# TYPE harbor_outbox_oldest_due_seconds gauge\nharbor_outbox_oldest_due_seconds %d\n", stats.OldestDueSeconds)
+	paused := 0
+	if a.pauseOutbox || a.recoveryMode {
+		paused = 1
+	}
+	fmt.Fprintf(w, "# TYPE harbor_outbox_paused gauge\nharbor_outbox_paused %d\n", paused)
 	fmt.Fprintf(w, "# TYPE harbor_outbox_uncertain_messages gauge\nharbor_outbox_uncertain_messages %d\n", stats.Uncertain)
 	fmt.Fprintf(w, "# TYPE harbor_spam_training_failed_samples gauge\nharbor_spam_training_failed_samples %d\n", stats.FailedTraining)
 }
@@ -53,9 +58,12 @@ type operationalCounts struct {
 func (a *app) operationalCounts(ctx context.Context, now int64) (operationalCounts, error) {
 	var stats operationalCounts
 	var oldest int64
-	// Appointment and undo windows count only after their delivery time.
-	err := a.db.QueryRowContext(ctx, `SELECT COALESCE(MIN(due), ?) FROM outbox
-		WHERE state IN ('queued','scheduled','undo') AND due<=?`, now, now).Scan(&oldest)
+	// An active claim only needs recovery after its lease expires.
+	err := a.db.QueryRowContext(ctx, `SELECT COALESCE(MIN(deadline), ?) FROM (
+		SELECT MIN(due) AS deadline FROM outbox WHERE state IN ('queued','scheduled','undo') AND due<=?
+		UNION ALL
+		SELECT MIN(lease) FROM outbox WHERE state IN ('preparing','sending') AND lease>0 AND lease<=?
+	) waiting`, now, now, now).Scan(&oldest)
 	if err == nil {
 		// Recipient-level uncertainty can coexist with retries for other addresses.
 		// Count the message once, even if both levels report uncertainty.
