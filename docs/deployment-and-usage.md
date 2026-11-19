@@ -68,7 +68,46 @@ sudo chgrp 10001 secrets/accounts.json
 sudo chmod 0640 secrets/accounts.json
 ```
 
-如需查看管理后台，把 `HARBOR_ADMINS=hello@harbor.test` 加到项目目录的 `.env`。管理员地址须是账号文件里的主邮箱。若本机已有服务占用默认端口，可在 `.env` 设置 `HARBOR_WEB_PORT=18080` 和 `HARBOR_SMTP_PORT=12525`，并在下面的验收步骤使用对应端口。
+如需查看管理后台，把 `HARBOR_ADMINS=hello@harbor.test` 加到项目目录的 `.env`。管理员地址须是账号文件里的主邮箱。
+
+### 配置宿主机端口
+
+Docker Compose 从项目目录的 `.env` 读取端口。Web 默认发布为 `127.0.0.1:8080`，SMTP 默认发布为 `127.0.0.1:2525`。如果默认端口已占用，可以在现有 `.env` 添加或修改下列配置。
+
+```dotenv
+HARBOR_WEB_PORT=18080
+HARBOR_SMTP_PORT=12525
+```
+
+启动前可在 Linux 部署主机检查这两个示例端口。使用默认端口或其他端口时，相应替换命令中的数字。
+
+```bash
+sudo ss -ltnp '( sport = :18080 or sport = :12525 )'
+docker ps --format '{{.Names}}  {{.Ports}}'
+```
+
+`docker compose config --quiet` 校验配置。Docker 在 `up` 时实际绑定端口，遇到冲突会报 `port is already allocated` 或 `address already in use`，此时可更换 `.env` 中的宿主机端口再启动。用 `docker compose … ps` 核对最终映射，验收 URL 的端口也要随之调整。 [Docker 端口绑定错误](https://docs.docker.com/desktop/troubleshoot-and-support/troubleshoot/topics/#port-already-allocated-errors)
+
+| 用途 | `.env` 变量 | 默认宿主机端口 |
+| --- | --- | --- |
+| Web 邮箱及后台 | `HARBOR_WEB_PORT` | 8080 |
+| SMTP 收信 | `HARBOR_SMTP_PORT` | 2525 |
+| SMTP 隐式 TLS | `HARBOR_SMTPS_PORT` | 465 |
+| SMTP STARTTLS 提交 | `HARBOR_SUBMISSION_PORT` | 587 |
+| IMAPS | `HARBOR_IMAPS_PORT` | 993 |
+| POP3S | `HARBOR_POP3S_PORT` | 995 |
+| ACME HTTP-01 | `HARBOR_ACME_PORT` | 8081 |
+| 运行指标 | `HARBOR_METRICS_PORT` | 9091 |
+
+邮件客户端端口由 TLS 或 ACME 覆盖文件启用，ACME 验证端口和指标端口分别由对应覆盖文件启用。MySQL 和 Redis 默认只在 Compose 网络内访问。公网直接收信需要让对方邮件服务器能够连接公网 TCP 25，可将该端口转发给 Harbor Mail。
+
+使用已有 TLS 证书并接入邮件客户端时，准备好下文的证书文件，在默认 MySQL + Redis 部署命令中加入 `compose.tls.yaml`。
+
+```bash
+docker compose -f compose.yaml -f compose.mysql.yaml -f compose.registry.yaml -f compose.tls.yaml up -d --no-build --wait
+```
+
+由 Harbor Mail 自动申请证书时，配置 ACME 后将命令中的 `compose.tls.yaml` 换为 `compose.acme.yaml`。
 
 ### 启动 MySQL 与 Redis
 

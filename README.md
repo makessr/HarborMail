@@ -30,6 +30,8 @@ ARM64 服务器把 `GOARCH=amd64` 改为 `GOARCH=arm64`。将生成的 `harborma
 
 在 Linux amd64 主机的项目目录，按[部署指南](docs/deployment-and-usage.md#docker-compose-部署)准备首次登录与数据库凭据。Harbor Mail 从 GHCR 拉取，MySQL 和 Redis 使用各自的官方镜像。
 
+部署前可在项目目录的 `.env` 填写 `HARBOR_WEB_PORT` 和 `HARBOR_SMTP_PORT`。默认使用主机回环端口 `8080` 和 `2525`。 [端口配置与占用检查](docs/deployment-and-usage.md#配置宿主机端口)
+
 ```bash
 docker compose -f compose.yaml -f compose.mysql.yaml -f compose.registry.yaml up -d --no-build --wait
 docker compose -f compose.yaml -f compose.mysql.yaml -f compose.registry.yaml ps

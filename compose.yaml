@@ -34,12 +34,16 @@ services:
       HARBOR_RELAY_USER: ${HARBOR_RELAY_USER:-}
       HARBOR_RSPAMD_URL: ${HARBOR_RSPAMD_URL:-}
     ports:
+      # Web 邮箱和管理后台
       - target: 8080
         published: "${HARBOR_WEB_PORT:-8080}"
         host_ip: "${HARBOR_WEB_BIND:-127.0.0.1}"
+      # SMTP 服务器收信。直接接收公网邮件时，发布 TCP 25 或由公网 TCP 25 转发。
       - target: 2525
         published: "${HARBOR_SMTP_PORT:-2525}"
         host_ip: "${HARBOR_SMTP_BIND:-127.0.0.1}"
+      # 客户端 SMTP 465/587、IMAPS 993、POP3S 995 由 compose.tls.yaml
+      # 或 compose.acme.yaml 发布。按证书来源选择其一。
     volumes:
       - harbor_data:/var/lib/harbormail
     secrets:
