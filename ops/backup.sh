@@ -34,6 +34,7 @@ if [[ $mode == plan || $mode == prune ]]; then
   exit
 fi
 
+command -v jq >/dev/null || fail 'jq is required'
 work_root=$(realpath -- "$HARBOR_BACKUP_WORK")
 scratch=$(mktemp -d -- "$work_root/harbor.XXXXXXXX")
 [[ $(realpath -- "$scratch") == "$work_root"/harbor.* ]] || fail 'Invalid temporary backup directory'
@@ -66,21 +67,39 @@ verify_mysql_dump() {
     fail 'MySQL dump is missing the letters or outbox table; check the source database and backup grants'
 }
 
-read_back() {
+read_back() (
   local snapshot=$1 destination=$2
-  restic restore "$snapshot" --target "$destination" --verify >&2
-  (
-    cd "$destination"
-    [[ -f SHA256SUMS ]] || fail 'Snapshot does not contain a checksum manifest'
-    sha256sum --check --strict SHA256SUMS
-  )
-}
+  local artifact checksum
+  restic restore "$snapshot" --target "$destination" --verify \
+    --include /harbor.db --include /harbor.sql --include /SHA256SUMS >&2 ||
+    fail 'Could not read back the snapshot'
+  cd "$destination" || fail 'Could not open the restored snapshot directory'
+  if [[ -f harbor.db && ! -L harbor.db && ! -e harbor.sql && ! -L harbor.sql ]]; then
+    artifact=harbor.db
+  elif [[ -f harbor.sql && ! -L harbor.sql && ! -e harbor.db && ! -L harbor.db ]]; then
+    artifact=harbor.sql
+  else
+    fail 'Snapshot must contain exactly one Harbor Mail database artifact'
+  fi
+  [[ -f SHA256SUMS && ! -L SHA256SUMS ]] || fail 'Snapshot does not contain a regular checksum manifest'
+  checksum=$(sha256sum -- "$artifact") || fail 'Could not hash the restored database artifact'
+  [[ $(<SHA256SUMS) == "$checksum" ]] || fail "Snapshot checksum does not match $artifact"
+  printf '%s\n' "$artifact"
+)
 
 if [[ $mode == verify ]]; then
-  read_back "$2" "$scratch/restored"
-  if [[ -f $scratch/restored/harbor.db ]]; then
+  snapshot=$(restic snapshots --json "$2" |
+    jq -er --arg instance "$HARBOR_BACKUP_INSTANCE" --arg tag "$tag" '
+      select(length == 1)
+      | .[0]
+      | select(.hostname == $instance and ((.tags // []) | index($tag) != null))
+      | .id
+    ') || fail 'Snapshot not found or does not belong to this Harbor Mail instance'
+  [[ $snapshot =~ ^[0-9a-f]{64}$ ]] || fail 'Restic returned an invalid snapshot ID'
+  artifact=$(read_back "$snapshot" "$scratch/restored")
+  if [[ $artifact == harbor.db ]]; then
     verify_sqlite "$scratch/restored/harbor.db"
-  elif [[ -f $scratch/restored/harbor.sql ]]; then
+  else
     verify_mysql_dump "$scratch/restored/harbor.sql"
     : "${HARBOR_BACKUP_VERIFY_CNF:?Set the separate, isolated verification server client config}"
     : "${HARBOR_BACKUP_VERIFY_DB:?Set an empty isolated verification database}"
@@ -96,8 +115,6 @@ if [[ $mode == verify ]]; then
     [[ $tables == 0 ]] || fail 'The verification database must be empty'
     "${mysql_verify[@]}" < "$scratch/restored/harbor.sql"
     "${mysql_verify[@]}" -e 'SELECT COUNT(*) AS messages FROM letters; SELECT COUNT(*) AS queue_tasks FROM outbox;'
-  else
-    fail 'Snapshot contains neither harbor.db nor harbor.sql'
   fi
   printf 'Verified Harbor Mail snapshot %s\n' "$2"
   exit
@@ -127,7 +144,6 @@ case "${HARBOR_BACKUP_DRIVER:-}" in
   *) fail 'Set HARBOR_BACKUP_DRIVER to sqlite or mysql' ;;
 esac
 
-command -v jq >/dev/null || fail 'jq is required'
 (
   cd "$scratch/export"
   sha256sum -- "$artifact" > SHA256SUMS
@@ -135,7 +151,9 @@ command -v jq >/dev/null || fail 'jq is required'
 )
 snapshot=$(jq -er 'select(.message_type == "summary") | .snapshot_id' "$scratch/restic.jsonl")
 [[ $snapshot =~ ^[0-9a-f]{8,64}$ ]] || fail 'Restic returned no snapshot ID'
-read_back "$snapshot" "$scratch/restored"
+restored_artifact=$(read_back "$snapshot" "$scratch/restored")
+[[ $restored_artifact == "$artifact" ]] ||
+  fail 'Read-back artifact does not match the database backup'
 if [[ -n ${HARBOR_BACKUP_METRIC_DIR:-} ]]; then
   [[ $HARBOR_BACKUP_METRIC_DIR == /* && -d $HARBOR_BACKUP_METRIC_DIR ]] || fail 'Invalid metrics directory'
   marker_tmp=$(mktemp -- "$HARBOR_BACKUP_METRIC_DIR/.harbor-backup.XXXXXXXX")
