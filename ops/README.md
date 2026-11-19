@@ -1,6 +1,41 @@
 # Harbor Mail 生产运行
 
-以下模板面向 Linux Docker 主机。备份和恢复命令都从项目目录运行，按实际启用的覆盖文件补齐 `-f` 参数。为生产和演练各用独立的 Compose 项目、数据库、数据目录及监听地址。
+以下模板面向 Linux 主机，支持 Docker Compose 和单二进制。备份和恢复命令都从项目目录运行。为生产和演练各用独立的数据库、数据目录及监听地址。
+
+## Linux 单二进制 systemd 部署
+
+使用 systemd 251 或更新版本。从项目目录准备目标架构的 `harbormail` 和 `secrets/accounts.json`，生成方式见[单二进制启动说明](../docs/deployment-and-usage.md#linux-单二进制)。也可在单文件的构建产物中下载并解压 `harbormail-systemd.tar.gz`，取得相同的 `ops/` 模板。首次安装时创建专用系统账号和配置目录。已有部署沿用原账号、凭据和数据路径。
+
+```bash
+getent passwd harbormail >/dev/null ||
+  sudo useradd --system --user-group --home-dir /var/lib/harbormail --shell "$(command -v nologin)" harbormail
+sudo install -d -m 0700 /etc/harbormail
+sudo install -m 0755 ./harbormail /usr/local/bin/harbormail
+sudo install -m 0600 secrets/accounts.json /etc/harbormail/accounts.json
+sudo install -m 0600 ops/harbormail.env.example /etc/harbormail/harbormail.env
+sudoedit /etc/harbormail/harbormail.env
+sudo install -m 0644 ops/harbormail.service /etc/systemd/system/harbormail.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now harbormail.service
+```
+
+模板默认使用本机回环端口 Web 8080 和 SMTP 2525，SQLite 数据库位于 `/var/lib/harbormail/harbor.db`。把示例域名改为实际值。systemd 创建可写的数据目录，并通过 `LoadCredential=` 让专用服务账号读取账号文件。启动后按实际监听地址检查 `/healthz`，默认可运行 `curl -fsS http://127.0.0.1:8080/healthz`。查看日志用 `sudo journalctl -u harbormail.service`。 [systemd 凭据与状态目录](https://www.freedesktop.org/software/systemd/man/252/systemd.exec.html)
+
+### MySQL、Redis 与 TLS
+
+使用 MySQL 时在 `harbormail.env` 里将 `HARBOR_DB_DRIVER` 设为 `mysql`。将 DSN 写入仅 root 可读的 `/etc/harbormail/mysql-dsn`，用 `sudo systemctl edit harbormail.service` 加入配置。
+
+```ini
+[Service]
+LoadCredential=mysql-dsn:/etc/harbormail/mysql-dsn
+Environment=HARBOR_MYSQL_DSN_FILE=%d/mysql-dsn
+```
+
+启用 Redis 时，在环境文件中设置专用 `HARBOR_REDIS_NAMESPACE`。将连接地址写入仅 root 可读的 `/etc/harbormail/redis-url`，在同一个 drop-in 的 `[Service]` 下添加 `LoadCredential=redis-url:/etc/harbormail/redis-url` 和 `Environment=HARBOR_REDIS_URL_FILE=%d/redis-url`。 [Redis 配置](../docs/deployment-and-usage.md#可选-redis-缓存)
+
+需要直接绑定 TCP 25、465 等低端口时，在 drop-in 的 `[Service]` 添加 `CapabilityBoundingSet=CAP_NET_BIND_SERVICE` 和 `AmbientCapabilities=CAP_NET_BIND_SERVICE`，再配置对应的监听地址。使用受限的 PEM 文件时，通过 `LoadCredential=` 加载证书与私钥，并把 `HARBOR_CERT`、`HARBOR_KEY` 指向相应的 `%d/` 路径。用 ACME 时将 `HARBOR_ACME_CACHE` 指向状态目录下的可写路径，如 `/var/lib/harbormail/acme`。公网接入时核对实际端口、DNS、反向代理及 TLS。 [域名与 TLS 配置](../docs/deployment-and-usage.md#接入真实域名)
+
+更新前备份并保留旧二进制，执行 `sudo systemctl stop harbormail.service`，安装新版文件后再启动并检查健康状态。修改服务单元后先执行 `sudo systemctl daemon-reload`。模板为有序停机保留 125 秒。
 
 ## 首次启动与上线验收
 
@@ -37,7 +72,7 @@
 
 为数据挂载独立且容量固定的文件系统，例如 LVM 逻辑卷或云盘。将挂载写入主机的持久配置，并为 Compose 启动服务设置相应的 systemd `RequiresMountsFor=`。启动前用 `findmnt --mountpoint` 检查挂载来源，避免主机重启后数据被写入根分区。备份放在另一块文件系统，并保留异地副本。
 
-Linux 单文件由 systemd 托管时，为 Harbor 服务设置 `TimeoutStopSec=125s`。Compose 已在 `harbor` 服务配置同样的停止宽限。更新前执行正常停止，让正在执行的任务有时间写回结果。超过期限或进程异常退出时，发件箱继续用持久化状态和租约恢复。
+单文件与 Compose 的服务模板均保留 125 秒停机宽限。超过期限或进程异常退出时，发件箱继续用持久化状态和租约恢复。
 
 | 挂载示例 | 内容 | 可调整的起点 |
 | --- | --- | --- |

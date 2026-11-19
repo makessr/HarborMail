@@ -33,6 +33,8 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o harbormail ./cmd/har
 
 ARM64 源码构建把 `GOARCH=amd64` 改为 `GOARCH=arm64`。准备好二进制后，按[原生启动说明](docs/deployment-and-usage.md#linux-单二进制)创建首个账号，然后运行 `./harbormail`。默认使用 SQLite，运行服务器只需要二进制、账号配置和可写的数据目录。Go 仅用于构建。
 
+长期运行可安装 [systemd 服务](ops/README.md#linux-单二进制-systemd-部署)，由系统管理开机启动、凭据和有序停机。
+
 ## Linux Docker Compose（MySQL + Redis）
 
 在 Linux amd64 主机的项目目录，按[部署指南](docs/deployment-and-usage.md#docker-compose-部署)准备首次登录与数据库凭据。Harbor Mail 从 GHCR 拉取，MySQL 和 Redis 使用各自的官方镜像。
@@ -54,7 +56,7 @@ Harbor Mail 镜像为 `ghcr.io/makessr/harbormail:latest`。[镜像包页面](ht
 
 GitHub 的 `Verify Harbor Mail` 工作流统一执行 Go 回归、SQLite 与 MySQL 8.4 验证、前端和运维脚本语法检查及 Prometheus 告警规则测试。拉取请求与镜像、二进制发布都会运行这套检查，也可从 Actions 手动运行。
 
-`Publish Harbor Mail image` 检查通过后会并行构建 GHCR 镜像和同一提交的单文件程序。登录 GitHub 后，可在该次运行的 **Artifacts** 下载 Linux amd64、Linux arm64、Windows amd64 和 `SHA256SUMS`。推送 `vMAJOR.MINOR.PATCH` 版本标签时，同一构建流程会把单文件上传到 GitHub Releases。
+`Publish Harbor Mail image` 检查通过后会并行构建 GHCR 镜像和同一提交的单文件程序。登录 GitHub 后，可在该次运行的 **Artifacts** 下载 Linux amd64、Linux arm64、Windows amd64、systemd 模板和 `SHA256SUMS`。推送 `vMAJOR.MINOR.PATCH` 版本标签时，同一构建流程会把这些文件上传到 GitHub Releases。
 
 | 目录 | 内容 |
 | --- | --- |

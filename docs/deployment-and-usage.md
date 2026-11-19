@@ -28,6 +28,8 @@ HARBOR_ACCOUNTS_FILE="$PWD/secrets/accounts.json" ./harbormail
 
 默认监听 `127.0.0.1:8080`（Web）和 `127.0.0.1:2525`（SMTP），SQLite 会在工作目录下创建 `data/harbor.db`。可以用 `HARBOR_DB` 指定持久数据路径，以服务账号运行并保证其可写。使用 MySQL 时按[数据库配置](#使用-mysql)设置环境变量。远程部署时按[接入真实域名](#接入真实域名)配置 Web 反向代理和 SMTP。
 
+长期部署见 [Linux 单二进制 systemd 部署](../ops/README.md#linux-单二进制-systemd-部署)。
+
 ### Windows 开发
 
 Windows 用于本地开发。可从 [GitHub Releases](https://github.com/makessr/HarborMail/releases/latest) 下载 `harbormail-windows-amd64.exe`，重命名为 `harbormail.exe`，然后从下面的 `$accountHash` 一行开始。若从源码构建，需要 Go 1.27.4 或更新版本。以下命令从项目目录在 PowerShell 7 中运行。

@@ -30,6 +30,7 @@ jobs:
             dist/harbormail-linux-amd64
             dist/harbormail-linux-arm64
             dist/harbormail-windows-amd64.exe
+            dist/harbormail-systemd.tar.gz
             dist/SHA256SUMS
           if-no-files-found: error
   publish:
