@@ -30,6 +30,9 @@ var sqliteSchema = []string{
 		lease INTEGER NOT NULL DEFAULT 0, claim TEXT NOT NULL DEFAULT ''
 	)`,
 	`CREATE INDEX IF NOT EXISTS spam_feedback_due ON spam_feedback(state,owner,due,lease)`,
+	`CREATE TABLE IF NOT EXISTS spam_controller_pauses (
+		controller TEXT NOT NULL PRIMARY KEY, pause_until INTEGER NOT NULL
+	)`,
 	`CREATE TABLE IF NOT EXISTS draft_creation_keys (
 		owner TEXT NOT NULL, request_key TEXT NOT NULL, letter_id INTEGER NOT NULL, PRIMARY KEY(owner,request_key)
 	)`,
@@ -190,6 +193,9 @@ var mysqlSchema = []string{
 		lease BIGINT NOT NULL DEFAULT 0, claim CHAR(64) NOT NULL DEFAULT '',
 		KEY spam_feedback_due (state,owner,due,lease)
 	) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin`,
+	`CREATE TABLE IF NOT EXISTS spam_controller_pauses (
+		controller CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL PRIMARY KEY, pause_until BIGINT NOT NULL
+	) ENGINE=InnoDB`,
 	`CREATE TABLE IF NOT EXISTS draft_creation_keys (
 		owner VARCHAR(254) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
 		request_key CHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,

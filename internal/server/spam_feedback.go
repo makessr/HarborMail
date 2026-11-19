@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/go-sql-driver/mysql"
 )
 
 const spamFeedbackAttempts = 5
@@ -123,12 +126,21 @@ type spamFeedbackJob struct {
 	raw          []byte
 }
 
+func (trainer *rspamdTrainer) controllerID() string {
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(trainer.origin)))
+}
+
+const spamControllerReady = ` AND NOT EXISTS (
+	SELECT 1 FROM spam_controller_pauses WHERE controller=? AND pause_until>?
+)`
+
 func (a *app) claimSpamFeedback(ctx context.Context) (*spamFeedbackJob, error) {
 	now := time.Now()
 	job := &spamFeedbackJob{claim: token()}
-	args := append([]any{now.Unix(), now.Unix()}, a.spamTrainer.accountArgs...)
+	controller := a.spamTrainer.controllerID()
+	args := append([]any{now.Unix(), now.Unix(), controller, now.Unix()}, a.spamTrainer.accountArgs...)
 	err := a.db.QueryRowContext(ctx, `SELECT letter_id,owner,revision FROM spam_feedback
-		WHERE state='pending' AND due<=? AND lease<=? AND owner IN (`+placeholders(len(a.spamTrainer.accountArgs))+`)
+		WHERE state='pending' AND due<=? AND lease<=?`+spamControllerReady+` AND owner IN (`+placeholders(len(a.spamTrainer.accountArgs))+`)
 		ORDER BY due,letter_id LIMIT 1`, args...).Scan(&job.id, &job.owner, &job.revision)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -137,8 +149,8 @@ func (a *app) claimSpamFeedback(ctx context.Context) (*spamFeedbackJob, error) {
 		return nil, err
 	}
 	result, err := a.db.ExecContext(ctx, `UPDATE spam_feedback SET claim=?,lease=?,attempts=attempts+1
-		WHERE letter_id=? AND owner=? AND revision=? AND state='pending' AND due<=? AND lease<=?`,
-		job.claim, now.Add(2*time.Minute).Unix(), job.id, job.owner, job.revision, now.Unix(), now.Unix())
+		WHERE letter_id=? AND owner=? AND revision=? AND state='pending' AND due<=? AND lease<=?`+spamControllerReady,
+		job.claim, now.Add(2*time.Minute).Unix(), job.id, job.owner, job.revision, now.Unix(), now.Unix(), controller, now.Unix())
 	if err := requireAffectedRow(result, err); errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	} else if err != nil {
@@ -165,26 +177,40 @@ func (a *app) finishSpamFeedback(ctx context.Context, job *spamFeedbackJob, stat
 	return err
 }
 
-func spamFeedbackRetryDelay(value string, now time.Time, backoff time.Duration) time.Duration {
+func (a *app) pauseSpamController(ctx context.Context, until int64) error {
+	query := `INSERT INTO spam_controller_pauses(controller,pause_until) VALUES(?,?)
+		ON CONFLICT(controller) DO UPDATE SET pause_until=MAX(spam_controller_pauses.pause_until,?)`
+	if _, isMySQL := a.db.Driver().(*mysql.MySQLDriver); isMySQL {
+		query = `INSERT INTO spam_controller_pauses(controller,pause_until) VALUES(?,?)
+			ON DUPLICATE KEY UPDATE pause_until=GREATEST(pause_until,?)`
+	}
+	_, err := a.db.ExecContext(ctx, query, a.spamTrainer.controllerID(), until, until)
+	return err
+}
+
+func spamFeedbackRetryAfter(value string, now time.Time) time.Duration {
 	const maxDelay = time.Hour
 	value = strings.TrimSpace(value)
 	if seconds, err := strconv.ParseUint(value, 10, 64); err == nil {
-		wait := time.Duration(min(seconds, uint64(maxDelay/time.Second))) * time.Second
-		return max(backoff, wait)
+		return time.Duration(min(seconds, uint64(maxDelay/time.Second))) * time.Second
 	}
 	if until, err := http.ParseTime(value); err == nil {
-		return max(backoff, min(until.Sub(now), maxDelay))
+		return max(0, min(until.Sub(now), maxDelay))
 	}
-	return backoff
+	return 0
 }
 
-func (trainer *rspamdTrainer) learn(ctx context.Context, job *spamFeedbackJob, backoff time.Duration) (time.Duration, error) {
+type spamTrainingRetry struct {
+	sample, controller time.Duration
+}
+
+func (trainer *rspamdTrainer) learn(ctx context.Context, job *spamFeedbackJob, backoff time.Duration) (spamTrainingRetry, error) {
 	if !trainer.allows(job.owner) || len(job.raw) == 0 || (job.class != "spam" && job.class != "ham") {
-		return 0, errors.New("sample unavailable or not permitted")
+		return spamTrainingRetry{}, errors.New("sample unavailable or not permitted")
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, trainer.origin+"/learn"+job.class, bytes.NewReader(job.raw))
 	if err != nil {
-		return 0, errors.New("invalid controller request")
+		return spamTrainingRetry{}, errors.New("invalid controller request")
 	}
 	req.Header.Set("Password", trainer.password)
 	req.Header.Set("Content-Type", "message/rfc822")
@@ -194,18 +220,18 @@ func (trainer *rspamdTrainer) learn(ctx context.Context, job *spamFeedbackJob, b
 	}
 	response, err := trainer.client.Do(req)
 	if err != nil {
-		return backoff, errors.New("controller connection failed")
+		return spamTrainingRetry{sample: backoff}, errors.New("controller connection failed")
 	}
 	defer response.Body.Close()
 	status := response.StatusCode
 	if status == http.StatusRequestTimeout || status == http.StatusTooManyRequests || status >= 500 {
-		delay := spamFeedbackRetryDelay(response.Header.Get("Retry-After"), time.Now(), backoff)
-		return delay, fmt.Errorf("controller HTTP %d", status)
+		delay := spamFeedbackRetryAfter(response.Header.Get("Retry-After"), time.Now())
+		return spamTrainingRetry{sample: max(backoff, delay), controller: delay}, fmt.Errorf("controller HTTP %d", status)
 	}
 	const limit = 16 << 10
 	body, err := io.ReadAll(io.LimitReader(response.Body, limit+1))
 	if err != nil {
-		return backoff, errors.New("controller response interrupted")
+		return spamTrainingRetry{sample: backoff}, errors.New("controller response interrupted")
 	}
 	var result struct {
 		Success bool   `json:"success"`
@@ -213,14 +239,14 @@ func (trainer *rspamdTrainer) learn(ctx context.Context, job *spamFeedbackJob, b
 	}
 	if len(body) <= limit && json.Unmarshal(body, &result) == nil {
 		if status == http.StatusOK && result.Success {
-			return 0, nil
+			return spamTrainingRetry{}, nil
 		}
 		if (status == http.StatusAlreadyReported || status == http.StatusNotFound) &&
 			strings.HasSuffix(result.Error, " has been already learned as "+job.class+", ignore it") {
-			return 0, nil
+			return spamTrainingRetry{}, nil
 		}
 	}
-	return 0, fmt.Errorf("controller rejected sample (HTTP %d)", status)
+	return spamTrainingRetry{}, fmt.Errorf("controller rejected sample (HTTP %d)", status)
 }
 
 func (a *app) runSpamFeedback() {
@@ -248,25 +274,35 @@ func (a *app) runSpamFeedback() {
 }
 
 func (a *app) processSpamFeedback(job *spamFeedbackJob) error {
-	state, due := "done", int64(0)
+	state, due, pauseUntil := "done", int64(0), int64(0)
 	if job.attempts > spamFeedbackAttempts {
 		state = "failed"
 		log.Printf("spam feedback id=%d: attempt limit reached", job.id)
 	} else {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		backoff := 20 * time.Second << (job.attempts - 1)
-		delay, err := a.spamTrainer.learn(ctx, job, backoff)
+		retry, err := a.spamTrainer.learn(ctx, job, backoff)
 		cancel()
+		// Due times use whole seconds. Round up so the pause cannot end early.
+		now := time.Now().Add(time.Second - time.Nanosecond)
+		if retry.controller > 0 {
+			pauseUntil = now.Add(retry.controller).Unix()
+		}
 		if err != nil {
 			state = "failed"
-			if delay > 0 && job.attempts < spamFeedbackAttempts {
+			if retry.sample > 0 && job.attempts < spamFeedbackAttempts {
 				state = "pending"
-				due = time.Now().Add(delay).Unix()
+				due = now.Add(retry.sample).Unix()
 			}
 			log.Printf("spam feedback id=%d state=%s: %v", job.id, state, err)
 		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	if pauseUntil != 0 {
+		if err := a.pauseSpamController(ctx, pauseUntil); err != nil {
+			return err
+		}
+	}
 	return a.finishSpamFeedback(ctx, job, state, due)
 }
