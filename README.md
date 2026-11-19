@@ -16,7 +16,14 @@ Harbor Mail 是面向 Linux 部署的自建域名邮箱，提供中文 Web 邮�
 
 ## Linux 单二进制启动
 
-在有 Go 1.27.4 或更新版本的构建机上执行：
+从 [GitHub Releases](https://github.com/makessr/HarborMail/releases/latest) 下载 `harbormail-linux-amd64` 或 `harbormail-linux-arm64`。同一版本附带 `SHA256SUMS`。以 amd64 为例，在二进制所在目录运行：
+
+```bash
+sha256sum --ignore-missing -c SHA256SUMS
+install -m 0755 harbormail-linux-amd64 ./harbormail
+```
+
+如需从源码构建，在有 Go 1.27.4 或更新版本的构建机上执行：
 
 ```bash
 git clone https://github.com/makessr/HarborMail.git
@@ -24,7 +31,7 @@ cd HarborMail
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o harbormail ./cmd/harbormail
 ```
 
-ARM64 服务器把 `GOARCH=amd64` 改为 `GOARCH=arm64`。将生成的 `harbormail` 复制到 Linux 服务器，按[原生启动说明](docs/deployment-and-usage.md#linux-单二进制)创建首个账号，然后运行 `./harbormail`。默认使用 SQLite，运行服务器只需要二进制、账号配置和可写的数据目录。Go 仅用于构建。
+ARM64 源码构建把 `GOARCH=amd64` 改为 `GOARCH=arm64`。准备好二进制后，按[原生启动说明](docs/deployment-and-usage.md#linux-单二进制)创建首个账号，然后运行 `./harbormail`。默认使用 SQLite，运行服务器只需要二进制、账号配置和可写的数据目录。Go 仅用于构建。
 
 ## Linux Docker Compose（MySQL + Redis）
 

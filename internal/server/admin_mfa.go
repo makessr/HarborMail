@@ -119,11 +119,18 @@ func (a *app) consumeAdminMFA(ctx context.Context, tx *sql.Tx, owner, code strin
 	if !enabled {
 		return nil
 	}
+	unix := now.Unix()
+	if a.dbDriver == "mysql" {
+		// Check validity and prune spent proofs with the same clock on every instance.
+		if err := tx.QueryRowContext(ctx, "SELECT UNIX_TIMESTAMP()").Scan(&unix); err != nil {
+			return err
+		}
+	}
 	code = strings.ToLower(strings.TrimSpace(code))
 	var proof [32]byte
 	var expires int64
 	if len(code) == 6 {
-		step := now.Unix() / 30
+		step := unix / 30
 		found := false
 		for candidate := step + 1; candidate >= step-1; candidate-- {
 			if subtle.ConstantTimeCompare([]byte(code), []byte(adminTOTP(entry.secret, candidate))) == 1 {
@@ -151,7 +158,7 @@ func (a *app) consumeAdminMFA(ctx context.Context, tx *sql.Tx, owner, code strin
 	if used {
 		return errAdminMFA
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM admin_mfa_used WHERE owner=? AND expires>0 AND expires<=?`, owner, now.Unix()); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM admin_mfa_used WHERE owner=? AND expires>0 AND expires<=?`, owner, unix); err != nil {
 		return err
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO admin_mfa_used(owner,enrollment,proof,expires) VALUES(?,?,?,?)`,

@@ -10,7 +10,7 @@ Web 邮箱提供登录、搜索、阅读、回复、转发、星标、归档、�
 
 ### Linux 单二进制
 
-按[项目首页](../README.md#linux-单二进制启动)构建目标架构的 `harbormail`，将其放在 Linux 服务账号可运行的目录。以下 Bash 示例用于首次生成账号配置，已有配置可直接复用。
+从 [GitHub Releases](https://github.com/makessr/HarborMail/releases/latest) 下载目标架构的二进制，或按[项目首页](../README.md#linux-单二进制启动)从源码构建。将可执行文件命名为 `harbormail`，放在 Linux 服务账号可运行的目录。以下 Bash 示例用于首次生成账号配置，已有配置可直接复用。
 
 ```bash
 (
@@ -30,7 +30,7 @@ HARBOR_ACCOUNTS_FILE="$PWD/secrets/accounts.json" ./harbormail
 
 ### Windows 开发
 
-Windows 用于本地开发。需要 Go 1.27.4 或更新版本。以下命令从项目目录在 PowerShell 7 中运行。
+Windows 用于本地开发。可从 [GitHub Releases](https://github.com/makessr/HarborMail/releases/latest) 下载 `harbormail-windows-amd64.exe`，重命名为 `harbormail.exe`，然后从下面的 `$accountHash` 一行开始。若从源码构建，需要 Go 1.27.4 或更新版本。以下命令从项目目录在 PowerShell 7 中运行。
 
 ```powershell
 go build -o harbormail.exe ./cmd/harbormail
@@ -234,7 +234,7 @@ MySQL 密码文件用于首次初始化。已有数据卷的密码在 MySQL 内�
 
 「安全」位于 `/admin/security`，显示本实例 Web、SMTP 提交、IMAP 和 POP3 登录统计及最近 100 条记录。Web 登录与邮件客户端分别计数，三个邮件协议共享客户端计数。每五分钟同一来源最多 30 次，同一来源向同一账号最多 8 次。Web 超限返回 HTTP 429 和 `Retry-After`，邮件客户端收到临时认证失败。IPv6 按 /64 聚合，邮件协议使用 TCP 对端地址。SQLite 部署使用进程内限速。共享 MySQL 的 Harbor Mail 实例共用限速窗口，数据库无法确认额度时暂缓认证。后台登录统计与近期记录按实例展示，重启清空。
 
-为管理员启用网页登录第二因素时，在受控终端运行 `harbormail generate-admin-mfa admin@example.com`。将生成的种子录入支持 TOTP 的认证器，把配置 JSON 存入权限受限的 `HARBOR_ADMIN_MFA_FILE`，并离线保存一次性恢复码。多个管理员的配置合并到同一个 JSON 对象。共享数据库的所有实例须使用相同配置，并同步重启。种子启用或轮换会使旧管理员网页会话失效。验证码和恢复码均在登录会话成功入库时一次性消耗。认证器遗失时可用恢复码登录，再由服务器运维轮换种子。配置和恢复码均是凭据，避免进入日志或仓库。[TOTP 标准](https://www.rfc-editor.org/rfc/rfc6238.html)
+为管理员启用网页登录第二因素时，在受控终端运行 `harbormail generate-admin-mfa admin@example.com`。将生成的种子录入支持 TOTP 的认证器，把配置 JSON 存入权限受限的 `HARBOR_ADMIN_MFA_FILE`，并离线保存一次性恢复码。多个管理员的配置合并到同一个 JSON 对象。共享数据库的所有实例须使用相同配置，并同步重启。种子启用或轮换会使旧管理员网页会话失效。验证码和恢复码均在登录会话成功入库时一次性消耗。MySQL 部署使用数据库时钟核对 TOTP 有效期。认证器遗失时可用恢复码登录，再由服务器运维轮换种子。配置和恢复码均是凭据，避免进入日志或仓库。[TOTP 标准](https://www.rfc-editor.org/rfc/rfc6238.html)
 
 默认使用直接连接的来源。Web 服务位于反向代理之后时，应让后端仅允许可信代理访问，把这些代理的实际来源 IP 写入 `HARBOR_TRUSTED_PROXIES`，并让代理覆盖或正确追加 `X-Forwarded-For`。共享代理或多个实例部署可同时在代理层实施统一限速。[可信代理选择规则](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/X-Forwarded-For#selecting_an_ip_address)
 

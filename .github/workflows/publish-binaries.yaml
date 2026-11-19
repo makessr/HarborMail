@@ -1,0 +1,44 @@
+name: Publish Harbor Mail binaries
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Test
+        run: go test ./...
+      - name: Build binaries and checksums
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/harbormail-linux-amd64 ./cmd/harbormail
+          GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o dist/harbormail-linux-arm64 ./cmd/harbormail
+          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/harbormail-windows-amd64.exe ./cmd/harbormail
+          cd dist
+          sha256sum -- harbormail-linux-amd64 harbormail-linux-arm64 harbormail-windows-amd64.exe > SHA256SUMS
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            printf 'Expected a release tag in vMAJOR.MINOR.PATCH format\n' >&2
+            exit 1
+          fi
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "Harbor Mail $GITHUB_REF_NAME" --generate-notes \
+            --notes 'Linux amd64 和 arm64 用于部署。Windows amd64 用于本地开发。下载后可用 SHA256SUMS 校验。' \
+            dist/harbormail-linux-amd64 dist/harbormail-linux-arm64 dist/harbormail-windows-amd64.exe dist/SHA256SUMS

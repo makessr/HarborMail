@@ -2,16 +2,50 @@ package server
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
 )
+
+func TestAdminMFAUsesMySQLTime(t *testing.T) {
+	dsn := os.Getenv("HARBOR_TEST_MYSQL_DSN")
+	if dsn == "" {
+		t.Skip("set HARBOR_TEST_MYSQL_DSN to a disposable MySQL database")
+	}
+	db, err := openDB("mysql", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	const owner = "mfa-clock@harbor.test"
+	seed := []byte("12345678901234567890")
+	a := &app{db: db, dbDriver: "mysql", adminMFA: map[string]adminMFA{
+		owner: {secret: seed, enrollment: sha256.Sum256(seed)},
+	}}
+	ctx := t.Context()
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	var unix int64
+	if err := tx.QueryRowContext(ctx, "SELECT UNIX_TIMESTAMP()").Scan(&unix); err != nil {
+		t.Fatal(err)
+	}
+	code := adminTOTP(seed, unix/30)
+	if err := a.consumeAdminMFA(ctx, tx, owner, code, time.Unix(0, 0)); err != nil {
+		t.Fatalf("database-time TOTP rejected despite valid proof: %v", err)
+	}
+}
 
 func TestAdminMFARequiresFreshProofAndInvalidatesOldSession(t *testing.T) {
 	db, err := openDB("sqlite", filepath.Join(t.TempDir(), "mail.db"))
