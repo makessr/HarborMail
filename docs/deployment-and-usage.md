@@ -46,21 +46,21 @@ $env:HARBOR_ACCOUNTS = @{ 'hello@harbor.test' = $accountHash } | ConvertTo-Json 
 
 ## Docker Compose 部署
 
-在 Linux 服务器上使用 Docker Engine、BuildKit 与 Compose。从项目目录运行。生产主机的凭据权限、挂载、监控和备份见[生产运行手册](../ops/README.md)。Windows 本机容器开发可使用 Docker Desktop 的 WSL 2 后端。
+在 Linux amd64 服务器使用 Docker Engine 和 Compose，从项目目录运行。下面的流程拉取发布镜像并启动 MySQL 与 Redis。需要自行构建时可使用 BuildKit，生产主机的挂载和备份见[生产运行手册](../ops/README.md)。Windows 本机容器开发可使用 Docker Desktop 的 WSL 2 后端。
 
 ### 创建首个邮箱
 
-Linux 新部署可用下面的 Bash 示例创建账号文件。已有部署使用原有文件。若构建主机需要 Go 模块镜像，可通过 `HARBOR_GO_PROXY` 和 `HARBOR_GO_SUMDB` 设置代理与校验服务。
+Linux 新部署可用下面的 Bash 示例创建账号文件。已有部署使用原有文件。
 
 ```bash
 (
   set -e
   umask 077
-  docker compose -f compose.yaml build harbor
+  docker pull ghcr.io/makessr/harbormail:latest
   mkdir -p secrets
   read -rsp '输入邮箱密码（12–72 字节）: ' mailbox_password
   printf '\n'
-  hash=$(printf '%s\n' "$mailbox_password" | docker run --rm -i harbormail:local hash-password)
+  hash=$(printf '%s\n' "$mailbox_password" | docker run --rm -i ghcr.io/makessr/harbormail:latest hash-password)
   unset mailbox_password
   printf '{"hello@harbor.test":"%s"}\n' "$hash" > secrets/accounts.json
 )
@@ -91,9 +91,9 @@ sudo chmod 0640 secrets/mysql-dsn
 用 PowerShell 准备开发环境凭据时，三个文件都使用 `Set-Content -Encoding utf8NoBOM -NoNewline`，避免 MySQL 将 Windows 行尾的回车算进密码。
 
 ```text
-docker compose -f compose.yaml -f compose.mysql.yaml config --quiet
-docker compose -f compose.yaml -f compose.mysql.yaml up -d --build --wait
-docker compose -f compose.yaml -f compose.mysql.yaml ps
+docker compose -f compose.yaml -f compose.mysql.yaml -f compose.registry.yaml config --quiet
+docker compose -f compose.yaml -f compose.mysql.yaml -f compose.registry.yaml up -d --no-build --wait
+docker compose -f compose.yaml -f compose.mysql.yaml -f compose.registry.yaml ps
 ```
 
 MySQL 密码文件用于首次初始化。已有数据卷的密码在 MySQL 内修改，再同步更新对应文件和 DSN。MySQL、Redis 都在 Compose 网络内，Redis 随 MySQL 启动并使用独立的内部网络。Redis 缓存上限为 64 MiB，容器内存限制为 128 MiB，重启后会随请求重新填充。
@@ -102,7 +102,7 @@ MySQL 密码文件用于首次初始化。已有数据卷的密码在 MySQL 内�
 
 1. 确认 `ps` 中 `harbor`、`mysql` 和 `redis` 均为 `healthy`。访问 [健康检查](http://127.0.0.1:8080/healthz)，应返回 HTTP 200 和 `ok`。该端点检查数据库连通性。
 2. 打开[本地 Web 邮箱](http://127.0.0.1:8080/?view=mail)并登录。从网页给同一实例上的账号发信，确认收件箱可以读取邮件。用管理员账号打开[管理后台](http://127.0.0.1:8080/admin)，确认「服务配置」中的数据库为 MySQL。
-3. 若需核对 Redis 连接，运行 `docker compose -f compose.yaml -f compose.mysql.yaml exec -T redis redis-cli -e PING`，预期为 `PONG`。在独立演练环境可用同一组 Compose 文件执行 `stop redis`，刷新后台概览确认仍能读取，再执行 `start redis`。
+3. 若需核对 Redis 连接，使用同一组 Compose 文件执行 `exec -T redis redis-cli -e PING`，预期为 `PONG`。在独立演练环境可用同一组文件执行 `stop redis`，刷新后台概览确认仍能读取，再执行 `start redis`。
 
 以上启动方式已在 Windows 的 Docker Desktop Linux 容器环境实测，覆盖本机 SMTP 投递、应用重启后的邮件读取和 Redis 停止时回源 MySQL。公网收发、域名与 TLS 在目标主机按[真实域名接入](#接入真实域名)验收。
 
@@ -113,12 +113,15 @@ MySQL 密码文件用于首次初始化。已有数据卷的密码在 MySQL 内�
 | 可选 Compose 文件 | 用途 |
 | --- | --- |
 | `compose.mysql.yaml` | 启动内部 MySQL 8.4 和专用 Redis，数据库保存在 `mysql_data` 卷 |
+| `compose.registry.yaml` | 使用 GHCR 中的 Harbor Mail 镜像，关闭源码构建 |
 | `compose.redis-cache.yaml` | 可选，用已有 Redis 替代随 MySQL 启动的缓存容器，也可用于 SQLite |
 | `compose.tls.yaml` | 启用邮件客户端端口 465、587、993、995，默认映射到回环地址 |
 | `compose.acme.yaml` | 使用 ACME 管理邮件 TLS 证书，并提供 HTTP-01 验证端点 |
 | `compose.relay-auth.yaml` | 从文件读取 SMTP 中继密码 |
 
 按需在 `-f compose.yaml` 后追加覆盖文件。查看日志、重启、升级和停止服务时沿用部署时的文件顺序与项目名。
+
+需要从源码构建时，省略 `compose.registry.yaml`，启动时使用 `--build`。构建主机可通过 `HARBOR_GO_PROXY` 和 `HARBOR_GO_SUMDB` 设置 Go 模块代理与校验服务。
 
 - **TLS** 证书放在 `tls/fullchain.pem` 和 `tls/privkey.pem`，可用 `HARBOR_TLS_DIR` 指定其他目录。证书须覆盖客户端使用的邮件主机名，挂载目录和证书文件须能被容器 UID `10001` 读取；私钥应通过受限的属主或组权限提供。证书更换后重新创建 Harbor 容器。
 - **中继认证** 在 `.env` 中填写 `HARBOR_RELAY` 和 `HARBOR_RELAY_USER`，把密码存入 `secrets/relay-password` 并加载对应 Compose 文件。默认使用 STARTTLS；465 模式通常设置 `HARBOR_RELAY_TLS=implicit`。

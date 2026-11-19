@@ -26,28 +26,18 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o harbormail .
 
 ARM64 服务器把 `GOARCH=amd64` 改为 `GOARCH=arm64`。将生成的 `harbormail` 复制到 Linux 服务器，按[原生启动说明](docs/deployment-and-usage.md#linux-单二进制)创建首个账号，然后运行 `./harbormail`。默认使用 SQLite，运行服务器只需要二进制、账号配置和可写的数据目录。Go 仅用于构建。
 
-## Linux Docker Compose
+## Linux Docker Compose（MySQL + Redis）
 
-在 Linux 主机的项目目录按[部署指南](docs/deployment-and-usage.md#创建首个邮箱)创建账号文件，再启动：
+在 Linux amd64 主机的项目目录，按[部署指南](docs/deployment-and-usage.md#docker-compose-部署)准备首次登录与数据库凭据。Harbor Mail 从 GHCR 拉取，MySQL 和 Redis 使用各自的官方镜像。
 
 ```bash
-docker compose -f compose.yaml up -d --wait
+docker compose -f compose.yaml -f compose.mysql.yaml -f compose.registry.yaml up -d --no-build --wait
+docker compose -f compose.yaml -f compose.mysql.yaml -f compose.registry.yaml ps
 ```
 
-打开 [Web 邮箱](http://127.0.0.1:8080/?view=mail)，用 `hello@harbor.test` 和刚设置的密码登录。默认使用 SQLite，Web 和 SMTP 分别绑定在主机回环端口 `8080` 和 `2525`。
+Harbor Mail 镜像为 `ghcr.io/makessr/harbormail:latest`。[镜像包页面](https://github.com/users/makessr/packages/container/package/harbormail)
 
-需要管理后台时，在 `.env` 添加 `HARBOR_ADMINS=hello@harbor.test`，重新运行 Compose，然后访问 [管理后台](http://127.0.0.1:8080/admin)。
-
-### MySQL 和 Redis
-
-先按[部署指南](docs/deployment-and-usage.md#启动-mysql-与-redis)生成 MySQL 凭据，再运行：
-
-```sh
-docker compose -f compose.yaml -f compose.mysql.yaml up -d --build --wait
-docker compose -f compose.yaml -f compose.mysql.yaml ps
-```
-
-该配置同时启动 MySQL 8.4 与 Redis。Redis 用于后台统计缓存，服务不可用时回源 MySQL。网页邮箱支持共享 MySQL 的多实例同步。
+打开 [Web 邮箱](http://127.0.0.1:8080/?view=mail)，用 `hello@harbor.test` 和刚设置的密码登录。Web 和 SMTP 默认监听主机回环端口 `8080` 和 `2525`。Redis 用于后台统计缓存，服务不可用时回源 MySQL。
 
 ## 开发与测试
 
