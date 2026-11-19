@@ -58,22 +58,66 @@ func (cmd *imapList) Handle(conn server.Conn) error {
 	}
 	mailboxes := make(chan *imap.MailboxInfo, len(boxes))
 	reference, pattern := strings.ToLower(cmd.Reference), strings.ToLower(cmd.Mailbox)
+	singleLevel := strings.Contains(pattern, "%")
+	if strings.HasPrefix(pattern, "/") {
+		reference = ""
+		pattern = strings.TrimPrefix(pattern, "/")
+	}
+	if reference != "" && !strings.HasSuffix(reference, "/") {
+		reference += "/"
+	}
 	for _, box := range boxes {
-		if item, ok := box.(*imapMailbox); ok && item.subscriptionAncestor && !strings.Contains(pattern, "%") {
+		if item, ok := box.(*imapMailbox); ok && item.subscriptionAncestor && !singleLevel {
 			continue
 		}
 		info, err := box.Info()
 		if err != nil {
 			return err
 		}
-		match := *info
-		match.Name = strings.ToLower(info.Name)
-		if match.Match(reference, pattern) {
+		name, inReference := strings.CutPrefix(strings.ToLower(info.Name), reference)
+		if inReference && matchIMAPListPattern(name, pattern) {
 			mailboxes <- info
 		}
 	}
 	close(mailboxes)
 	return conn.WriteResp(&responses.List{Mailboxes: mailboxes, Subscribed: cmd.Subscribed})
+}
+
+func matchIMAPListPattern(name, pattern string) bool {
+	first := strings.IndexAny(pattern, "*%")
+	if first < 0 {
+		return name == pattern
+	}
+	name, matchesPrefix := strings.CutPrefix(name, pattern[:first])
+	if !matchesPrefix {
+		return false
+	}
+	pattern = pattern[first:]
+	switch pattern {
+	case "*":
+		return true
+	case "%":
+		return !strings.Contains(name, "/")
+	}
+
+	// At each step, matched[n] says whether the processed pattern matches
+	// name[:n]. Each wildcard can preserve or extend a matched prefix.
+	matched := make([]bool, len(name)+1)
+	matched[0] = true
+	for i := range len(pattern) {
+		switch char := pattern[i]; char {
+		case '*', '%':
+			for n := 1; n <= len(name); n++ {
+				matched[n] = matched[n] || (matched[n-1] && (char == '*' || name[n-1] != '/'))
+			}
+		default:
+			for n := len(name); n > 0; n-- {
+				matched[n] = matched[n-1] && name[n-1] == char
+			}
+			matched[0] = false
+		}
+	}
+	return matched[len(name)]
 }
 
 func (u imapUser) CreateMailbox(name string) error {

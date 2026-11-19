@@ -19,6 +19,30 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+func TestIMAPListPattern(t *testing.T) {
+	for _, tc := range []struct {
+		name, pattern string
+		want          bool
+	}{
+		{"项目/客户/归档", "项目/%", false},
+		{"项目/客户/归档", "项目/%/归档", true},
+		{"项目/客户/归档", "项目/*", true},
+		{"项目/客户/归档", "项目/%归档", false},
+		{"项目/客户/归档", "项目/*归档", true},
+		{"项目/客户", "项目/客户", true},
+		{"项目/客户", "项目/客户*", true},
+		{"项目/客户", "项目/*客户%", true},
+		{"项目/客户", "项目/*客户%/合同", false},
+		{"项目/客户/合同", "团队/*客户%/合同", false},
+		{"项目/客户/合同", "项目/*客户%/合同", true},
+		{"项目/客户/合同", "项目/*客户%合同", false},
+	} {
+		if got := matchIMAPListPattern(tc.name, tc.pattern); got != tc.want {
+			t.Errorf("matching %q against %q: %v, want %v", tc.name, tc.pattern, got, tc.want)
+		}
+	}
+}
+
 func TestIMAPIdlePushesCommittedDelivery(t *testing.T) {
 	const owner = "user@harbor.test"
 	db, err := openDB("sqlite", filepath.Join(t.TempDir(), "test.db"))
