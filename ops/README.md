@@ -97,9 +97,11 @@ Linux 主机可用 `bash ops/backup.sh backup` 生成数据库快照、上传到
 
 按实际安装路径调整 `ops/harbor-backup.service` 和 `ops/harbor-backup.timer`。这两个模板只调度备份。在单独的维护任务中先运行 `bash ops/backup.sh plan` 查看保留计划，再使用具备仓库删除权限的凭据运行 `bash ops/backup.sh prune` 执行 14 个日备和 4 个周备保留策略。两种操作都以备份时设置的 Restic 主机名和实例标签限定快照范围。 [Restic 保留策略](https://restic.readthedocs.io/en/stable/060_forget.html)
 
-用 `bash ops/backup.sh verify SNAPSHOT_ID` 验证指定快照。恢复演练应沿用快照生成时的 `HARBOR_BACKUP_INSTANCE`，脚本会核对 Restic 主机名和实例标签。回读时只提取数据库产物和校验清单，并核对清单中的 SHA-256 对应这份数据库。SQLite 会校验数据库完整性。
+用 `bash ops/backup.sh verify SNAPSHOT_ID` 验证指定快照。恢复演练应沿用快照生成时的 `HARBOR_BACKUP_INSTANCE`，脚本会核对 Restic 主机名和实例标签。回读时只提取数据库产物和校验清单，并核对清单中的 SHA-256 对应这份数据库。
 
-MySQL 在上传和验证导入前会检查首个公开版本的必备表，覆盖账号、别名、文件夹与 IMAP UID、邮件和投递队列。检查不通过时会列出缺失表。备份账户仍需读取整个 Harbor 数据库，以涵盖后续版本增加的表。验证导入需在隔离服务器预建空的 `harbor_verify_*` 数据库，设置 `HARBOR_BACKUP_VERIFY_DB` 和 `HARBOR_BACKUP_VERIFY_CNF`，验证账户只应有该库权限。脚本导入后读取邮件和队列计数，保留验证库供复查。自动转储会跳过 MySQL 触发器，Harbor 首次从恢复库启动时会按已启用的配额设置重建触发器和用量，避免恢复时依赖原服务器的触发器属主。自建触发器、部署配置及配套密钥按下文独立备份。 [Restic 恢复选项](https://restic.readthedocs.io/en/stable/050_restore.html)
+SQLite 和 MySQL 都会在上传与验证快照时检查首个公开版本的必备表，覆盖账号、别名、文件夹与 IMAP UID、邮件和投递队列。检查失败时会列出缺失的表。SQLite 还会运行数据库完整性检查。早于首个公开版本的 SQLite 快照可能缺少这些表，应在隔离副本上升级后再生成新快照。
+
+MySQL 备份账户需读取整个 Harbor 数据库，以涵盖后续版本增加的表。验证导入需在隔离服务器预建空的 `harbor_verify_*` 数据库，设置 `HARBOR_BACKUP_VERIFY_DB` 和 `HARBOR_BACKUP_VERIFY_CNF`，验证账户只应有该库权限。脚本导入后读取邮件和队列计数，保留验证库供复查。自动转储会跳过 MySQL 触发器，Harbor 首次从恢复库启动时会按已启用的配额设置重建触发器和用量，避免恢复时依赖原服务器的触发器属主。自建触发器、部署配置及配套密钥按下文独立备份。 [Restic 恢复选项](https://restic.readthedocs.io/en/stable/050_restore.html)
 
 起始目标为每日一次，保留 14 个日备和 4 个周备，异地保存加密副本。此频率的恢复点目标为 24 小时，以演练量出的恢复耗时确定恢复时间目标。要求更小的丢失窗口时，增加备份频率或使用 MySQL 的 binlog 时间点恢复方案。
 

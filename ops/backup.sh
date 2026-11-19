@@ -51,15 +51,18 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 verify_sqlite() {
+  local available
   command -v sqlite3 >/dev/null || fail 'sqlite3 is required'
   [[ $(sqlite3 -batch -bail -readonly "$1" 'PRAGMA integrity_check;') == ok ]] ||
     fail 'SQLite integrity check failed'
-  [[ $(sqlite3 -batch -bail -readonly "$1" "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('letters','outbox');") == 2 ]] ||
-    fail 'The snapshot does not contain the Harbor Mail tables'
+  available=$(sqlite3 -batch -bail -readonly "$1" "SELECT name FROM sqlite_master WHERE type='table';") ||
+    fail 'Could not read SQLite snapshot tables'
+  verify_required_tables 'SQLite snapshot' "$available"
 }
 
-verify_mysql_dump() {
-  local dump=$1 table available
+verify_required_tables() {
+  local artifact=$1 available=$2 table
+  shift 2
   # Required tables from the first public schema. Keep the list compatible
   # with existing complete snapshots as newer releases add tables.
   local -a required=(
@@ -67,23 +70,29 @@ verify_mysql_dump() {
     admin_delivery_resolutions admin_delivery_retries admin_mfa_used app_passwords
     contacts custom_folders draft_creation_keys imap_deleted imap_uid_state imap_uids
     letters mail_label_links mail_labels mail_rules mail_snoozes mail_templates mail_threads
-    mailbox_preferences mailbox_quota mailbox_quota_meta mailbox_retirements mailbox_revisions
+    mailbox_preferences mailbox_quota mailbox_quota_meta mailbox_retirements
     mailbox_send_delay mailbox_storage_alerts managed_accounts managed_aliases managed_domains
     outbox outbox_recipient_progress outbox_schedule saved_searches sessions signature_settings
     spam_feedback web_drafts web_letter_recipients web_outbox_envelopes web_session_details
   )
   local -a missing=()
-  [[ -s $dump ]] || fail 'MySQL dump is empty'
-  # mysqldump can exit successfully while omitting tables invisible to its account.
-  available=$(sed -nE 's/^CREATE TABLE (IF NOT EXISTS )?`([a-z_]+)`[[:space:]]*\(.*/\2/p' "$dump")
-  for table in "${required[@]}"; do
+  for table in "${required[@]}" "$@"; do
     if ! grep -Fxq -- "$table" <<< "$available"; then
       missing+=("$table")
     fi
   done
   if (( ${#missing[@]} > 0 )); then
-    fail "MySQL dump is missing required Harbor Mail tables: ${missing[*]}. Check the source database and backup grants."
+    fail "$artifact is missing required Harbor Mail tables: ${missing[*]}. Check the source database and backup access."
   fi
+}
+
+verify_mysql_dump() {
+  local dump=$1 available
+  [[ -s $dump ]] || fail 'MySQL dump is empty'
+  # mysqldump can exit successfully while omitting tables invisible to its account.
+  available=$(sed -nE 's/^CREATE TABLE (IF NOT EXISTS )?`([a-z_]+)`[[:space:]]*\(.*/\2/p' "$dump") ||
+    fail 'Could not read MySQL dump tables'
+  verify_required_tables 'MySQL dump' "$available" mailbox_revisions
 }
 
 read_back() (
