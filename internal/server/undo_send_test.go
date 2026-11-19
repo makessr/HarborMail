@@ -77,9 +77,42 @@ func testUndoSend(t *testing.T, driver, source string) {
 		t.Fatalf("delayed send from draft: HTTP %d %s (%v)", w.Code, w.Body, err)
 	}
 	id := pending["queued"]
-	if _, err := db.Exec(`UPDATE outbox SET due=0 WHERE id=?`, id); err != nil {
+	checkOutbox := func(wantState string, wantTimer bool) {
+		t.Helper()
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("GET", "/api/outbox", nil)
+		a.listOutbox(w, r, sender)
+		var list struct{ Letters []letter }
+		if err := json.Unmarshal(w.Body.Bytes(), &list); w.Code != 200 || err != nil || len(list.Letters) != 1 {
+			t.Fatalf("outbox list: HTTP %d, %s (%v)", w.Code, w.Body, err)
+		}
+		w = httptest.NewRecorder()
+		r = httptest.NewRequest("GET", "/api/outbox/id", nil)
+		r.SetPathValue("id", fmt.Sprint(id))
+		a.readOutbox(w, r, sender)
+		var detail letter
+		if err := json.Unmarshal(w.Body.Bytes(), &detail); w.Code != 200 || err != nil {
+			t.Fatalf("outbox detail: HTTP %d, %s (%v)", w.Code, w.Body, err)
+		}
+		for _, item := range []letter{list.Letters[0], detail} {
+			status := item.Delivery
+			if item.ID != id || status == nil || status.State != wantState {
+				t.Fatalf("outbox status: got %+v, want %s for %d", status, wantState, id)
+			}
+			if wantTimer {
+				if status.UndoRemainingMs == nil || *status.UndoRemainingMs <= 0 {
+					t.Fatalf("expected an active undo timer, got %+v", status)
+				}
+			} else if status.UndoRemainingMs != nil || status.SendAt != 0 {
+				t.Fatalf("expired undo should not expose a timer or scheduled date: %+v", status)
+			}
+		}
+	}
+	checkOutbox("undo", true)
+	if _, err := db.Exec(`UPDATE outbox SET due=? WHERE id=?`, time.Now().Unix(), id); err != nil {
 		t.Fatal(err)
 	}
+	checkOutbox("queued", false)
 	if _, err := a.restoreScheduled(ctx, sender, id); !errors.Is(err, errScheduleStarted) {
 		t.Fatalf("expired cancel before claim: %v", err)
 	}

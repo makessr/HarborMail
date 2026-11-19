@@ -396,7 +396,7 @@ async function load(append = false, quiet = false) {
       const active = letters.find(item => item.id === state.current.id);
       if (active) {
         state.current.delivery = active.delivery;
-        displayOutboxStatus(active.delivery);
+        displayOutboxStatus(state.current);
         void refreshOutboxRecipients(active.id);
       } else {
         clearReading();
@@ -581,7 +581,7 @@ function renderLetter(item) {
     cell.hidden = byId("letter-" + field + "-label").hidden = !value;
   }
   byId("letter-date-label").textContent = "时间";
-  byId("date").textContent = fullDate.format((item.delivery?.sendAt || item.date) * 1000);
+  byId("date").textContent = fullDate.format(item.date * 1000);
   byId("body").textContent = item.hasHTML && !item.hasText ? "此邮件没有纯文本正文。" : item.body;
   renderBodyFormat(item);
   const base = item.delivery ? "outbox" : "letters";
@@ -591,7 +591,7 @@ function renderLetter(item) {
   delivery.hidden = !item.delivery && !importedDraft;
   byId("cancel-scheduled").hidden = true;
   if (item.delivery) {
-    displayOutboxStatus(item.delivery);
+    displayOutboxStatus(item);
   } else if (importedDraft) {
     delivery.textContent = "此草稿可在邮件客户端继续编辑。";
   }

@@ -61,15 +61,18 @@ function outboxStatusLabel(status) {
   return deliveryLabels[status.state === "undo" && !canUndoOutbox(status) ? "queued" : status.state];
 }
 
-function displayOutboxStatus(status) {
+function displayOutboxStatus(item) {
+  const status = item.delivery;
   const undo = canUndoOutbox(status);
+  const planned = status.state === "undo" ? 0 : status.sendAt;
   const parts = [outboxStatusLabel(status)];
   if (status.reason) parts.push(status.reason);
   if (status.state === "queued" && status.attempts > 0) {
     parts.push("下次尝试 " + fullDate.format(status.due * 1000));
   }
   byId("delivery-status").textContent = parts.join(" ");
-  byId("letter-date-label").textContent = undo ? "撤销截止" : status.sendAt ? "计划时间" : "时间";
+  byId("letter-date-label").textContent = undo ? "撤销截止" : planned ? "计划时间" : "时间";
+  byId("date").textContent = fullDate.format((undo ? status.due : planned || item.date) * 1000);
   const cancel = byId("cancel-scheduled");
   const hadFocus = document.activeElement === cancel;
   cancel.hidden = status.state !== "scheduled" && !undo;
@@ -152,7 +155,7 @@ function refreshOutboxUndoExpiry() {
   }
   const status = state.current?.delivery;
   if (status?.state === "undo") {
-    displayOutboxStatus(status);
+    displayOutboxStatus(state.current);
     if (status.undoExpires > now) next = Math.min(next, status.undoExpires);
   }
   if (Number.isFinite(next)) outboxUndoTimer = setTimeout(refreshOutboxUndoExpiry, Math.ceil(Math.max(0, next - performance.now())));
@@ -164,24 +167,24 @@ function resetUndoSend() {
   byId("undo-send-notice").hidden = true;
 }
 
+function refreshUndoNotice() {
+  if (!undoNotice) return;
+  const seconds = Math.ceil((undoNotice.expires - performance.now()) / 1000);
+  if (seconds <= 0) {
+    resetUndoSend();
+    return;
+  }
+  byId("undo-send-countdown").textContent = "剩余 " + seconds + " 秒";
+}
+
 function showUndoSend(result) {
   resetUndoSend();
   if (result.undoRemainingMs <= 0) return;
   undoNotice = { id: result.queued, expires: performance.now() + result.undoRemainingMs };
-  const banner = byId("undo-send-notice");
-  const countdown = byId("undo-send-countdown");
-  const tick = () => {
-    const seconds = Math.ceil((undoNotice.expires - performance.now()) / 1000);
-    if (seconds <= 0) {
-      resetUndoSend();
-      return;
-    }
-    countdown.textContent = "剩余 " + seconds + " 秒";
-  };
   byId("undo-send-action").disabled = false;
-  banner.hidden = false;
-  tick();
-  if (undoNotice) undoTicker = setInterval(tick, 200);
+  byId("undo-send-notice").hidden = false;
+  refreshUndoNotice();
+  if (undoNotice) undoTicker = setInterval(refreshUndoNotice, 200);
 }
 
 async function cancelPendingSend(id, button, undo, fromNotice = false) {
@@ -227,9 +230,12 @@ document.getElementById("cancel-scheduled").addEventListener("click", event => {
 });
 
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) refreshOutboxUndoExpiry();
+  if (document.hidden) return;
+  refreshUndoNotice();
+  refreshOutboxUndoExpiry();
 });
 
 document.getElementById("undo-send-action").addEventListener("click", event => {
+  refreshUndoNotice();
   if (undoNotice) void cancelPendingSend(undoNotice.id, event.currentTarget, true, true);
 });

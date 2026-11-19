@@ -23,11 +23,21 @@ func scanOutbox(row outboxScanner) (letter, error) {
 	if envelope != nil {
 		m.showWebRecipients(envelope.Recipients)
 	}
-	if m.Delivery.State == "undo" {
-		remaining := undoRemainingMs(m.Delivery.Due)
-		m.Delivery.UndoRemainingMs = &remaining
+	return m, nil
+}
+
+func updateOutboxUndoStatus(status *deliveryStatus) {
+	if status.State != "undo" {
+		return
 	}
-	return m, err
+	remaining := undoRemainingMs(status.Due)
+	if remaining == 0 {
+		// The worker still uses the stored undo row to finish delivery.
+		status.State = "queued"
+		status.SendAt = 0
+		return
+	}
+	status.UndoRemainingMs = &remaining
 }
 
 func (a *app) listOutbox(w http.ResponseWriter, r *http.Request, owner string) {
@@ -64,6 +74,9 @@ func (a *app) listOutbox(w http.ResponseWriter, r *http.Request, owner string) {
 		list = list[:50]
 		next = list[49].ID
 	}
+	for _, item := range list {
+		updateOutboxUndoStatus(item.Delivery)
+	}
 	reply(w, 200, map[string]any{"letters": list, "next": next})
 }
 
@@ -76,6 +89,7 @@ func (a *app) readOutbox(w http.ResponseWriter, r *http.Request, owner string) {
 	}
 	m.Delivery.Recipients, err = readRecipientProgress(r.Context(), a.db, owner, m.ID)
 	if !letterError(w, err) {
+		updateOutboxUndoStatus(m.Delivery)
 		reply(w, http.StatusOK, m)
 	}
 }
