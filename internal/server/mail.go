@@ -152,12 +152,16 @@ type delivery struct {
 	app        *app
 	conn       *smtp.Conn
 	sender     string
+	size       int64
 	recipients []mailDestination
 }
 
-func (s *delivery) Mail(from string, _ *smtp.MailOptions) error {
+func (s *delivery) Mail(from string, options *smtp.MailOptions) error {
 	s.Reset()
 	s.sender = from
+	if options != nil {
+		s.size = options.Size
+	}
 	return nil
 }
 
@@ -174,9 +178,18 @@ func (s *delivery) Rcpt(to string, _ *smtp.RcptOptions) error {
 	if target.owner == "" {
 		return &smtp.SMTPError{Code: 550, EnhancedCode: smtp.EnhancedCode{5, 1, 1}, Message: "Mailbox unavailable"}
 	}
+	copies := int64(1)
 	for _, existing := range s.recipients {
 		if existing.address == target.address {
 			return nil
+		}
+		if existing.owner == target.owner {
+			copies++
+		}
+	}
+	if s.app.hardQuota {
+		if err := s.app.checkIncomingQuota(ctx, target.owner, s.size, copies); err != nil {
+			return err
 		}
 	}
 	s.recipients = append(s.recipients, target)
@@ -223,7 +236,8 @@ func (s *delivery) Data(r io.Reader) error {
 	}
 	if err != nil {
 		if isQuotaExceeded(err) {
-			return smtpQuotaExceeded()
+			// DATA has one reply for all accepted recipients, so allow retry.
+			return smtpMailboxFull()
 		}
 		log.Print("incoming mail storage: ", err)
 		return &smtp.SMTPError{Code: 451, Message: "Temporary mailbox failure"}
@@ -233,6 +247,7 @@ func (s *delivery) Data(r io.Reader) error {
 
 func (s *delivery) Reset() {
 	s.sender = ""
+	s.size = 0
 	s.recipients = nil
 }
 

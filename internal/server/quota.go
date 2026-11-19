@@ -22,6 +22,33 @@ func smtpQuotaExceeded() error {
 	return &smtp.SMTPError{Code: 552, EnhancedCode: smtp.EnhancedCode{5, 2, 2}, Message: "Mailbox storage quota exceeded"}
 }
 
+func smtpMailboxFull() error {
+	return &smtp.SMTPError{Code: 452, EnhancedCode: smtp.EnhancedCode{4, 2, 2}, Message: "Mailbox storage temporarily insufficient"}
+}
+
+func (a *app) checkIncomingQuota(ctx context.Context, owner string, size, copies int64) error {
+	var used, limitMiB int64
+	err := a.db.QueryRowContext(ctx, `SELECT used_bytes,limit_mib FROM mailbox_quota WHERE owner=?`, owner).Scan(&used, &limitMiB)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return &smtp.SMTPError{Code: 451, Message: "Temporary mailbox failure"}
+	}
+	if limitMiB == 0 {
+		return nil
+	}
+	limit := limitMiB << 20
+	if size > limit {
+		return smtpQuotaExceeded()
+	}
+	// SIZE is optional, and distinct aliases each store a separate copy.
+	if max(size, 1) > (limit-used)/copies {
+		return smtpMailboxFull()
+	}
+	return nil
+}
+
 type quotaStatementRunner interface {
 	ExecContext(context.Context, string, ...any) (sql.Result, error)
 }

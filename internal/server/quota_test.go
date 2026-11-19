@@ -2,7 +2,10 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,7 +13,123 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/emersion/go-smtp"
 )
+
+func TestInboundSMTPRecipientQuota(t *testing.T) {
+	t.Run("sqlite", func(t *testing.T) {
+		testInboundSMTPRecipientQuota(t, "sqlite", filepath.Join(t.TempDir(), "mail.db"))
+	})
+	if dsn := os.Getenv("HARBOR_TEST_MYSQL_DSN"); dsn != "" {
+		t.Run("mysql", func(t *testing.T) { testInboundSMTPRecipientQuota(t, "mysql", dsn) })
+	}
+}
+
+func testInboundSMTPRecipientQuota(t *testing.T, driver, source string) {
+	db, err := openDB(driver, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	enabled, err := initHardQuota(db, driver, true)
+	if err != nil || !enabled {
+		t.Fatalf("quota initialization: enabled=%v (%v)", enabled, err)
+	}
+	suffix := token()[:12] + "@harbor.test"
+	full, limited, alias, free := "full-"+suffix, "limited-"+suffix, "alias-"+suffix, "free-"+suffix
+	a := &app{db: db, domain: "harbor.test", hardQuota: enabled,
+		accounts: map[string][]byte{full: nil, limited: nil, free: nil},
+		aliases:  map[string]string{alias: limited}}
+	seed := func(owner string, size int) {
+		t.Helper()
+		if _, err := db.Exec(`INSERT INTO letters(owner,sender,recipient,subject,body,stamp,folder,origin,raw)
+			VALUES(?,'','','quota seed','',1,'inbox','inbox',?)`, owner, make([]byte, size)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(`UPDATE mailbox_quota SET limit_mib=1 WHERE owner=?`, owner); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seed(full, 1<<20)
+	seed(limited, (1<<20)-100)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := a.smtpServer(a, nil)
+	defer service.Close()
+	go func() { _ = service.Serve(listener) }()
+	client, err := smtp.Dial(listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	expectCode := func(err error, code int) {
+		t.Helper()
+		var reply *smtp.SMTPError
+		if !errors.As(err, &reply) || reply.Code != code {
+			t.Fatalf("SMTP reply: got %v, want %d", err, code)
+		}
+	}
+	start := func(size int64) {
+		t.Helper()
+		if err := client.Mail("sender@example.test", &smtp.MailOptions{Size: size}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	accept := func(owner string) {
+		t.Helper()
+		if err := client.Rcpt(owner, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	send := func(raw string) error {
+		t.Helper()
+		data, err := client.Data()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := io.WriteString(data, raw); err != nil {
+			t.Fatal(err)
+		}
+		return data.Close()
+	}
+	raw := "Subject: quota test\r\n\r\n" + strings.Repeat("a", 45) + "\r\n"
+	start(int64(len(raw)))
+	expectCode(client.Rcpt(full, nil), 452)
+	accept(limited)
+	accept(limited) // The same address is not charged twice.
+	expectCode(client.Rcpt(alias, nil), 452)
+	accept(free)
+	if err := send(raw); err != nil {
+		t.Fatal(err)
+	}
+	for _, recipient := range []string{limited, free} {
+		var count int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM letters WHERE owner=? AND subject='quota test'`, recipient).
+			Scan(&count); err != nil || count != 1 {
+			t.Fatalf("copies for %s: %d (%v)", recipient, count, err)
+		}
+	}
+	start((1 << 20) + 1)
+	expectCode(client.Rcpt(limited, nil), 552)
+	if err := client.Reset(); err != nil {
+		t.Fatal(err)
+	}
+	start(0)
+	expectCode(client.Rcpt(full, nil), 452)
+	accept(free)
+	accept(limited)
+	seed(limited, 100-len(raw))
+	// Capacity can change after RCPT; DATA must still be atomic and retryable.
+	expectCode(send("Subject: final quota check\r\n\r\n"+strings.Repeat("b", 120)+"\r\n"), 452)
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM letters WHERE owner IN (?,?) AND subject='final quota check'`, limited, free).
+		Scan(&count); err != nil || count != 0 {
+		t.Fatalf("failed DATA stored partial copies: %d (%v)", count, err)
+	}
+}
 
 func TestCancelQueuedMailAfterQuotaReduction(t *testing.T) {
 	t.Run("sqlite", func(t *testing.T) {
