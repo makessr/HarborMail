@@ -1,0 +1,29 @@
+services:
+  harbor:
+    environment:
+      HARBOR_CERT: /run/harbor-tls/fullchain.pem
+      HARBOR_KEY: /run/harbor-tls/privkey.pem
+      HARBOR_SUBMISSION: 0.0.0.0:2587
+      HARBOR_SUBMISSIONS: 0.0.0.0:2465
+      HARBOR_IMAPS: 0.0.0.0:2993
+      HARBOR_POP3S: 0.0.0.0:2995
+    ports:
+      - target: 2465
+        published: "${HARBOR_SMTPS_PORT:-465}"
+        host_ip: "${HARBOR_TLS_BIND:-127.0.0.1}"
+      - target: 2587
+        published: "${HARBOR_SUBMISSION_PORT:-587}"
+        host_ip: "${HARBOR_TLS_BIND:-127.0.0.1}"
+      - target: 2993
+        published: "${HARBOR_IMAPS_PORT:-993}"
+        host_ip: "${HARBOR_TLS_BIND:-127.0.0.1}"
+      - target: 2995
+        published: "${HARBOR_POP3S_PORT:-995}"
+        host_ip: "${HARBOR_TLS_BIND:-127.0.0.1}"
+    volumes:
+      - type: bind
+        source: "${HARBOR_TLS_DIR:-./tls}"
+        target: /run/harbor-tls
+        read_only: true
+        bind:
+          create_host_path: false

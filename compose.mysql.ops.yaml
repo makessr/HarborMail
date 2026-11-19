@@ -1,0 +1,19 @@
+services:
+  mysql:
+    volumes:
+      - type: bind
+        source: "${HARBOR_MYSQL_DATA_PATH:?set HARBOR_MYSQL_DATA_PATH to the MySQL data mount}"
+        target: /var/lib/mysql
+        bind:
+          create_host_path: false
+    secrets:
+      - mysql_backup_client
+    logging:
+      driver: local
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+secrets:
+  mysql_backup_client:
+    file: "${HARBOR_SECRETS_DIR:-./secrets}/mysql-backup.cnf"

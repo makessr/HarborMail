@@ -1,0 +1,50 @@
+groups:
+  - name: harbor-mail
+    rules:
+      - alert: HarborMetricsUnavailable
+        expr: up{job="harbor-mail"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Harbor Mail 指标抓取失败，检查进程、数据库和抓取网络
+      - alert: HarborOutboxOverdue
+        expr: harbor_outbox_oldest_due_seconds{job="harbor-mail"} > 300
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 有已到期的邮件等待投递超过五分钟
+      - alert: HarborUncertainDeliveryIncreased
+        expr: delta(harbor_outbox_uncertain_messages{job="harbor-mail"}[15m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: 新增投递结果未知的记录，重发前先核对中继
+      - alert: HarborSpamTrainingFailureIncreased
+        expr: delta(harbor_spam_training_failed_samples{job="harbor-mail"}[15m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: 新增垃圾邮件训练失败，检查 Rspamd 控制器
+      - alert: HarborVolumeFreeLow
+        expr: node_filesystem_avail_bytes{job="harbor-node",mountpoint=~"/srv/harbor-(data|mysql|backup)"} / node_filesystem_size_bytes{job="harbor-node",mountpoint=~"/srv/harbor-(data|mysql|backup)"} < 0.2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Harbor Mail 存储可用空间低于 20%
+      - alert: HarborNodeMetricsUnavailable
+        expr: up{job="harbor-node"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Harbor Mail 主机的磁盘及备份指标不可用
+      - alert: HarborDailyBackupStale
+        expr: (time() - harbor_backup_last_success_timestamp_seconds{job="harbor-node"} > 93600) or (up{job="harbor-node"} == 1 unless on(job, instance) harbor_backup_last_success_timestamp_seconds{job="harbor-node"})
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: Harbor Mail 最近 26 小时没有已记录的成功备份

@@ -1,0 +1,77 @@
+services:
+  harbor:
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      HARBOR_DB_DRIVER: mysql
+      HARBOR_MYSQL_DSN_FILE: /run/secrets/mysql_dsn
+      HARBOR_REDIS_URL: redis://redis:6379/0
+      HARBOR_REDIS_NAMESPACE: ${HARBOR_REDIS_NAMESPACE:-bundled}
+    networks:
+      - default
+      - admin_cache
+    secrets:
+      - mysql_dsn
+
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: harbor_mail
+      MYSQL_USER: harbor
+      MYSQL_PASSWORD_FILE: /run/secrets/mysql_password
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mysql_root_password
+    volumes:
+      - mysql_data:/var/lib/mysql
+    secrets:
+      - mysql_password
+      - mysql_root_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
+      interval: 5s
+      timeout: 4s
+      retries: 18
+      start_period: 30s
+
+  redis:
+    image: redis:8.10.3-alpine
+    restart: unless-stopped
+    user: redis
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    tmpfs:
+      - /data
+    command: ["redis-server", "/usr/local/etc/redis/harbor-cache.conf"]
+    configs:
+      - source: admin_cache_config
+        target: /usr/local/etc/redis/harbor-cache.conf
+    networks:
+      - admin_cache
+    healthcheck:
+      test: ["CMD", "redis-cli", "-e", "--raw", "PING"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  mysql_data:
+
+networks:
+  admin_cache:
+    internal: true
+
+configs:
+  admin_cache_config:
+    file: ./ops/redis-cache.conf
+
+secrets:
+  mysql_dsn:
+    file: "${HARBOR_SECRETS_DIR:-./secrets}/mysql-dsn"
+  mysql_password:
+    file: "${HARBOR_SECRETS_DIR:-./secrets}/mysql-password"
+  mysql_root_password:
+    file: "${HARBOR_SECRETS_DIR:-./secrets}/mysql-root-password"

@@ -1,0 +1,10 @@
+services:
+  harbor:
+    environment:
+      HARBOR_DOMAIN_RELAYS_FILE: /run/secrets/domain_relays_json
+    secrets:
+      - domain_relays_json
+
+secrets:
+  domain_relays_json:
+    file: "${HARBOR_SECRETS_DIR:-./secrets}/domain-relays.json"

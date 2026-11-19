@@ -1,0 +1,10 @@
+services:
+  harbor:
+    environment:
+      HARBOR_RELAY_PASSWORD_FILE: /run/secrets/relay_password
+    secrets:
+      - relay_password
+
+secrets:
+  relay_password:
+    file: "${HARBOR_SECRETS_DIR:-./secrets}/relay-password"

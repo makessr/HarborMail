@@ -1,0 +1,18 @@
+services:
+  harbor:
+    environment:
+      HARBOR_REDIS_URL: ""
+      HARBOR_REDIS_URL_FILE: /run/secrets/admin_redis_url
+      HARBOR_REDIS_NAMESPACE: ${HARBOR_REDIS_NAMESPACE:?Set a unique Harbor Mail deployment name}
+    secrets:
+      - admin_redis_url
+
+  redis:
+    # Suppress the Redis container from the MySQL overlay when using an external cache.
+    # The image also keeps this override valid when combined with the SQLite base.
+    image: redis:8.10.3-alpine
+    profiles: [bundled-redis]
+
+secrets:
+  admin_redis_url:
+    file: "${HARBOR_SECRETS_DIR:-./secrets}/admin-redis-url"

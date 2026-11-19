@@ -1,0 +1,13 @@
+[Unit]
+Description=Back up the Harbor Mail database and verify the remote copy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=harbor-backup
+EnvironmentFile=/etc/harbor/backup.env
+ExecStart=/usr/bin/bash /opt/harbor-mail/ops/backup.sh backup
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true

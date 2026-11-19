@@ -1,0 +1,10 @@
+services:
+  harbor:
+    environment:
+      HARBOR_ADMIN_MFA_FILE: /run/secrets/admin_mfa_json
+    secrets:
+      - admin_mfa_json
+
+secrets:
+  admin_mfa_json:
+    file: "${HARBOR_SECRETS_DIR:-./secrets}/admin-mfa.json"

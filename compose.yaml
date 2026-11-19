@@ -1,0 +1,52 @@
+name: harbor-mail
+
+services:
+  harbor:
+    image: harbormail:local
+    build:
+      context: .
+      args:
+        HARBOR_GO_PROXY: ${HARBOR_GO_PROXY:-https://proxy.golang.org,direct}
+        HARBOR_GO_SUMDB: ${HARBOR_GO_SUMDB:-sum.golang.org}
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    environment:
+      HARBOR_DOMAIN: ${HARBOR_DOMAIN:-harbor.test}
+      HARBOR_DB_DRIVER: sqlite
+      HARBOR_CONTENT_INDEX: ${HARBOR_CONTENT_INDEX:-false}
+      HARBOR_HARD_QUOTA: ${HARBOR_HARD_QUOTA:-false}
+      HARBOR_ACCOUNTS_FILE: /run/secrets/accounts_json
+      HARBOR_ADMINS: ${HARBOR_ADMINS:-}
+      HARBOR_DOMAIN_ADMINS: ${HARBOR_DOMAIN_ADMINS:-}
+      HARBOR_DOMAIN_DEFAULT_QUOTAS: ${HARBOR_DOMAIN_DEFAULT_QUOTAS:-}
+      HARBOR_ALIASES: ${HARBOR_ALIASES:-}
+      HARBOR_WEB_TLS: "off"
+      HARBOR_SECURE_COOKIE: ${HARBOR_SECURE_COOKIE:-false}
+      HARBOR_TRUSTED_PROXIES: ${HARBOR_TRUSTED_PROXIES:-}
+      HARBOR_RELAY: ${HARBOR_RELAY:-}
+      HARBOR_RELAY_TLS: ${HARBOR_RELAY_TLS:-}
+      HARBOR_RELAY_USER: ${HARBOR_RELAY_USER:-}
+      HARBOR_RSPAMD_URL: ${HARBOR_RSPAMD_URL:-}
+    ports:
+      - target: 8080
+        published: "${HARBOR_WEB_PORT:-8080}"
+        host_ip: "${HARBOR_WEB_BIND:-127.0.0.1}"
+      - target: 2525
+        published: "${HARBOR_SMTP_PORT:-2525}"
+        host_ip: "${HARBOR_SMTP_BIND:-127.0.0.1}"
+    volumes:
+      - harbor_data:/var/lib/harbormail
+    secrets:
+      - accounts_json
+
+volumes:
+  harbor_data:
+
+secrets:
+  accounts_json:
+    file: "${HARBOR_SECRETS_DIR:-./secrets}/accounts.json"

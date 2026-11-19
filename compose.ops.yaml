@@ -1,0 +1,19 @@
+services:
+  harbor:
+    environment:
+      HARBOR_METRICS: 0.0.0.0:9091
+    ports:
+      - target: 9091
+        published: "${HARBOR_METRICS_PORT:-9091}"
+        host_ip: 127.0.0.1
+    volumes:
+      - type: bind
+        source: "${HARBOR_DATA_PATH:?set HARBOR_DATA_PATH to the Harbor data mount}"
+        target: /var/lib/harbormail
+        bind:
+          create_host_path: false
+    logging:
+      driver: local
+      options:
+        max-size: "20m"
+        max-file: "5"

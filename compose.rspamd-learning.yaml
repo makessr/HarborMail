@@ -1,0 +1,12 @@
+services:
+  harbor:
+    environment:
+      HARBOR_RSPAMD_TRAIN_URL: ${HARBOR_RSPAMD_TRAIN_URL:?Set the private Rspamd controller URL}
+      HARBOR_RSPAMD_TRAIN_ACCOUNTS: ${HARBOR_RSPAMD_TRAIN_ACCOUNTS:?Set the permitted primary mailbox accounts}
+      HARBOR_RSPAMD_TRAIN_PASSWORD_FILE: /run/secrets/rspamd_train_password
+    secrets:
+      - rspamd_train_password
+
+secrets:
+  rspamd_train_password:
+    file: "${HARBOR_SECRETS_DIR:-./secrets}/rspamd-train-password"

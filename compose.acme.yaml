@@ -1,0 +1,29 @@
+services:
+  harbor:
+    environment:
+      HARBOR_ACME_HOSTS: ${HARBOR_ACME_HOSTS:?set HARBOR_ACME_HOSTS}
+      HARBOR_ACME_ACCEPT_TOS: ${HARBOR_ACME_ACCEPT_TOS:-false}
+      HARBOR_ACME_HTTP: 0.0.0.0:8081
+      HARBOR_ACME_CACHE: ${HARBOR_ACME_CACHE:-/var/lib/harbormail/acme}
+      HARBOR_ACME_EMAIL: ${HARBOR_ACME_EMAIL:-}
+      HARBOR_ACME_DIRECTORY: ${HARBOR_ACME_DIRECTORY:-}
+      HARBOR_SUBMISSION: 0.0.0.0:2587
+      HARBOR_SUBMISSIONS: 0.0.0.0:2465
+      HARBOR_IMAPS: 0.0.0.0:2993
+      HARBOR_POP3S: 0.0.0.0:2995
+    ports:
+      - target: 8081
+        published: "${HARBOR_ACME_PORT:-8081}"
+        host_ip: "${HARBOR_ACME_BIND:-127.0.0.1}"
+      - target: 2465
+        published: "${HARBOR_SMTPS_PORT:-465}"
+        host_ip: "${HARBOR_TLS_BIND:-127.0.0.1}"
+      - target: 2587
+        published: "${HARBOR_SUBMISSION_PORT:-587}"
+        host_ip: "${HARBOR_TLS_BIND:-127.0.0.1}"
+      - target: 2993
+        published: "${HARBOR_IMAPS_PORT:-993}"
+        host_ip: "${HARBOR_TLS_BIND:-127.0.0.1}"
+      - target: 2995
+        published: "${HARBOR_POP3S_PORT:-995}"
+        host_ip: "${HARBOR_TLS_BIND:-127.0.0.1}"

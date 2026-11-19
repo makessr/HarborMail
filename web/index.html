@@ -1,0 +1,688 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7f7f8">
+  <title>Harbor Mail</title>
+  <link rel="icon" type="image/png" sizes="96x96" href="/harbor-mail-logo.png">
+  <link rel="stylesheet" href="/notosanssc-v41/font.css">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/labels.js" defer></script>
+  <script src="/forward.js" defer></script>
+  <script src="/signatures.js" defer></script>
+  <script src="/templates.js" defer></script>
+  <script src="/schedule.js" defer></script>
+  <script src="/snooze.js" defer></script>
+  <script src="/saved-searches.js" defer></script>
+  <script src="/preferences.js" defer></script>
+  <script src="/commands.js" defer></script>
+  <script src="/draft-autosave.js" defer></script>
+  <script src="/app.js" defer></script>
+  <script src="/contacts.js" defer></script>
+  <script src="/app-passwords.js" defer></script>
+  <script src="/web-sessions.js" defer></script>
+  <script src="/mail-transfer.js" defer></script>
+</head>
+<body>
+  <main id="login" class="login" hidden>
+    <form id="login-form" class="login-form">
+      <h1 class="brand"><img src="/harbor-mail-logo.png" alt="" width="64" height="64"> Harbor Mail</h1>
+      <label>邮箱<input name="email" type="email" autocomplete="username" required></label>
+      <label>密码<input name="password" type="password" autocomplete="current-password" required></label>
+      <label id="login-mfa-field" hidden>管理员验证码或恢复码<input name="code" type="text" autocomplete="one-time-code" maxlength="32" spellcheck="false"></label>
+      <p id="login-error" class="error" role="alert"></p>
+      <button class="primary" type="submit">登录</button>
+    </form>
+  </main>
+
+  <main id="mailbox" class="mailbox" hidden>
+    <aside class="rail">
+      <div class="brand"><img src="/harbor-mail-logo.png" alt="" width="48" height="48"> Harbor Mail</div>
+      <button id="compose" class="compose"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#add-line"></use></svg> 写邮件</button>
+      <nav id="folder-nav" aria-label="文件夹">
+        <button data-folder="inbox"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#inbox-line"></use></svg>收件箱</button>
+        <button data-folder="snoozed"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#time-line"></use></svg>稍后处理</button>
+        <button data-folder="all"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#archive-stack-line"></use></svg>全部邮件</button>
+        <button data-folder="starred"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#star-line"></use></svg>星标</button>
+        <button data-folder="drafts"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#draft-line"></use></svg>草稿箱</button>
+        <button data-folder="outbox"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#time-line"></use></svg>发件箱</button>
+        <button data-folder="sent"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#send-plane-line"></use></svg>已发送</button>
+        <button data-folder="archive"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#archive-line"></use></svg>归档</button>
+        <button data-folder="junk"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#spam-2-line"></use></svg>垃圾邮件</button>
+        <button data-folder="trash"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#delete-bin-6-line"></use></svg>废纸篓</button>
+        <div id="custom-folders"></div>
+        <button id="create-folder"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#folder-add-line"></use></svg>新建文件夹</button>
+        <button id="manage-labels"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#price-tag-3-line"></use></svg>管理标签</button>
+        <div id="label-folders"></div>
+        <div id="saved-search-nav"></div>
+      </nav>
+      <details class="profile disclosure">
+        <summary aria-label="账号设置" aria-describedby="account">
+          <span class="avatar" id="account-initial" aria-hidden="true"></span>
+          <span id="account"></span>
+          <svg class="glyph" aria-hidden="true"><use href="/icons.svg#settings-3-line"></use></svg>
+        </summary>
+        <div class="disclosure-panel">
+          <a id="admin-link" href="/admin" hidden>管理后台</a>
+          <button id="show-preferences" aria-haspopup="dialog"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#settings-3-line"></use></svg> 邮箱偏好</button>
+          <button id="manage-rules">邮件规则</button>
+          <button id="show-addresses">收信地址</button>
+          <button id="show-contacts">联系人</button>
+          <button id="show-app-passwords">应用密码</button>
+          <button id="show-web-sessions">登录设备</button>
+          <button id="show-signatures">邮件签名</button>
+          <button id="logout">退出</button>
+        </div>
+      </details>
+    </aside>
+
+    <section class="index" aria-labelledby="folder-title">
+      <header class="index-header">
+        <div class="heading">
+          <h1 id="folder-title" tabindex="-1">收件箱</h1>
+          <div class="folder-actions">
+            <button class="icon" id="show-commands" title="快捷操作" aria-label="快捷操作" aria-haspopup="dialog" aria-keyshortcuts="Control+K Meta+K"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#flashlight-line"></use></svg></button>
+            <button class="icon" id="manage-folder" title="管理文件夹" aria-label="管理文件夹" hidden><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#more-line"></use></svg></button>
+            <button class="icon" id="refresh" title="刷新" aria-label="刷新邮件"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#refresh-line"></use></svg></button>
+          </div>
+        </div>
+        <form id="search-form" class="search">
+          <svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#search-line"></use></svg>
+          <input id="search" type="search" placeholder="搜索当前文件夹" aria-label="搜索当前文件夹">
+        </form>
+        <div id="mail-tools" class="mail-tools">
+          <button id="open-filters" type="button">筛选</button>
+          <button id="select-mails" type="button" aria-pressed="false">批量整理</button>
+          <details class="disclosure">
+            <summary class="icon" title="更多列表操作" aria-label="更多列表操作"><svg class="glyph" aria-hidden="true"><use href="/icons.svg#more-line"></use></svg></summary>
+            <div class="disclosure-panel">
+              <button id="save-search" type="button">保存搜索</button>
+              <button id="show-mail-transfer" type="button">导入导出</button>
+            </div>
+          </details>
+        </div>
+        <section id="batch-tools" class="batch-tools" aria-label="所选邮件" hidden>
+          <div class="heading">
+            <span id="batch-count" role="status">已选 0 封</span>
+            <button id="batch-all" type="button">全选已加载</button>
+          </div>
+          <form id="batch-form" class="batch-form">
+            <select id="batch-action" aria-label="批量操作" required></select>
+            <button id="apply-batch" class="primary" type="submit">应用</button>
+          </form>
+        </section>
+      </header>
+      <div class="index-body">
+        <div id="messages" class="messages"></div>
+        <p id="list-status" class="list-status" role="status"></p>
+        <button id="more" class="more" hidden>加载更多</button>
+      </div>
+    </section>
+
+    <section class="reading" aria-label="阅读邮件">
+      <div id="no-selection" class="no-selection">
+        <svg class="glyph" aria-hidden="true"><use href="/icons.svg#mail-line"></use></svg>
+      </div>
+      <article id="letter" class="letter" hidden>
+        <div class="toolbar">
+          <button id="back"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#arrow-left-line"></use></svg> 返回列表</button>
+          <button id="reading-commands" title="快捷操作" aria-label="快捷操作" aria-haspopup="dialog"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#flashlight-line"></use></svg></button>
+          <button id="reply"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#reply-line"></use></svg> 回复</button>
+          <button id="forward" hidden><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#share-forward-line"></use></svg> 转发</button>
+          <button id="edit-draft" hidden>继续编辑</button>
+          <button id="cancel-scheduled" hidden>取消并转为草稿</button>
+          <details id="letter-actions" class="disclosure">
+            <summary class="icon" title="更多邮件操作" aria-label="更多邮件操作"><svg class="glyph" aria-hidden="true"><use href="/icons.svg#more-line"></use></svg></summary>
+            <div class="disclosure-panel">
+              <button id="toggle-read">标为未读</button>
+              <button id="star"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#star-line"></use></svg> <span id="star-label">加星</span></button>
+              <button id="archive">归档</button>
+              <button id="edit-snooze" aria-haspopup="dialog" hidden><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#time-line"></use></svg> <span id="edit-snooze-label">稍后再看</span></button>
+              <select id="move-folder" aria-label="移动到文件夹" hidden></select>
+              <button id="add-sender" hidden>添加发件人</button>
+              <button id="toggle-format" hidden>查看 HTML 正文</button>
+              <a id="download">下载 .eml</a>
+              <button id="mark-junk">标记为垃圾邮件</button>
+              <button id="trash">移到废纸篓</button>
+              <button id="purge-trash" type="button" hidden>永久删除</button>
+            </div>
+          </details>
+        </div>
+        <h2 id="subject" tabindex="-1"></h2>
+        <div id="letter-labels" class="letter-labels" hidden>
+          <ul id="letter-label-list" aria-label="邮件标签"></ul>
+          <button id="edit-letter-labels" type="button"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#price-tag-3-line"></use></svg> <span id="letter-label-action">添加标签</span></button>
+        </div>
+        <dl class="envelope">
+          <dt>发件人</dt><dd id="sender"></dd>
+          <dt>收件人</dt><dd id="recipient"></dd>
+          <dt id="letter-cc-label" hidden>抄送</dt><dd id="letter-cc" hidden></dd>
+          <dt id="letter-bcc-label" hidden>密送</dt><dd id="letter-bcc" hidden></dd>
+          <dt id="letter-date-label">时间</dt><dd id="date"></dd>
+        </dl>
+        <details id="conversation" class="conversation" hidden>
+          <summary id="conversation-summary">同一会话</summary>
+          <ol id="conversation-list"></ol>
+        </details>
+        <p id="delivery-status" class="delivery-status" hidden></p>
+        <details id="delivery-recipients" hidden>
+          <summary>按地址查看外部投递</summary>
+          <ul id="delivery-recipient-items"></ul>
+        </details>
+        <p id="snooze-status" class="snooze-status" hidden><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#time-line"></use></svg> <span id="snooze-status-text"></span></p>
+        <div id="body" class="letter-body"></div>
+        <div id="html-body" class="html-body" hidden>
+          <p>远程图片已屏蔽</p>
+          <iframe id="html-frame" title="HTML 邮件正文" sandbox="allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer"></iframe>
+        </div>
+        <section class="attachments" id="received-files" aria-labelledby="attachments-title" hidden>
+          <h3 id="attachments-title">附件</h3>
+          <ul class="file-list" id="attachment-links"></ul>
+        </section>
+      </article>
+    </section>
+  </main>
+
+  <dialog id="forward-dialog" aria-labelledby="forward-title">
+    <form id="forward-form" class="editor">
+      <header class="heading">
+        <h2 id="forward-title">转发邮件</h2>
+        <button id="close-forward" class="icon" type="button" aria-label="关闭"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#close-line"></use></svg></button>
+      </header>
+      <fieldset id="forward-options" class="forward-options">
+        <legend class="visually-hidden">转发方式</legend>
+        <label><input type="radio" name="mode" value="inline">引用原文</label>
+        <label><input type="radio" name="mode" value="eml">作为 .eml 附件</label>
+        <p id="forward-html-hint" class="rule-help" hidden>这封邮件仅有 HTML 正文，使用 .eml 可保留原始格式和内嵌内容。</p>
+        <label id="forward-files-option"><input id="forward-files" type="checkbox" name="includeFiles">附带原邮件中的附件</label>
+      </fieldset>
+      <p id="forward-error" class="error" role="alert"></p>
+      <footer><button id="start-forward" class="primary" type="submit">继续写信</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="editor" aria-labelledby="editor-title">
+    <form id="editor-form" class="editor">
+      <header class="heading"><h2 id="editor-title">写邮件</h2><button id="close-editor" class="icon" type="button" aria-label="关闭"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#close-line"></use></svg></button></header>
+      <div class="recipient-field">
+        <label for="compose-recipient">收件人</label>
+        <input id="compose-recipient" name="to" type="text" inputmode="email" role="combobox" aria-autocomplete="list"
+          aria-controls="recipient-options" aria-expanded="false" autocomplete="off" spellcheck="false"
+          maxlength="5120" aria-describedby="compose-recipient-help">
+        <div id="recipient-options" class="recipient-options" role="listbox" aria-label="联系人建议" hidden></div>
+      </div>
+      <label>抄送<input name="cc" type="text" inputmode="email" autocomplete="off" spellcheck="false" maxlength="5120"
+        aria-describedby="compose-recipient-help"></label>
+      <label>密送<input name="bcc" type="text" inputmode="email" autocomplete="off" spellcheck="false" maxlength="5120"
+        aria-describedby="compose-recipient-help"></label>
+      <p id="compose-recipient-help" class="rule-help">用逗号或分号分隔地址，合计最多 20 位收件人。</p>
+      <label>主题<input name="subject"></label>
+      <div class="compose-body">
+        <div class="compose-body-toolbar">
+          <label for="compose-body">正文</label>
+          <button id="show-templates" class="secondary" type="button" aria-haspopup="dialog"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#draft-line"></use></svg> 邮件模板</button>
+        </div>
+        <textarea id="compose-body" name="body" rows="9" required></textarea>
+        <div id="draft-save-status" class="draft-save-status" hidden>
+          <svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#draft-line"></use></svg>
+          <p id="draft-save-message" role="status"></p>
+          <button id="discard-draft-edits" type="button" hidden>放弃未保存更改</button>
+        </div>
+      </div>
+      <div id="compose-signature-row" class="compose-signature-row" hidden>
+        <label for="compose-signature">签名</label>
+        <select id="compose-signature"></select>
+      </div>
+      <div class="file-picker">
+        <label for="attachments">添加附件</label>
+        <small id="attachment-limits">最多 10 个文件，合计不超过 6 MiB。</small>
+        <input id="attachments" type="file" multiple aria-describedby="attachment-limits">
+        <ul class="file-list" id="selected-files" aria-label="已添加的附件"></ul>
+      </div>
+      <div id="schedule-fields" class="schedule-fields" hidden>
+        <label>发送时间<input id="schedule-time" type="datetime-local" aria-describedby="schedule-zone" required disabled></label>
+        <small id="schedule-zone"></small>
+      </div>
+      <p id="compose-undo-hint" class="rule-help" hidden></p>
+      <p id="send-error" class="error" role="alert"></p>
+      <footer class="compose-actions">
+        <button id="save-draft" class="secondary" type="button">保存草稿</button>
+        <button id="toggle-schedule" class="secondary" type="button" aria-expanded="false" aria-controls="schedule-fields"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#time-line"></use></svg> 定时发送</button>
+        <button class="primary" type="submit"><span id="send-action-label">发送邮件</span> <svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#send-plane-line"></use></svg></button>
+      </footer>
+    </form>
+  </dialog>
+  <dialog id="commands-dialog" aria-labelledby="commands-title">
+    <header class="heading">
+      <h2 id="commands-title">快捷操作</h2>
+      <button id="close-commands" class="icon" type="button" aria-label="关闭"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#close-line"></use></svg></button>
+    </header>
+    <div class="command-input">
+      <svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#search-line"></use></svg>
+      <input id="command-query" type="text" role="combobox" aria-label="搜索操作或邮件" aria-controls="command-results"
+        aria-autocomplete="list" aria-expanded="true" autocomplete="off" maxlength="512" placeholder="搜索操作、文件夹或邮件">
+    </div>
+    <ul id="command-results" role="listbox" aria-label="匹配的操作"></ul>
+    <footer class="command-keys"><span><kbd>↑</kbd> <kbd>↓</kbd> 选择</span><span><kbd>Enter</kbd> 执行</span><span><kbd>Esc</kbd> 关闭</span></footer>
+  </dialog>
+  <dialog id="preferences-dialog" aria-labelledby="preferences-title">
+    <form id="preferences-form" class="editor">
+      <header class="heading">
+        <h2 id="preferences-title">邮箱偏好</h2>
+        <button id="close-preferences" class="icon" type="button" aria-label="关闭"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#close-line"></use></svg></button>
+      </header>
+      <fieldset class="preference-group">
+        <legend>外观</legend>
+        <div class="theme-options">
+          <label class="theme-option">
+            <span class="theme-preview theme-preview-light" aria-hidden="true"></span>
+            <span><input name="theme" type="radio" value="light"> 浅色</span>
+          </label>
+          <label class="theme-option">
+            <span class="theme-preview theme-preview-dark" aria-hidden="true"></span>
+            <span><input name="theme" type="radio" value="dark"> 深色</span>
+          </label>
+          <label class="theme-option">
+            <span class="theme-preview theme-preview-system" aria-hidden="true"></span>
+            <span><input name="theme" type="radio" value="system"> 跟随系统</span>
+          </label>
+        </div>
+      </fieldset>
+      <fieldset class="preference-group">
+        <legend>邮件列表</legend>
+        <div class="density-options">
+          <label><input name="density" type="radio" value="comfortable"> 舒适</label>
+          <label><input name="density" type="radio" value="compact"> 紧凑</label>
+        </div>
+      </fieldset>
+      <label class="preference-read"><input name="autoRead" type="checkbox"> 打开邮件时自动标为已读</label>
+      <div class="preference-send-delay">
+        <label for="undo-seconds">撤销发送等待时间</label>
+        <select id="undo-seconds" name="undoSeconds">
+          <option value="0">关闭</option>
+          <option value="5">5 秒</option>
+          <option value="10">10 秒</option>
+          <option value="20">20 秒</option>
+          <option value="30">30 秒</option>
+        </select>
+      </div>
+      <p id="preferences-error" class="error" role="alert"></p>
+      <footer class="preferences-actions">
+        <button id="default-preferences" class="secondary" type="button">恢复默认</button>
+        <button class="primary" type="submit">保存偏好</button>
+      </footer>
+    </form>
+  </dialog>
+  <dialog id="snooze-dialog" aria-labelledby="snooze-title">
+    <form id="snooze-form" class="editor">
+      <header class="heading">
+        <h2 id="snooze-title">稍后处理</h2>
+        <button id="close-snooze" class="icon" type="button" aria-label="关闭"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#close-line"></use></svg></button>
+      </header>
+      <p id="snooze-subject"></p>
+      <div class="snooze-presets" aria-label="快捷时间">
+        <button class="secondary" type="button" data-snooze-preset="hour">1 小时后</button>
+        <button class="secondary" type="button" data-snooze-preset="tomorrow">明早 9 点</button>
+      </div>
+      <label>移回收件箱的时间<input id="snooze-time" type="datetime-local" aria-describedby="snooze-zone" required></label>
+      <p id="snooze-zone" class="rule-help"></p>
+      <p id="snooze-error" class="error" role="alert"></p>
+      <footer class="snooze-actions">
+        <button id="restore-snooze" class="secondary" type="button" hidden>立即移回</button>
+        <button id="save-snooze" class="primary" type="submit">稍后再看</button>
+      </footer>
+    </form>
+  </dialog>
+  <dialog id="templates-dialog" aria-labelledby="templates-title">
+    <form id="templates-form" class="editor">
+      <header class="heading">
+        <h2 id="templates-title">邮件模板</h2>
+        <button id="close-templates" class="icon" type="button" aria-label="关闭"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#close-line"></use></svg></button>
+      </header>
+      <p id="templates-status" class="rule-help" role="status"></p>
+      <div id="templates-picker" hidden>
+        <label for="template-choice">选择模板</label>
+        <select id="template-choice"></select>
+        <div class="template-preview" aria-label="模板预览" tabindex="0">
+          <p id="template-preview-subject"></p>
+          <p id="template-preview-body"></p>
+        </div>
+      </div>
+      <div id="template-fields" hidden>
+        <label>模板名称<input name="templateName" autocomplete="off" required disabled></label>
+        <label>模板主题（可选）<input name="templateSubject" autocomplete="off" maxlength="300"></label>
+        <label>模板正文<textarea name="templateBody" rows="5" required disabled></textarea></label>
+      </div>
+      <p id="templates-error" class="error" role="alert"></p>
+      <footer id="template-pick-actions" class="template-actions" hidden>
+        <button id="new-template" class="secondary" type="button"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#add-line"></use></svg> 新建模板</button>
+        <button id="edit-template" class="secondary" type="button">编辑</button>
+        <button id="insert-template" class="primary" type="button">插入模板</button>
+      </footer>
+      <footer id="template-edit-actions" class="template-actions" hidden>
+        <button id="delete-template" class="secondary" type="button">删除</button>
+        <button id="cancel-template-edit" class="secondary" type="button">返回</button>
+        <button id="save-template" class="primary" type="submit">保存模板</button>
+      </footer>
+      <footer id="template-delete-actions" class="template-actions" hidden>
+        <button id="cancel-template-delete" class="secondary" type="button">取消</button>
+        <button id="confirm-template-delete" class="primary" type="button">确认删除</button>
+      </footer>
+    </form>
+  </dialog>
+  <div id="undo-send-notice" class="undo-send-notice" hidden>
+    <svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#time-line"></use></svg>
+    <span role="status">邮件等待发送</span>
+    <span id="undo-send-countdown" aria-hidden="true"></span>
+    <button id="undo-send-action" class="primary" type="button">撤销发送</button>
+  </div>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <dialog id="saved-search-dialog" aria-labelledby="saved-search-title">
+    <form id="saved-search-form" class="editor">
+      <header class="heading">
+        <h2 id="saved-search-title">保存搜索</h2>
+        <button id="close-saved-search" class="icon" type="button" aria-label="关闭"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#close-line"></use></svg></button>
+      </header>
+      <label>搜索名称<input id="saved-search-name" required autocomplete="off"></label>
+      <div class="rule-select">
+        <label for="saved-search-scope">搜索范围</label>
+        <select id="saved-search-scope" required></select>
+      </div>
+      <p id="saved-search-notice" class="rule-help" hidden>原搜索范围已删除，请重新选择范围。</p>
+      <dl id="saved-search-summary" class="saved-search-summary" aria-label="已应用条件"></dl>
+      <p id="saved-search-error" class="error" role="alert"></p>
+      <footer class="saved-search-actions">
+        <button id="delete-saved-search" class="secondary" type="button" hidden>删除搜索</button>
+        <button id="submit-saved-search" class="primary" type="submit">保存搜索</button>
+      </footer>
+    </form>
+  </dialog>
+  <dialog id="signatures-dialog" aria-labelledby="signatures-title">
+    <form id="signatures-form" class="editor">
+      <header class="heading">
+        <h2 id="signatures-title">邮件签名</h2>
+        <button id="close-signatures" class="icon" type="button" aria-label="关闭"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#close-line"></use></svg></button>
+      </header>
+      <p id="signatures-status" class="rule-help" role="status"></p>
+      <div id="signature-controls" class="signature-controls" hidden>
+        <div class="signature-picker">
+          <label for="signature-profile">编辑签名</label>
+          <select id="signature-profile"></select>
+          <button id="new-signature" class="secondary" type="button">新建签名</button>
+        </div>
+        <fieldset id="signature-fields" class="signature-fields" hidden disabled>
+          <label>签名名称<input id="signature-name" required autocomplete="off"></label>
+          <label>签名文本<textarea id="signature-text" rows="4" required></textarea></label>
+          <button id="delete-signature" class="secondary" type="button">删除此签名</button>
+        </fieldset>
+        <fieldset class="signature-defaults">
+          <legend>默认签名</legend>
+          <label>新邮件<select id="signature-compose"></select></label>
+          <label>回复<select id="signature-reply"></select></label>
+          <label>转发<select id="signature-forward"></select></label>
+        </fieldset>
+      </div>
+      <p id="signatures-error" class="error" role="alert"></p>
+      <footer><button id="save-signatures" class="primary" type="submit" disabled>保存签名设置</button></footer>
+    </form>
+  </dialog>
+  <dialog id="labels-dialog" aria-labelledby="labels-title">
+    <section class="editor">
+      <header class="heading">
+        <h2 id="labels-title">管理标签</h2>
+        <button id="close-labels" class="icon" type="button" aria-label="关闭"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#close-line"></use></svg></button>
+      </header>
+      <p id="labels-error" class="error" role="alert"></p>
+      <ul id="labels-list" class="labels-list" aria-label="标签"></ul>
+      <form id="label-form" class="label-form">
+        <label>标签名称<input name="name" required autocomplete="off"></label>
+        <footer>
+          <button id="cancel-label-edit" class="secondary" type="button" hidden>取消重命名</button>
+          <button id="save-label" class="primary" type="submit">新建标签</button>
+        </footer>
+      </form>
+    </section>
+  </dialog>
+  <dialog id="folder-dialog">
+    <form id="folder-form" class="editor">
+      <header class="heading"><h2 id="folder-dialog-title">新建文件夹</h2><button id="close-folder" class="icon" type="button" aria-label="关闭"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#close-line"></use></svg></button></header>
+      <label>文件夹名称<input name="label" required maxlength="128" autocomplete="off" aria-describedby="folder-path-help"></label>
+      <p class="rule-help" id="folder-path-help">用 / 分隔层级，例如「项目/2026」。</p>
+      <p id="folder-error" class="error" role="alert"></p>
+      <footer>
+        <button class="secondary" id="delete-folder" type="button" hidden>删除空文件夹</button>
+        <button class="primary" type="submit">保存文件夹</button>
+      </footer>
+    </form>
+  </dialog>
+  <dialog id="rules-dialog" aria-labelledby="rules-title">
+    <section class="editor">
+      <header class="heading"><h2 id="rules-title">邮件规则</h2><button id="close-rules" class="icon" type="button" aria-label="关闭"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#close-line"></use></svg></button></header>
+      <section id="rules-overview" class="rules-overview">
+        <p class="rule-help">新收件按优先级从小到大检查，只执行第一条匹配的规则。同级规则按创建顺序检查。</p>
+        <p id="rules-status" class="rule-help" role="status"></p>
+        <ol id="rules-list" class="rules-list" aria-label="规则优先顺序"></ol>
+        <footer><button id="create-rule" class="primary" type="button" disabled>新建规则</button></footer>
+      </section>
+      <form id="rule-form" hidden>
+        <h3 id="rule-form-title">新建规则</h3>
+        <div class="rule-fields">
+          <div class="rule-select">
+            <label for="rule-field">匹配条件</label>
+            <select id="rule-field" name="field">
+              <option value="sender">发件地址等于</option>
+              <option value="domain">发件域名等于</option>
+              <option value="recipient">收件地址等于</option>
+              <option value="subject">主题包含</option>
+            </select>
+          </div>
+          <label>匹配内容<input name="value" required maxlength="254" autocomplete="off"></label>
+        </div>
+        <p id="rule-match-help" class="rule-help">发件地址取自 SMTP 信封。</p>
+        <div class="rule-fields">
+          <div class="rule-select">
+            <label for="rule-action">执行动作</label>
+            <select id="rule-action" name="action">
+              <option value="move">移动到文件夹</option>
+              <option value="label">添加标签</option>
+              <option value="star">加星标</option>
+              <option value="read">标为已读</option>
+            </select>
+          </div>
+          <div id="rule-destination" class="rule-select">
+            <label for="rule-folder">目标文件夹</label>
+            <select id="rule-folder" name="destination"></select>
+          </div>
+          <div id="rule-label-target" class="rule-select" hidden>
+            <label for="rule-label">目标标签</label>
+            <select id="rule-label" name="labelID" required disabled></select>
+            <p id="rule-label-help" class="rule-help" hidden>请先在「管理标签」中创建标签。</p>
+          </div>
+        </div>
+        <div class="rule-fields">
+          <label>优先级<input name="order" type="number" min="1" max="1000" required value="100"></label>
+          <label class="rule-enabled"><input name="enabled" type="checkbox" checked>启用此规则</label>
+        </div>
+        <p id="rule-error" class="error" role="alert"></p>
+        <footer class="rule-actions">
+          <button id="delete-rule" class="secondary" type="button" hidden>删除规则</button>
+          <button id="cancel-rule" class="secondary" type="button">取消</button>
+          <button class="primary" type="submit">保存规则</button>
+        </footer>
+      </form>
+    </section>
+  </dialog>
+  <dialog id="filter-dialog" aria-labelledby="filter-title">
+    <form id="filter-form" class="editor">
+      <header class="heading"><h2 id="filter-title">筛选邮件</h2><button id="close-filters" class="icon" type="button" aria-label="关闭"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#close-line"></use></svg></button></header>
+      <label>发件地址或姓名<input name="sender" maxlength="254" autocomplete="off"></label>
+      <label>收件地址<input name="recipient" maxlength="254" autocomplete="off"></label>
+      <label>关键词匹配范围<select name="content">
+        <option value="">所有字段</option>
+        <option value="1">仅主题和正文</option>
+      </select></label>
+      <div class="filter-dates">
+        <label>开始日期<input name="start" type="date"></label>
+        <label>结束日期<input name="end" type="date"></label>
+      </div>
+      <div class="rule-select">
+        <label for="filter-seen">阅读状态</label>
+        <select id="filter-seen" name="seen">
+          <option value="">不限</option>
+          <option value="unread">未读</option>
+          <option value="read">已读</option>
+        </select>
+      </div>
+      <p id="filter-error" class="error" role="alert"></p>
+      <footer>
+        <button id="clear-filters" class="secondary" type="button">清除筛选</button>
+        <button class="primary" type="submit">应用筛选</button>
+      </footer>
+    </form>
+  </dialog>
+  <dialog id="addresses-dialog" aria-labelledby="addresses-title">
+    <section class="editor">
+      <header class="heading">
+        <h2 id="addresses-title">收信地址</h2>
+        <button id="close-addresses" class="icon" type="button" aria-label="关闭"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#close-line"></use></svg></button>
+      </header>
+      <dl id="addresses-data" class="addresses-data" hidden>
+        <dt>主邮箱</dt>
+        <dd id="primary-address"></dd>
+        <dt>收信别名</dt>
+        <dd>
+          <ul id="alias-list"></ul>
+          <p id="no-aliases" class="rule-help" hidden>这个邮箱还没有别名。</p>
+        </dd>
+      </dl>
+      <p id="addresses-status" class="rule-help" role="status"></p>
+      <p class="rule-help">请使用主邮箱登录和发信。别名由部署者分配。</p>
+    </section>
+  </dialog>
+  <dialog id="contacts-dialog" aria-labelledby="contacts-title">
+    <section class="editor">
+      <header class="heading">
+        <h2 id="contacts-title">联系人</h2>
+        <button id="close-contacts" class="icon" type="button" aria-label="关闭"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#close-line"></use></svg></button>
+      </header>
+      <section id="contacts-overview" class="contacts-overview">
+        <div class="contacts-toolbar">
+          <label class="contact-search">
+            <span class="visually-hidden">查找联系人</span>
+            <input id="contact-search" type="search" placeholder="搜索姓名或邮箱" autocomplete="off">
+          </label>
+          <button id="new-contact" class="secondary" type="button">新建联系人</button>
+        </div>
+        <p id="contacts-status" class="rule-help" role="status"></p>
+        <ul id="contact-list" class="contact-list"></ul>
+        <button id="more-contacts" class="secondary" type="button" hidden>加载更多联系人</button>
+      </section>
+      <form id="contact-form" class="contact-form" hidden>
+        <h3 id="contact-form-title">新建联系人</h3>
+        <label>姓名<input name="name" maxlength="100" autocomplete="off"></label>
+        <label>联系人邮箱<input name="email" type="email" maxlength="254" autocomplete="off" required></label>
+        <label>备注<textarea name="note" rows="3" maxlength="500"></textarea></label>
+        <p id="contact-error" class="error" role="alert"></p>
+        <footer>
+          <button id="delete-contact" class="secondary" type="button" hidden>删除联系人</button>
+          <button id="cancel-contact" class="secondary" type="button">返回列表</button>
+          <button class="primary" type="submit">保存联系人</button>
+        </footer>
+      </form>
+    </section>
+  </dialog>
+  <dialog id="app-passwords-dialog" aria-labelledby="app-passwords-title">
+    <section class="editor">
+      <header class="heading">
+        <h2 id="app-passwords-title">应用密码</h2>
+        <button id="close-app-passwords" class="icon" type="button" aria-label="关闭"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#close-line"></use></svg></button>
+      </header>
+      <section id="app-passwords-overview" class="app-passwords-panel">
+        <p class="rule-help">在邮件客户端使用主邮箱地址和应用密码登录。撤销后，客户端下次登录时需要有效密码。</p>
+        <p id="app-passwords-status" class="rule-help" role="status"></p>
+        <ul id="app-passwords-list" class="app-passwords-list"></ul>
+        <footer><button id="new-app-password" class="primary" type="button">新建应用密码</button></footer>
+      </section>
+      <form id="app-password-form" class="app-passwords-panel" hidden>
+        <label>名称<input name="label" placeholder="例如手机邮件客户端" maxlength="80" required></label>
+        <fieldset class="app-protocols">
+          <legend>授权协议</legend>
+          <label><input type="checkbox" name="protocols" value="imap" checked>IMAP</label>
+          <label><input type="checkbox" name="protocols" value="pop3">POP3</label>
+          <label><input type="checkbox" name="protocols" value="smtp" checked>SMTP 提交</label>
+        </fieldset>
+        <div class="rule-select">
+          <label for="app-password-days">有效期</label>
+          <select id="app-password-days" name="days">
+            <option value="30">30 天</option>
+            <option value="90" selected>90 天</option>
+            <option value="365">365 天</option>
+            <option value="0">直到撤销</option>
+          </select>
+        </div>
+        <label>主邮箱密码<input name="password" type="password" autocomplete="current-password" required></label>
+        <p id="app-password-error" class="error" role="alert"></p>
+        <footer>
+          <button id="cancel-app-password" class="secondary" type="button">取消</button>
+          <button class="primary" type="submit">创建应用密码</button>
+        </footer>
+      </form>
+      <section id="app-password-reveal" class="app-passwords-panel" hidden>
+        <p class="rule-help">应用密码只显示这一次。请复制后保存到密码管理器。</p>
+        <label>新应用密码<input id="app-password-secret" readonly spellcheck="false" autocomplete="off"></label>
+        <p id="app-password-copy-status" class="rule-help" role="status"></p>
+        <footer>
+          <button id="copy-app-password" class="secondary" type="button">复制密码</button>
+          <button id="finish-app-password" class="primary" type="button">完成</button>
+        </footer>
+      </section>
+    </section>
+  </dialog>
+  <dialog id="web-sessions-dialog" aria-labelledby="web-sessions-title">
+    <section class="editor">
+      <header class="heading">
+        <h2 id="web-sessions-title">登录设备</h2>
+        <button id="close-web-sessions" class="icon" type="button" aria-label="关闭"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#close-line"></use></svg></button>
+      </header>
+      <p id="web-sessions-status" class="rule-help" role="status"></p>
+      <ul id="web-sessions-list" class="web-sessions-list"></ul>
+      <footer class="web-sessions-actions">
+        <button id="refresh-web-sessions" class="secondary" type="button">刷新列表</button>
+        <button id="revoke-other-sessions" class="secondary" type="button">退出所有其他设备</button>
+      </footer>
+    </section>
+  </dialog>
+  <dialog id="mail-transfer-dialog" aria-labelledby="mail-transfer-title">
+    <section class="editor">
+      <header class="heading">
+        <h2 id="mail-transfer-title">邮件导入导出</h2>
+        <button id="close-mail-transfer" class="icon" type="button" aria-label="关闭"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#close-line"></use></svg></button>
+      </header>
+      <form id="mail-import-form" class="mail-transfer-form">
+        <h3>导入 EML</h3>
+        <div class="rule-select">
+          <label for="mail-import-folder">导入目标文件夹</label>
+          <select id="mail-import-folder" name="folder" required></select>
+        </div>
+        <label class="file-picker">EML 文件
+          <input id="mail-import-files" name="messages" type="file" accept=".eml,message/rfc822" multiple required>
+        </label>
+        <p class="rule-help">每批最多 100 封、合计 64 MiB，单封最多 10 MiB。</p>
+        <p id="mail-import-error" class="error" role="alert"></p>
+        <footer><button class="primary" type="submit">导入邮件</button></footer>
+      </form>
+      <form id="mail-export-form" class="mail-transfer-form">
+        <h3>导出文件夹</h3>
+        <div class="rule-select">
+          <label for="mail-export-folder">导出来源文件夹</label>
+          <select id="mail-export-folder" name="folder" required></select>
+        </div>
+        <p class="rule-help">每批最多 100 封、合计 64 MiB。可从批量整理中选择部分邮件导出。</p>
+        <p id="mail-export-error" class="error" role="alert"></p>
+        <footer><button class="secondary" type="submit">下载 ZIP</button></footer>
+      </form>
+    </section>
+  </dialog>
+</body>
+</html>
