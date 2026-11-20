@@ -23,28 +23,34 @@ type managedTLS struct {
 	hosts   []string
 }
 
+type inboundTLS struct {
+	config *tls.Config
+	acme   *managedTLS
+	pem    *pemTLS
+}
+
 var acmeDNSLabel = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
-func configureTLS() (*tls.Config, *managedTLS, error) {
+func configureTLS() (inboundTLS, error) {
 	certFile, keyFile := os.Getenv("HARBOR_CERT"), os.Getenv("HARBOR_KEY")
 	hostList := os.Getenv("HARBOR_ACME_HOSTS")
 	config := &tls.Config{MinVersion: tls.VersionTLS12}
 	if hostList == "" {
 		if certFile == "" && keyFile == "" {
-			return nil, nil, nil
+			return inboundTLS{}, nil
 		}
-		pair, err := tls.LoadX509KeyPair(certFile, keyFile)
-		if err != nil {
-			return nil, nil, err
+		pem := &pemTLS{certFile: certFile, keyFile: keyFile}
+		if _, err := pem.reload(); err != nil {
+			return inboundTLS{}, err
 		}
-		config.Certificates = []tls.Certificate{pair}
-		return config, nil, nil
+		config.GetCertificate = pem.getCertificate
+		return inboundTLS{config: config, pem: pem}, nil
 	}
 	if certFile != "" || keyFile != "" {
-		return nil, nil, errors.New("HARBOR_ACME_HOSTS cannot be combined with HARBOR_CERT or HARBOR_KEY")
+		return inboundTLS{}, errors.New("HARBOR_ACME_HOSTS cannot be combined with HARBOR_CERT or HARBOR_KEY")
 	}
 	if os.Getenv("HARBOR_ACME_ACCEPT_TOS") != "true" {
-		return nil, nil, errors.New("automatic certificates require HARBOR_ACME_ACCEPT_TOS=true")
+		return inboundTLS{}, errors.New("automatic certificates require HARBOR_ACME_ACCEPT_TOS=true")
 	}
 
 	allowed := make(map[string]bool)
@@ -52,11 +58,11 @@ func configureTLS() (*tls.Config, *managedTLS, error) {
 	for _, name := range strings.Split(hostList, ",") {
 		host := normalizeACMEHost(strings.TrimSpace(name))
 		if len(host) > 253 || !strings.Contains(host, ".") || net.ParseIP(host) != nil {
-			return nil, nil, errors.New("HARBOR_ACME_HOSTS must contain DNS hostnames")
+			return inboundTLS{}, errors.New("HARBOR_ACME_HOSTS must contain DNS hostnames")
 		}
 		for _, label := range strings.Split(host, ".") {
 			if !acmeDNSLabel.MatchString(label) {
-				return nil, nil, errors.New("HARBOR_ACME_HOSTS must contain ASCII DNS hostnames")
+				return inboundTLS{}, errors.New("HARBOR_ACME_HOSTS must contain ASCII DNS hostnames")
 			}
 		}
 		if !allowed[host] {
@@ -68,15 +74,15 @@ func configureTLS() (*tls.Config, *managedTLS, error) {
 	if directory != "" {
 		parsed, err := url.Parse(directory)
 		if err != nil || parsed.Scheme != "https" || parsed.Hostname() == "" || parsed.User != nil || parsed.Fragment != "" {
-			return nil, nil, errors.New("HARBOR_ACME_DIRECTORY must be an HTTPS directory URL")
+			return inboundTLS{}, errors.New("HARBOR_ACME_DIRECTORY must be an HTTPS directory URL")
 		}
 	}
 	cache := env("HARBOR_ACME_CACHE", "data/acme")
 	if err := os.MkdirAll(cache, 0o700); err != nil {
-		return nil, nil, fmt.Errorf("create ACME cache: %w", err)
+		return inboundTLS{}, fmt.Errorf("create ACME cache: %w", err)
 	}
 	if err := checkDataDir(cache); err != nil {
-		return nil, nil, fmt.Errorf("HARBOR_ACME_CACHE is not writable: %w", err)
+		return inboundTLS{}, fmt.Errorf("HARBOR_ACME_CACHE is not writable: %w", err)
 	}
 	manager := &autocert.Manager{
 		Prompt: autocert.AcceptTOS,
@@ -106,7 +112,7 @@ func configureTLS() (*tls.Config, *managedTLS, error) {
 		}
 		return managed.certificate(&client)
 	}
-	return config, managed, nil
+	return inboundTLS{config: config, acme: managed}, nil
 }
 
 func normalizeACMEHost(name string) string {

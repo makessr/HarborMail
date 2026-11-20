@@ -33,7 +33,7 @@ Environment=HARBOR_MYSQL_DSN_FILE=%d/mysql-dsn
 
 启用 Redis 时，在环境文件中设置专用 `HARBOR_REDIS_NAMESPACE`。将连接地址写入仅 root 可读的 `/etc/harbormail/redis-url`，在同一个 drop-in 的 `[Service]` 下添加 `LoadCredential=redis-url:/etc/harbormail/redis-url` 和 `Environment=HARBOR_REDIS_URL_FILE=%d/redis-url`。 [Redis 配置](../docs/deployment-and-usage.md#可选-redis-缓存)
 
-需要直接绑定 TCP 25、465 等低端口时，在 drop-in 的 `[Service]` 添加 `CapabilityBoundingSet=CAP_NET_BIND_SERVICE` 和 `AmbientCapabilities=CAP_NET_BIND_SERVICE`，再配置对应的监听地址。使用受限的 PEM 文件时，通过 `LoadCredential=` 加载证书与私钥，并把 `HARBOR_CERT`、`HARBOR_KEY` 指向相应的 `%d/` 路径。用 ACME 时将 `HARBOR_ACME_CACHE` 指向状态目录下的可写路径，如 `/var/lib/harbormail/acme`。公网接入时核对实际端口、DNS、反向代理及 TLS。 [域名与 TLS 配置](../docs/deployment-and-usage.md#接入真实域名)
+需要直接绑定 TCP 25、465 等低端口时，在 drop-in 的 `[Service]` 添加 `CapabilityBoundingSet=CAP_NET_BIND_SERVICE` 和 `AmbientCapabilities=CAP_NET_BIND_SERVICE`，再配置对应的监听地址。使用 `LoadCredential=` 时，将 `HARBOR_CERT`、`HARBOR_KEY` 指向相应的 `%d/` 路径，更新后重启服务以刷新 systemd 凭据快照。需要热更新时，把两项指向服务账号可读的常规文件，例如 `/etc/harbormail/tls/` 下由受限组权限保护的证书和私钥。用 ACME 时将 `HARBOR_ACME_CACHE` 指向状态目录下的可写路径，如 `/var/lib/harbormail/acme`。公网接入时核对实际端口、DNS、反向代理及 TLS。 [轮换 PEM 证书](../docs/deployment-and-usage.md#轮换-pem-证书)
 
 更新前备份并保留旧二进制，执行 `sudo systemctl stop harbormail.service`，安装新版文件后再启动并检查健康状态。修改服务单元后先执行 `sudo systemctl daemon-reload`。模板为有序停机保留 125 秒。
 

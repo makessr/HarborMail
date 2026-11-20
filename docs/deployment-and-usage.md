@@ -168,7 +168,7 @@ MySQL 密码文件用于首次初始化。已有数据卷的密码在 MySQL 内�
 
 需要从源码构建时，省略 `compose.registry.yaml`，启动时使用 `--build`。构建主机可通过 `HARBOR_GO_PROXY` 和 `HARBOR_GO_SUMDB` 设置 Go 模块代理与校验服务。
 
-- **TLS** 证书放在 `tls/fullchain.pem` 和 `tls/privkey.pem`，可用 `HARBOR_TLS_DIR` 指定其他目录。证书须覆盖客户端使用的邮件主机名，挂载目录和证书文件须能被容器 UID `10001` 读取；私钥应通过受限的属主或组权限提供。证书更换后重新创建 Harbor 容器。
+- **TLS** 证书放在 `tls/fullchain.pem` 和 `tls/privkey.pem`，可用 `HARBOR_TLS_DIR` 指定其他目录。证书须覆盖客户端使用的邮件主机名，挂载目录和证书文件须能被容器 UID `10001` 读取。私钥应通过受限的属主或组权限提供。 [轮换 PEM 证书](#轮换-pem-证书)
 - **中继认证** 在 `.env` 中填写 `HARBOR_RELAY` 和 `HARBOR_RELAY_USER`，把密码存入 `secrets/relay-password` 并加载对应 Compose 文件。默认使用 STARTTLS；465 模式通常设置 `HARBOR_RELAY_TLS=implicit`。
 - **中继私有 CA** 把 CA 的 PEM 证书放入 `relay-ca/`，确保容器 UID `10001` 可读。使用 `-f compose.relay-ca.yaml`，并在 `.env` 设置 `HARBOR_RELAY_CA_FILE=/run/harbor-relay-ca/company.pem`。可用 `HARBOR_RELAY_CA_DIR` 覆盖宿主机目录。按域配置时，在该域的 JSON 中填写容器内的证书路径。更新证书后重启 Harbor 服务。
 
@@ -370,6 +370,12 @@ Docker 的 MySQL 模式已包含 Redis。如果使用已有 Redis，将 `compose
 2. 给 Web 界面配 HTTPS。使用反向代理时保持 Web 监听在内部地址，代理端配置登录接口限流，后端开启 Secure Cookie。
 3. 配置支持发件域名的 SMTP 中继，按中继要求配置 SPF、DKIM 和 DMARC。外部邮件先入发件箱，再由中继投递。
 4. 备份 SQLite 文件时使用 SQLite 在线备份工具，或停服后备份整个数据库目录。证书与账号配置另行备份。
+
+## 轮换 PEM 证书
+
+外部续签工具可将新证书和私钥分别写入同一文件系统的临时文件，设置访问权限，再重命名覆盖 `HARBOR_CERT` 和 `HARBOR_KEY` 指向的文件。运行中的 Harbor 每五秒检查证书对。两个文件都就绪后，新 TLS 握手使用更新后的证书，已有连接继续运行。若文件缺失、私钥不匹配或新叶证书超出有效期，Harbor 保留当前证书，并继续重试。
+
+Docker 下保留 `HARBOR_TLS_DIR` 对应的挂载目录，更新目录内的文件。若使用符号链接，请确保目标也在容器可访问的路径内。原生 HTTPS 的容器健康检查会核对当前服务端证书与 PEM 文件，两个文件尚未就绪时可能暂时失败。可从服务日志确认 `Reloaded TLS certificate`，再从外部入口核对实际生效的证书。
 
 ## 自动签发与续签 TLS 证书
 

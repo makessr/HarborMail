@@ -253,18 +253,19 @@ func Run() {
 			log.Fatal(err)
 		}
 	}
-	tlsConfig, managed, err := configureTLS()
+	transportTLS, err := configureTLS()
 	if err != nil {
 		log.Fatal(err)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := a.serve(ctx, tlsConfig, managed); err != nil {
+	if err := a.serve(ctx, transportTLS); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func (a *app) serve(ctx context.Context, tlsConfig *tls.Config, managed *managedTLS) error {
+func (a *app) serve(ctx context.Context, transportTLS inboundTLS) error {
+	tlsConfig, managed := transportTLS.config, transportTLS.acme
 	runtime := newServiceRuntime()
 	defer runtime.shutdown()
 	a.stopping = runtime.ctx.Done()
@@ -303,6 +304,9 @@ func (a *app) serve(ctx context.Context, tlsConfig *tls.Config, managed *managed
 	}
 	log.Printf("Webmail listening on %s", webListener.Addr())
 	runtime.serveHTTP("webmail", server, webListener)
+	if transportTLS.pem != nil {
+		runtime.worker(transportTLS.pem.watch)
+	}
 	if managed != nil {
 		managed.warmCertificates(runtime.ctx)
 	}
