@@ -61,22 +61,9 @@ func configureTLS() (inboundTLS, error) {
 		return inboundTLS{}, errors.New("automatic certificates require HARBOR_ACME_ACCEPT_TOS=true")
 	}
 
-	allowed := make(map[string]bool)
-	var hosts []string
-	for _, name := range strings.Split(hostList, ",") {
-		host := normalizeACMEHost(strings.TrimSpace(name))
-		if len(host) > 253 || !strings.Contains(host, ".") || net.ParseIP(host) != nil {
-			return inboundTLS{}, errors.New("HARBOR_ACME_HOSTS must contain DNS hostnames")
-		}
-		for _, label := range strings.Split(host, ".") {
-			if !acmeDNSLabel.MatchString(label) {
-				return inboundTLS{}, errors.New("HARBOR_ACME_HOSTS must contain ASCII DNS hostnames")
-			}
-		}
-		if !allowed[host] {
-			allowed[host] = true
-			hosts = append(hosts, host)
-		}
+	hosts, allowed, err := parseACMEHosts(hostList)
+	if err != nil {
+		return inboundTLS{}, err
 	}
 	directory := os.Getenv("HARBOR_ACME_DIRECTORY")
 	if directory != "" {
@@ -94,13 +81,9 @@ func configureTLS() (inboundTLS, error) {
 		return inboundTLS{}, fmt.Errorf("HARBOR_ACME_CACHE is not writable: %w", err)
 	}
 	if challenge == "cloudflare" {
-		token, err := fileSetting("HARBOR_ACME_CLOUDFLARE_TOKEN")
+		token, err := cloudflareACMEToken()
 		if err != nil {
 			return inboundTLS{}, err
-		}
-		token = strings.TrimSpace(token)
-		if token == "" {
-			return inboundTLS{}, errors.New("Cloudflare DNS-01 requires HARBOR_ACME_CLOUDFLARE_TOKEN or HARBOR_ACME_CLOUDFLARE_TOKEN_FILE")
 		}
 		dns, err := newCloudflareACME(hosts, allowed, cache, directory, email, token)
 		if err != nil {
@@ -138,6 +121,27 @@ func configureTLS() (inboundTLS, error) {
 		return managed.certificate(&client)
 	}
 	return inboundTLS{config: config, acme: managed}, nil
+}
+
+func parseACMEHosts(hostList string) ([]string, map[string]bool, error) {
+	allowed := make(map[string]bool)
+	var hosts []string
+	for _, name := range strings.Split(hostList, ",") {
+		host := normalizeACMEHost(strings.TrimSpace(name))
+		if len(host) > 253 || !strings.Contains(host, ".") || net.ParseIP(host) != nil {
+			return nil, nil, errors.New("HARBOR_ACME_HOSTS must contain DNS hostnames")
+		}
+		for _, label := range strings.Split(host, ".") {
+			if !acmeDNSLabel.MatchString(label) {
+				return nil, nil, errors.New("HARBOR_ACME_HOSTS must contain ASCII DNS hostnames")
+			}
+		}
+		if !allowed[host] {
+			allowed[host] = true
+			hosts = append(hosts, host)
+		}
+	}
+	return hosts, allowed, nil
 }
 
 func normalizeACMEHost(name string) string {

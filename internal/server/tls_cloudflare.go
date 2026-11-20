@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/caddyserver/certmagic"
@@ -19,6 +20,18 @@ type dnsACME struct {
 	manager *certmagic.Config
 	hosts   []string
 	allowed map[string]bool
+}
+
+func cloudflareACMEToken() (string, error) {
+	token, err := fileSetting("HARBOR_ACME_CLOUDFLARE_TOKEN")
+	if err != nil {
+		return "", err
+	}
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return "", errors.New("Cloudflare DNS-01 requires HARBOR_ACME_CLOUDFLARE_TOKEN or HARBOR_ACME_CLOUDFLARE_TOKEN_FILE")
+	}
+	return token, nil
 }
 
 func newCloudflareACME(hosts []string, allowed map[string]bool, cacheDir, directory, email, token string) (*dnsACME, error) {

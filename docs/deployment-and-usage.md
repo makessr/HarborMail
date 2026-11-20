@@ -125,7 +125,11 @@ docker compose ps
 | ACME HTTP-01 | `HARBOR_ACME_PORT` | 8081 |
 | 运行指标 | `HARBOR_METRICS_PORT` | 9091 |
 
-默认 Web 和 SMTP 仅绑定本机回环。邮件客户端、HTTP-01 验证和运行指标端口由对应的覆盖文件启用。MySQL 和 Redis 仅在 Compose 网络内访问。升级镜像时在项目目录运行 `docker compose pull harbor && docker compose up -d --no-build --wait`，沿用原有凭据和数据卷。
+默认 Web 和 SMTP 仅绑定本机回环。邮件客户端、HTTP-01 验证和运行指标端口由对应的覆盖文件启用。
+
+MySQL 的 `3306` 和 Redis 的 `6379` 只在 Compose 网络内使用。宿主机上已经有服务占用这两个端口，Harbor Mail 仍可正常启动。自行发布数据库或 Redis 端口时，需选用空闲的宿主机端口。
+
+升级镜像时在项目目录运行 `docker compose pull harbor && docker compose up -d --no-build --wait`，沿用原有凭据和数据卷。
 
 ### SQLite 与可选组件
 
@@ -388,6 +392,8 @@ HARBOR_ACME_ACCEPT_TOS=true
 docker compose config --quiet && docker compose up -d --no-build
 docker compose logs -f harbor
 ```
+
+启动前可用 `docker compose run --rm --no-deps -T harbor acme-check` 检查 Cloudflare 区域和 token 的读取权限。单二进制使用同一套环境配置运行 `harbormail acme-check`。预检只读，DNS 写入权限在实际签发时验证。
 
 首次签发成功后再打开 HTTPS 地址。按 `Ctrl+C` 退出日志查看。Harbor 自动清理 TXT 记录并在 `HARBOR_ACME_CACHE` 下的 `cloudflare/` 保存证书及 ACME 账号状态。请保留该目录，并允许 Harbor 出站访问 CA、Cloudflare API 和 DNS。
 

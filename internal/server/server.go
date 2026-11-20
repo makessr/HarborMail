@@ -41,6 +41,15 @@ func env(key, fallback string) string {
 }
 
 func Run() {
+	if len(os.Args) > 1 && os.Args[1] == "acme-check" {
+		if len(os.Args) != 2 {
+			log.Fatal("usage: harbormail acme-check")
+		}
+		if err := runACMECheck(os.Stdout); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "relay-check" {
 		if len(os.Args) != 3 {
 			log.Fatal("usage: harbormail relay-check SENDER_EMAIL")
