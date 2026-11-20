@@ -41,6 +41,12 @@ func env(key, fallback string) string {
 }
 
 func Run() {
+	if len(os.Args) > 1 && os.Args[1] == "dkim-verify" {
+		if err := runDKIMVerify(os.Stdin, os.Stdout, net.DefaultResolver, os.Args[2:]); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "dkim-check" {
 		if err := runDKIMCheck(os.Stdout, net.DefaultResolver, os.Args[2:]); err != nil {
 			log.Fatal(err)

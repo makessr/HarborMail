@@ -93,6 +93,16 @@ docker compose run --rm --no-deps -T harbor dkim-check example.com
 
 单二进制部署执行 `harbormail dkim-check example.com`。轮换时追加 `--pending` 检查待启用的选择器。命令只读取配置和 DNS，不改动密钥或发送邮件。JSON 输出中的 `keyState` 和 `dnsState` 均为 `match` 才返回 0。`secret_missing` 或 `secret_unusable` 表示应核对密钥文件挂载和格式，`decrypt_failed` 表示文件中的密钥无法解密库里的私钥。DNS 侧会区分缺失、重复、内容不匹配或查询失败。正式投递仍以收件方返回的验签结果为准。 [DKIM 公钥查询](https://www.rfc-editor.org/rfc/rfc6376.html#section-3.6.2.1)
 
+#### 收件原文验签
+
+向外部邮箱发送一封测试邮件，从收件方下载原始 `.eml`，保留完整邮件头和正文。用要确认的签名域和选择器执行验签。省略选择器时，确认该域任一签名通过即可。
+
+```bash
+docker compose run --rm --no-deps -T harbor dkim-verify example.com SELECTOR < received.eml
+```
+
+单二进制部署使用 `harbormail dkim-verify example.com SELECTOR < received.eml`。只有 `status: pass` 返回 0。`no_signature` 表示没有该域的签名，`fail` 表示该域的签名未通过，也可能是使用了其他选择器。DNS 暂时故障以 `temporary_error` 报告。命令最多读取 32 MiB 的 `.eml`，并只为指定的签名身份查询 DNS 公钥。结果仅说明 DKIM 是否通过，SPF、DMARC 和收件方的投递决策可查看收件方记录。 [DKIM 验证规范](https://www.rfc-editor.org/rfc/rfc6376.html#section-6)
+
 ### SMTP 中继预检
 
 为每个使用外发中继的发件域选一个发件地址。使用部署时相同的 Compose 文件、项目名及环境配置，保留已启用的中继认证、按域中继和私有 CA 覆盖文件。下面是已配置全局中继认证时的示例。 [Docker Compose run](https://docs.docker.com/reference/cli/docker/compose/run/)
