@@ -34,6 +34,7 @@ func TestPEMTLSReload(t *testing.T) {
 	t.Setenv("HARBOR_CERT", certPath)
 	t.Setenv("HARBOR_KEY", keyPath)
 	t.Setenv("HARBOR_ACME_HOSTS", "")
+	t.Setenv("HARBOR_ACME_CHALLENGE", "")
 	inbound, err := configureTLS()
 	if err != nil {
 		t.Fatal(err)

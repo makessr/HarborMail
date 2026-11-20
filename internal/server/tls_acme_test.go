@@ -52,6 +52,7 @@ func checkACMECertificates(t *testing.T, pebble string, useALPN bool) {
 	directory := "https://" + addresses["pebble"] + "/dir"
 	for key, value := range map[string]string{
 		"HARBOR_ACME_HOSTS": hostname, "HARBOR_ACME_ACCEPT_TOS": "true", "HARBOR_ACME_CACHE": filepath.Join(dir, "cache"),
+		"HARBOR_ACME_CHALLENGE": "http",
 		"HARBOR_ACME_DIRECTORY": directory, "HARBOR_WEB_TLS": "on", "HARBOR_CERT": "", "HARBOR_KEY": "", "HARBOR_METRICS": "",
 	} {
 		t.Setenv(key, value)
@@ -60,7 +61,7 @@ func checkACMECertificates(t *testing.T, pebble string, useALPN bool) {
 	if useALPN {
 		httpAddress, alpnAddress = addresses["unused"], addresses["HARBOR_WEB"]
 	}
-	api, stopPebble := startTestPebble(t, pebble, dir, hostname, addresses["pebble"], addresses["pebble-admin"], httpAddress, alpnAddress)
+	api, stopPebble := startTestPebble(t, pebble, dir, acmeTestDNS(t, hostname), addresses["pebble"], addresses["pebble-admin"], httpAddress, alpnAddress)
 	rootPEM := acmeTestGet(t, api, "https://"+addresses["pebble-admin"]+"/roots/0")
 	roots := x509.NewCertPool()
 	if !roots.AppendCertsFromPEM(rootPEM) {
@@ -221,7 +222,7 @@ func acmeTestAddresses(t *testing.T, keys []string) map[string]string {
 	return addresses
 }
 
-func startTestPebble(t *testing.T, executable, dir, hostname, address, admin, httpAddress, alpnAddress string) (*http.Client, func()) {
+func startTestPebble(t *testing.T, executable, dir, dns, address, admin, httpAddress, alpnAddress string) (*http.Client, func()) {
 	t.Helper()
 	now := time.Now()
 	cert, key := makeReloadTestPEM(t, 1, now.Add(-time.Hour), now.Add(time.Hour))
@@ -249,7 +250,6 @@ func startTestPebble(t *testing.T, executable, dir, hostname, address, admin, ht
 	if err != nil {
 		t.Fatal(err)
 	}
-	dns := acmeTestDNS(t, hostname)
 	ctx, cancel := context.WithCancel(t.Context())
 	cmd := exec.CommandContext(ctx, executable, "-strict=false", "-config", configPath, "-dnsserver", dns)
 	cmd.Env = append(os.Environ(), "PEBBLE_VA_NOSLEEP=1", "PEBBLE_VA_ALWAYS_VALID=0", "PEBBLE_WFE_NONCEREJECT=0", "PEBBLE_AUTHZREUSE=0")

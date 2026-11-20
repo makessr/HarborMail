@@ -26,6 +26,7 @@ type managedTLS struct {
 type inboundTLS struct {
 	config *tls.Config
 	acme   *managedTLS
+	dns    *dnsACME
 	pem    *pemTLS
 }
 
@@ -34,8 +35,15 @@ var acmeDNSLabel = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 func configureTLS() (inboundTLS, error) {
 	certFile, keyFile := os.Getenv("HARBOR_CERT"), os.Getenv("HARBOR_KEY")
 	hostList := os.Getenv("HARBOR_ACME_HOSTS")
+	challenge := env("HARBOR_ACME_CHALLENGE", "http")
+	if challenge != "http" && challenge != "cloudflare" {
+		return inboundTLS{}, errors.New("HARBOR_ACME_CHALLENGE must be http or cloudflare")
+	}
 	config := &tls.Config{MinVersion: tls.VersionTLS12}
 	if hostList == "" {
+		if challenge == "cloudflare" {
+			return inboundTLS{}, errors.New("Cloudflare DNS-01 requires HARBOR_ACME_HOSTS")
+		}
 		if certFile == "" && keyFile == "" {
 			return inboundTLS{}, nil
 		}
@@ -77,6 +85,7 @@ func configureTLS() (inboundTLS, error) {
 			return inboundTLS{}, errors.New("HARBOR_ACME_DIRECTORY must be an HTTPS directory URL")
 		}
 	}
+	email := os.Getenv("HARBOR_ACME_EMAIL")
 	cache := env("HARBOR_ACME_CACHE", "data/acme")
 	if err := os.MkdirAll(cache, 0o700); err != nil {
 		return inboundTLS{}, fmt.Errorf("create ACME cache: %w", err)
@@ -84,9 +93,25 @@ func configureTLS() (inboundTLS, error) {
 	if err := checkDataDir(cache); err != nil {
 		return inboundTLS{}, fmt.Errorf("HARBOR_ACME_CACHE is not writable: %w", err)
 	}
+	if challenge == "cloudflare" {
+		token, err := fileSetting("HARBOR_ACME_CLOUDFLARE_TOKEN")
+		if err != nil {
+			return inboundTLS{}, err
+		}
+		token = strings.TrimSpace(token)
+		if token == "" {
+			return inboundTLS{}, errors.New("Cloudflare DNS-01 requires HARBOR_ACME_CLOUDFLARE_TOKEN or HARBOR_ACME_CLOUDFLARE_TOKEN_FILE")
+		}
+		dns, err := newCloudflareACME(hosts, allowed, cache, directory, email, token)
+		if err != nil {
+			return inboundTLS{}, err
+		}
+		config.GetCertificate = dns.certificate
+		return inboundTLS{config: config, dns: dns}, nil
+	}
 	manager := &autocert.Manager{
 		Prompt: autocert.AcceptTOS,
-		Email:  os.Getenv("HARBOR_ACME_EMAIL"),
+		Email:  email,
 		Cache:  autocert.DirCache(cache),
 		Client: &acme.Client{DirectoryURL: directory},
 		HostPolicy: func(_ context.Context, name string) error {

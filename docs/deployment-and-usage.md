@@ -109,7 +109,7 @@ docker ps --format '{{.Names}}  {{.Ports}}'
 docker compose -f compose.yaml -f compose.mysql.yaml -f compose.registry.yaml -f compose.tls.yaml up -d --no-build --wait
 ```
 
-由 Harbor Mail 自动申请证书时，配置 ACME 后将命令中的 `compose.tls.yaml` 换为 `compose.acme.yaml`。
+由 Harbor Mail 自动申请证书时，将命令中的 `compose.tls.yaml` 换为 `compose.acme.yaml` 或 `compose.acme-cloudflare.yaml`。 [选择 ACME 验证方式](#自动签发与续签-tls-证书)
 
 ### 启动 MySQL 与 Redis
 
@@ -158,6 +158,7 @@ MySQL 密码文件用于首次初始化。已有数据卷的密码在 MySQL 内�
 | `compose.redis-cache.yaml` | 可选，用已有 Redis 替代随 MySQL 启动的缓存容器，也可用于 SQLite |
 | `compose.tls.yaml` | 启用邮件客户端端口 465、587、993、995，默认映射到回环地址 |
 | `compose.acme.yaml` | 使用 ACME 管理邮件 TLS 证书，并提供 HTTP-01 验证端点 |
+| `compose.acme-cloudflare.yaml` | 通过 Cloudflare DNS-01 自动签发和续签证书 |
 | `compose.relay-auth.yaml` | 从文件读取 SMTP 中继密码 |
 | `compose.domain-relays.yaml` | 从文件配置各发件域的专用中继 |
 | `compose.relay-ca.yaml` | 只读挂载 SMTP 中继的 CA 证书目录 |
@@ -204,6 +205,8 @@ MySQL 密码文件用于首次初始化。已有数据卷的密码在 MySQL 内�
 | `HARBOR_REDIS_NAMESPACE` | 启用 Redis 时设置。同一 Harbor Mail 部署的副本共用，独立部署使用不同值 |
 | `HARBOR_CERT` / `HARBOR_KEY` | PEM 证书与私钥路径。启用 SMTP STARTTLS 和 Web HTTPS |
 | `HARBOR_ACME_HOSTS` | 用逗号分隔的证书主机名，国际化域名填 Punycode。与 PEM 路径二选一 |
+| `HARBOR_ACME_CHALLENGE` | `http`（默认，保留 HTTP-01 和 TLS-ALPN-01）或 `cloudflare`（仅 DNS-01） |
+| `HARBOR_ACME_CLOUDFLARE_TOKEN` / `HARBOR_ACME_CLOUDFLARE_TOKEN_FILE` | Cloudflare DNS-01 的 API token 或其文件路径，二选一。推荐凭据文件 |
 | `HARBOR_ACME_ACCEPT_TOS` | 阅读 CA 条款并同意后设为 `true`，开启 ACME 时必填 |
 | `HARBOR_ACME_CACHE` | ACME 账号密钥、证书和私钥的持久目录。默认 `data/acme`，Compose 为 `/var/lib/harbormail/acme` |
 | `HARBOR_ACME_HTTP` | HTTP-01 验证的监听地址，默认 `127.0.0.1:8081` |
@@ -378,6 +381,25 @@ Docker 的 MySQL 模式已包含 Redis。如果使用已有 Redis，将 `compose
 Docker 下保留 `HARBOR_TLS_DIR` 对应的挂载目录，更新目录内的文件。若使用符号链接，请确保目标也在容器可访问的路径内。原生 HTTPS 的容器健康检查会核对当前服务端证书与 PEM 文件，两个文件尚未就绪时可能暂时失败。可从服务日志确认 `Reloaded TLS certificate`，再从外部入口核对实际生效的证书。
 
 ## 自动签发与续签 TLS 证书
+
+### Cloudflare DNS-01
+
+域名的权威 DNS 由 Cloudflare 托管时，Harbor Mail 可通过临时的 `_acme-challenge` TXT 记录完成签发和续签。签发机构默认为 Let's Encrypt。验证无需开放公网 TCP 80 或 443，Web 和邮件端口可按部署需要配置。 [ACME DNS-01](https://letsencrypt.org/docs/challenge-types/#dns-01-challenge)
+
+1. 在 Cloudflare 创建 API token，授予 **Zone → DNS → Edit** 和 **Zone → Zone → Read**，资源范围限定为证书涉及的 DNS 区域。 [创建 Cloudflare API token](https://developers.cloudflare.com/fundamentals/api/get-started/create-token/)
+2. Compose 部署将 token 写入 `secrets/acme-cloudflare-token`，确保容器 UID `10001` 可读。若配置了 `HARBOR_SECRETS_DIR`，文件随该目录放置。在 `.env` 设置 `HARBOR_ACME_HOSTS=mail.example.com`，阅读并同意 CA 条款后设置 `HARBOR_ACME_ACCEPT_TOS=true`。
+3. 使用 `compose.acme-cloudflare.yaml` 作为证书覆盖文件。MySQL + Redis 的 GHCR 部署命令如下。
+
+```bash
+docker compose -f compose.yaml -f compose.mysql.yaml -f compose.registry.yaml \
+  -f compose.acme-cloudflare.yaml up -d --no-build
+```
+
+单二进制部署设置 `HARBOR_ACME_CHALLENGE=cloudflare`，并将 `HARBOR_ACME_CLOUDFLARE_TOKEN_FILE` 指向服务账号可读的文件。systemd 可用 `LoadCredential=` 传入 token，再将文件路径配置为相应的 `%d/` 路径。
+
+Harbor 自动清理验证 TXT 记录，并把证书与 ACME 账号状态保存在 `HARBOR_ACME_CACHE` 下的 `cloudflare/`。首次启用会单独签发证书，可在 Harbor 日志查看签发进度。保留该目录以供重启和续签，并允许 Harbor 出站访问 ACME CA、Cloudflare API 和 DNS。使用私有测试 CA 时，按 CA 要求配置独立缓存和系统信任。
+
+### HTTP-01 与 TLS-ALPN-01
 
 1. 将域名下的 A 和 AAAA 记录指向能够接收 CA 验证的入口。在 `HARBOR_ACME_HOSTS` 填写邮件和原生 HTTPS 服务实际使用的主机名，例如 `mail.example.com`。不发送 SNI 的邮件客户端会收到列表中第一个主机的证书。
 2. 阅读发证机构的条款，在同意后设置 `HARBOR_ACME_ACCEPT_TOS=true`。将缓存放在进程可写、仅运行账号可访问的持久目录中。为生产 CA 和测试 CA 使用各自的缓存目录。每组域名由一个 Harbor 进程负责签发。

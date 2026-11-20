@@ -267,6 +267,9 @@ func Run() {
 func (a *app) serve(ctx context.Context, transportTLS inboundTLS) error {
 	tlsConfig, managed := transportTLS.config, transportTLS.acme
 	runtime := newServiceRuntime()
+	if transportTLS.dns != nil {
+		defer transportTLS.dns.cache.Stop()
+	}
 	defer runtime.shutdown()
 	a.stopping = runtime.ctx.Done()
 	if err := a.listenMetrics(runtime, os.Getenv("HARBOR_METRICS")); err != nil {
@@ -274,6 +277,11 @@ func (a *app) serve(ctx context.Context, transportTLS inboundTLS) error {
 	}
 	if managed != nil {
 		if err := managed.listenChallenge(runtime); err != nil {
+			return err
+		}
+	}
+	if transportTLS.dns != nil {
+		if err := transportTLS.dns.start(runtime.ctx); err != nil {
 			return err
 		}
 	}

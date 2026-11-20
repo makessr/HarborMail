@@ -32,7 +32,7 @@ jobs:
           printf '%s  %s\n' 7e33cf3e426b67e9e647c44e8cc91683caa8ab331f7a99e5e27fcee291c4c7e2 "$archive" | sha256sum --check
           tar -xzf "$archive" -C "$fixture" --strip-components=3 pebble-linux-amd64/linux/amd64/pebble
           chmod 0755 "$fixture/pebble"
-          HARBOR_TEST_PEBBLE="$fixture/pebble" go test ./internal/server -run '^TestACMECertificateLifecycle$' -count=1 -timeout=2m -v
+          HARBOR_TEST_PEBBLE="$fixture/pebble" go test ./internal/server -run '^Test(ACMECertificateLifecycle|CloudflareDNS01)$' -count=1 -timeout=2m -v
       - name: Test SQLite and MySQL
         shell: bash
         run: |
@@ -93,6 +93,11 @@ jobs:
           docker compose -f compose.yaml -f compose.mysql.yaml -f compose.registry.yaml \
             -f compose.ops.yaml -f compose.mysql.ops.yaml config --quiet
           docker compose -f compose.yaml -f compose.mysql.yaml -f compose.acme.yaml config --quiet
+          docker compose -f compose.yaml -f compose.mysql.yaml -f compose.registry.yaml -f compose.acme-cloudflare.yaml config --format json |
+            jq -e '.services.harbor |
+              .environment.HARBOR_ACME_CHALLENGE == "cloudflare" and
+              (.environment | has("HARBOR_ACME_HTTP") | not) and
+              ([.ports[].target] | index(8081) | not)'
           docker compose -f compose.yaml -f compose.mysql.yaml -f compose.registry.yaml \
             -f compose.relay-auth.yaml -f compose.domain-relays.yaml -f compose.relay-ca.yaml config --quiet
           docker run --rm --network none --volume "$PWD:/src:ro" --workdir /src \
