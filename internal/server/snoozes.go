@@ -73,7 +73,11 @@ func (a *app) changeSnooze(ctx context.Context, owner string, id int64, change s
 	if err != nil {
 		return err
 	}
-	return a.commitMailbox(tx, owner)
+	if err := a.commitMailbox(tx, owner); err != nil {
+		return err
+	}
+	a.snoozeWakeup.notify()
+	return nil
 }
 
 func restoreSnoozedLetter(ctx context.Context, tx *sql.Tx, owner string, id, resumeAt int64) error {
@@ -132,19 +136,20 @@ func (a *app) restoreDueSnoozes(ctx context.Context, cutoff int64) error {
 }
 
 func (a *app) runSnoozes(stop context.Context) {
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
 	for stop.Err() == nil {
 		ctx, cancel := context.WithTimeout(stop, 10*time.Second)
 		err := a.restoreDueSnoozes(ctx, time.Now().Unix())
+		var next sql.NullInt64
+		if err == nil {
+			err = a.db.QueryRowContext(ctx, `SELECT MIN(s.resume_at) FROM mail_snoozes s
+				JOIN letters l ON l.id=s.letter_id WHERE l.folder='snoozed'`).Scan(&next)
+		}
 		cancel()
+		delay := a.taskPollInterval()
 		if err != nil && stop.Err() == nil {
 			log.Print("restore snoozed mail: ", err)
+			delay = 2 * time.Second
 		}
-		select {
-		case <-stop.Done():
-			return
-		case <-ticker.C:
-		}
+		a.snoozeWakeup.wait(stop, next, delay)
 	}
 }

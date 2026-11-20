@@ -214,7 +214,7 @@ func (a *app) storeSubmission(m letter, raw []byte, envelope webEnvelope) error 
 		if err := saveWebEnvelope(ctx, tx, id, envelope); err != nil {
 			return err
 		}
-		return a.commitMailbox(tx, m.From)
+		return a.commitOutbox(tx, m.From)
 	}
 	owners, err := a.deliverWebLocals(ctx, tx, m, raw, envelope.Targets, false)
 	if err != nil {

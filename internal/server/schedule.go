@@ -130,7 +130,7 @@ func (a *app) scheduleOutgoing(ctx context.Context, m letter, raw []byte, localO
 	if err != nil {
 		return scheduledSend{}, err
 	}
-	return queued, a.commitMailbox(tx, m.From)
+	return queued, a.commitOutbox(tx, m.From)
 }
 
 func (a *app) deliverScheduledLocal(job *outboxJob) error {

@@ -37,31 +37,17 @@ func (*imapIdle) Handle(conn server.Conn) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var signal <-chan struct{}
-	var revision int64
-	var revisionKnown, retrySnapshot bool
-	refresh := func(force bool) error {
-		var current int64
-		var versionErr error
-		if mailbox.app.sharedMailboxEvents {
-			// Read the change marker before taking the snapshot, so a write
-			// that races with the snapshot still triggers a later refresh.
-			current, versionErr = mailbox.app.mailboxRevision(ctx, mailbox.owner)
-		}
-		if !force && !retrySnapshot {
-			if !mailbox.app.sharedMailboxEvents || versionErr != nil || (revisionKnown && current == revision) {
-				return nil
-			}
-		}
+	var retrySnapshot bool
+	refresh := func() error {
 		err := refreshSelectedIMAPContext(ctx, conn)
 		retrySnapshot = err != nil
-		if err == nil && versionErr == nil {
-			revision, revisionKnown = current, true
-		}
 		return err
 	}
 	if mailbox != nil {
-		signal = mailbox.app.events.watch(mailbox.owner)
-		if err := refresh(true); err != nil && !errors.Is(err, errIMAPStorage) {
+		var unsubscribe func()
+		signal, unsubscribe = mailbox.app.subscribeMailbox(ctx, mailbox.owner)
+		defer unsubscribe()
+		if err := refresh(); err != nil && !errors.Is(err, errIMAPStorage) {
 			if errors.Is(err, errIMAPIdleFolderGone) {
 				return disconnectIMAPIdle(conn, err.Error())
 			}
@@ -112,9 +98,11 @@ func (*imapIdle) Handle(conn server.Conn) error {
 			return disconnectIMAPIdle(conn, "")
 		case <-signal:
 			signal = mailbox.app.events.watch(mailbox.owner)
-			err = refresh(true)
+			err = refresh()
 		case <-ticks:
-			err = refresh(false)
+			if retrySnapshot {
+				err = refresh()
+			}
 		case <-keepalive.C:
 			if err := conn.WriteResp(&imap.StatusResp{Type: imap.StatusRespOk, Info: "Still idling"}); err != nil {
 				return err

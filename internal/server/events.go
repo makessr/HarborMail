@@ -18,6 +18,71 @@ const mailboxRevisionPoll = 5 * time.Second
 type mailboxEvents struct {
 	mu      sync.Mutex
 	pending map[string]chan struct{}
+	pollers map[string]*mailboxPoller
+}
+
+type mailboxPoller struct {
+	readers int
+	ready   chan struct{}
+	cancel  context.CancelFunc
+}
+
+// One database revision probe per active account and instance, shared by
+// Web and IMAP subscribers. The first subscriber establishes the baseline.
+func (a *app) subscribeMailbox(ctx context.Context, owner string) (<-chan struct{}, func()) {
+	signal := a.events.watch(owner)
+	if !a.sharedMailboxEvents {
+		return signal, func() {}
+	}
+	e := &a.events
+	e.mu.Lock()
+	poller := e.pollers[owner]
+	if poller == nil {
+		if e.pollers == nil {
+			e.pollers = make(map[string]*mailboxPoller)
+		}
+		background, cancel := context.WithCancel(context.Background())
+		poller = &mailboxPoller{ready: make(chan struct{}), cancel: cancel}
+		e.pollers[owner] = poller
+		go a.pollMailbox(background, owner, poller.ready)
+	}
+	poller.readers++
+	e.mu.Unlock()
+	select {
+	case <-poller.ready:
+	case <-ctx.Done():
+	}
+	return signal, func() {
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		poller.readers--
+		if poller.readers == 0 {
+			delete(e.pollers, owner)
+			poller.cancel()
+		}
+	}
+}
+
+func (a *app) pollMailbox(ctx context.Context, owner string, ready chan<- struct{}) {
+	revision, err := a.mailboxRevision(ctx, owner)
+	known := err == nil
+	close(ready)
+	ticker := time.NewTicker(mailboxRevisionPoll)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-a.stopping:
+			return
+		case <-ticker.C:
+			current, err := a.mailboxRevision(ctx, owner)
+			if err == nil && (!known || current != revision) {
+				revision, known = current, true
+				a.events.notify(owner)
+			}
+		}
+	}
 }
 
 func (e *mailboxEvents) watch(owner string) <-chan struct{} {
@@ -78,7 +143,8 @@ func (a *app) mailboxRevision(ctx context.Context, owner string) (int64, error) 
 }
 
 func (a *app) streamMailboxEvents(w http.ResponseWriter, r *http.Request, owner string) {
-	signal := a.events.watch(owner)
+	signal, unsubscribe := a.subscribeMailbox(r.Context(), owner)
+	defer unsubscribe()
 	// Subscribe before rechecking authorization so a concurrent revocation is observed.
 	session, err := a.browserSession(r)
 	if err != nil {
@@ -88,16 +154,6 @@ func (a *app) streamMailboxEvents(w http.ResponseWriter, r *http.Request, owner 
 	if session.owner != owner {
 		fail(w, http.StatusUnauthorized, "请登录邮箱")
 		return
-	}
-	var ticks <-chan time.Time
-	var revision int64
-	var revisionKnown bool
-	if a.sharedMailboxEvents {
-		revision, err = a.mailboxRevision(r.Context(), owner)
-		revisionKnown = err == nil
-		poll := time.NewTicker(mailboxRevisionPoll)
-		defer poll.Stop()
-		ticks = poll.C
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-store")
@@ -127,18 +183,6 @@ func (a *app) streamMailboxEvents(w http.ResponseWriter, r *http.Request, owner 
 			frame = ": heartbeat\n\n"
 		case <-signal:
 			signal = a.events.watch(owner)
-			if a.sharedMailboxEvents {
-				if current, err := a.mailboxRevision(r.Context(), owner); err == nil {
-					revision, revisionKnown = current, true
-				}
-			}
-			frame = "event: mailbox\ndata: changed\n\n"
-		case <-ticks:
-			current, err := a.mailboxRevision(r.Context(), owner)
-			if err != nil || (revisionKnown && current == revision) {
-				continue
-			}
-			revision, revisionKnown = current, true
 			frame = "event: mailbox\ndata: changed\n\n"
 		}
 		current, err := a.browserSession(r)

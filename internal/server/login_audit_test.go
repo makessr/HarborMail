@@ -91,6 +91,7 @@ func TestLoginAudit(t *testing.T) {
 			type report struct {
 				Events  []loginEvent
 				HasMore bool
+				Totals  map[string]int64
 			}
 			var first, second report
 			response := get(query, adminCookie, http.StatusOK)
@@ -100,16 +101,16 @@ func TestLoginAudit(t *testing.T) {
 			if err := json.Unmarshal(response.Body.Bytes(), &first); err != nil {
 				t.Fatal(err)
 			}
-			if len(first.Events) != loginAuditPage || !first.HasMore || first.Events[0].Account != owner ||
+			if len(first.Events) != loginAuditPage || !first.HasMore || first.Totals["failed"] < loginAuditPage || first.Events[0].Account != owner ||
 				first.Events[0].Source != ip.String() || first.Events[0].Protocol != "imap" {
 				t.Fatalf("wrong first page: %d rows, more=%t", len(first.Events), first.HasMore)
 			}
 			cursor := first.Events[len(first.Events)-1].ID
-			response = get(query+"&before="+strconv.FormatInt(cursor, 10), adminCookie, http.StatusOK)
+			response = get(query+"&totals=0&before="+strconv.FormatInt(cursor, 10), adminCookie, http.StatusOK)
 			if err := json.Unmarshal(response.Body.Bytes(), &second); err != nil {
 				t.Fatal(err)
 			}
-			if len(second.Events) != 1 || second.Events[0].ID >= cursor || second.HasMore {
+			if len(second.Events) != 1 || second.Events[0].ID >= cursor || second.HasMore || second.Totals != nil {
 				t.Fatalf("wrong second page: %+v", second)
 			}
 			var expired report

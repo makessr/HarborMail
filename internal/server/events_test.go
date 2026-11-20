@@ -93,3 +93,47 @@ func TestSharedMailboxEventsDeliverAcrossInstances(t *testing.T) {
 		t.Fatalf("unrelated mailbox stream returned %q, %v", line, err)
 	}
 }
+
+func TestSharedMailboxSubscribersUseOneMySQLProbe(t *testing.T) {
+	dsn := os.Getenv("HARBOR_TEST_MYSQL_DSN")
+	if dsn == "" {
+		t.Skip("set HARBOR_TEST_MYSQL_DSN to a disposable MySQL database")
+	}
+	db, err := openDB("mysql", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	count := func() int64 {
+		t.Helper()
+		var variable string
+		var queries int64
+		if err := db.QueryRow("SHOW GLOBAL STATUS LIKE 'Com_select'").Scan(&variable, &queries); err != nil {
+			t.Fatal(err)
+		}
+		return queries
+	}
+	a := &app{db: db, sharedMailboxEvents: true}
+	owner := "shared-" + token()[:12] + "@harbor.test"
+	before := count()
+	var cleanup []func()
+	for range 40 {
+		_, unsubscribe := a.subscribeMailbox(t.Context(), owner)
+		cleanup = append(cleanup, unsubscribe)
+	}
+	defer func() {
+		for _, unsubscribe := range cleanup {
+			unsubscribe()
+		}
+	}()
+	if used := count() - before; used != 1 {
+		t.Fatalf("40 subscriptions used %d initial SELECT statements; want 1", used)
+	}
+	a.events.mu.Lock()
+	readers := a.events.pollers[owner].readers
+	a.events.mu.Unlock()
+	if readers != 40 {
+		t.Fatalf("poller has %d subscribers; want 40", readers)
+	}
+	t.Log("40 subscribers share one initial MySQL SELECT and one polling loop")
+}

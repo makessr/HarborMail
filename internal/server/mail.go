@@ -31,6 +31,8 @@ type app struct {
 	dbDriver            string
 	adminCache          *adminRedisCache
 	events              mailboxEvents
+	outboxWakeup        taskWakeup
+	snoozeWakeup        taskWakeup
 	stopping            <-chan struct{}
 	spamScanner         *rspamdScanner
 	spamTrainer         *rspamdTrainer
@@ -96,10 +98,14 @@ func insert(tx *sql.Tx, owner string, m letter, folder string, raw []byte) error
 }
 
 func insertLetter(tx *sql.Tx, owner string, m letter, folder, origin string, raw []byte) (int64, error) {
-	result, err := tx.Exec(`INSERT INTO letters(owner,sender,recipient,subject,body,stamp,folder,origin,seen,star,raw)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?)`, owner, strings.ToValidUTF8(m.From, "\uFFFD"), m.To,
+	var detail []byte
+	if folder != "drafts" {
+		detail = encodeMailDetail(raw)
+	}
+	result, err := tx.Exec(`INSERT INTO letters(owner,sender,recipient,subject,body,stamp,folder,origin,seen,star,raw,detail_meta)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, owner, strings.ToValidUTF8(m.From, "\uFFFD"), m.To,
 		strings.ToValidUTF8(m.Subject, "\uFFFD"), strings.ToValidUTF8(m.Body, "\uFFFD"),
-		m.Date, folder, origin, m.Read || folder == "sent", m.Star, raw)
+		m.Date, folder, origin, m.Read || folder == "sent", m.Star, raw, detail)
 	if err != nil {
 		return 0, err
 	}

@@ -196,8 +196,8 @@ func (m *imapMailbox) transferIMAPRow(ctx context.Context, tx *sql.Tx, msg imapM
 	if move {
 		statement = `UPDATE letters SET previous=` + previous + `,origin=` + origin + `,folder=?` + guard
 	} else {
-		statement = `INSERT INTO letters (owner,sender,recipient,subject,body,stamp,seen,star,raw,previous,origin,folder)
-			SELECT owner,sender,recipient,subject,body,stamp,seen,star,raw,` + previous + `,` + origin + `,?
+		statement = `INSERT INTO letters (owner,sender,recipient,subject,body,stamp,seen,star,raw,detail_meta,previous,origin,folder)
+			SELECT owner,sender,recipient,subject,body,stamp,seen,star,raw,detail_meta,` + previous + `,` + origin + `,?
 			FROM letters` + guard
 	}
 	result, err := tx.ExecContext(ctx, statement, args...)

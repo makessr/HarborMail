@@ -90,21 +90,50 @@ func initMySQLContentIndex(ctx context.Context, db *sql.DB) (int, error) {
 }
 
 func (a *app) mailContentQuery(q string) (string, []any) {
-	filter := ` AND (instr(lower(subject),lower(?))>0 OR instr(lower(body),lower(?))>0)`
+	filter := ` AND (` + exactMailContent + `)`
+	args := []any{q, q}
+	if condition, term := a.mailContentCandidate(q); condition != "" {
+		return filter + " AND " + condition, append(args, term)
+	}
+	return filter, args
+}
+
+const exactMailContent = `instr(lower(subject),lower(?))>0 OR instr(lower(body),lower(?))>0`
+
+func (a *app) mailContentCandidate(q string) (condition, term string) {
 	minimum := a.contentIndex
 	if minimum == 0 || utf8.RuneCountInString(q) < minimum || len(q) > 512 || strings.ContainsRune(q, 0) {
-		return filter, []any{q, q}
+		return "", ""
 	}
 	if a.dbDriver == "mysql" {
 		// A Han-only phrase avoids boolean query operators and the default
 		// English stopwords. Keep other queries on the exact substring path.
 		for _, r := range q {
 			if !unicode.Is(unicode.Han, r) {
-				return filter, []any{q, q}
+				return "", ""
 			}
 		}
-		return filter + ` AND MATCH(letters.subject,letters.body) AGAINST (? IN BOOLEAN MODE)`, []any{q, q, `"` + q + `"`}
+		return `MATCH(letters.subject,letters.body) AGAINST (? IN BOOLEAN MODE)`, `"` + q + `"`
 	}
-	return filter + ` AND letters.id IN (SELECT rowid FROM mail_content_fts WHERE mail_content_fts MATCH ?)`,
-		[]any{q, q, `"` + strings.ReplaceAll(q, `"`, `""`) + `"`}
+	return `letters.id IN (SELECT rowid FROM mail_content_fts WHERE mail_content_fts MATCH ?)`,
+		`"` + strings.ReplaceAll(q, `"`, `""`) + `"`
+}
+
+func (a *app) mailGeneralQuery(owner, q string) (string, []any) {
+	const addresses = `sender,' ',coalesce(e.to_list,recipient),' ',coalesce(e.cc_list,''),' ',coalesce(e.bcc_list,'')`
+	condition, term := a.mailContentCandidate(q)
+	// A single word cannot match across the spaces separating the fields.
+	// Keep the original combined substring behavior for every other search.
+	if condition == "" || strings.ContainsFunc(q, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || unicode.Is(unicode.Han, r))
+	}) {
+		return ` AND instr(lower(concat(` + addresses + `,' ',subject,' ',body)),lower(?))>0`, []any{q}
+	}
+	args := []any{q, term, q, q}
+	if a.dbDriver == "mysql" {
+		condition = `letters.id IN (SELECT letters.id FROM letters WHERE owner=? AND ` + condition + `)`
+		args = []any{q, owner, term, q, q}
+	}
+	return ` AND (instr(lower(concat(` + addresses + `)),lower(?))>0 OR
+		CASE WHEN ` + condition + ` THEN (` + exactMailContent + `) ELSE FALSE END)`, args
 }

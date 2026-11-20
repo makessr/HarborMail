@@ -75,7 +75,7 @@ func (a *app) submitWebMail(w http.ResponseWriter, ctx context.Context, tx *sql.
 	}
 	if plan.deferred() {
 		scheduled, err := scheduleDelivery(ctx, tx, m, raw, "", &envelope, plan)
-		if !letterError(w, err) && !letterError(w, a.commitMailbox(tx, m.From)) {
+		if !letterError(w, err) && !letterError(w, a.commitOutbox(tx, m.From)) {
 			scheduled.reply(w)
 		}
 		return
@@ -83,7 +83,7 @@ func (a *app) submitWebMail(w http.ResponseWriter, ctx context.Context, tx *sql.
 	if len(envelope.externalAddresses()) != 0 {
 		id, err := enqueueLetter(tx, m, raw)
 		if letterError(w, err) || letterError(w, saveWebEnvelope(ctx, tx, id, envelope)) ||
-			letterError(w, a.commitMailbox(tx, m.From)) {
+			letterError(w, a.commitOutbox(tx, m.From)) {
 			return
 		}
 		reply(w, 202, map[string]int64{"queued": id})

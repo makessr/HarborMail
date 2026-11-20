@@ -78,7 +78,7 @@ func (a *app) resolveOutboxRecipient(w http.ResponseWriter, r *http.Request, own
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO admin_delivery_resolutions(job_id,actor,sender,action,stamp)
 		VALUES(?,?,?,?,?)`, id, owner, owner, action, time.Now().Unix())
-	if !letterError(w, err) && !letterError(w, a.commitMailbox(tx, owner)) {
+	if !letterError(w, err) && !letterError(w, a.commitOutbox(tx, owner)) {
 		w.WriteHeader(http.StatusNoContent)
 	}
 }

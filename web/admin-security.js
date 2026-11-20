@@ -41,12 +41,13 @@ function setupAdminSecurity() {
   previous.addEventListener("click", () => void loadPage(filters, pages.slice(0, -1)));
   next.addEventListener("click", () => void loadPage(filters, [...pages, nextCursor]));
 
-  async function loadPage(query, cursors) {
+  async function loadPage(query, cursors, includeTotals = false) {
     refresh.disabled = previous.disabled = next.disabled = true;
     statusOutput.textContent = "正在读取登录记录…";
     const params = new URLSearchParams(query);
     const before = cursors.at(-1);
     if (before) params.set("before", before);
+    if (!includeTotals) params.set("totals", "0");
     try {
       const response = await fetch("/api/admin/security?" + params);
       if (response.status === 401 || response.status === 403) {
@@ -57,7 +58,7 @@ function setupAdminSecurity() {
       const data = await response.json();
       adminElement("admin-identity").textContent = data.email;
       adminElement("admin-security-kpis").setAttribute("aria-label", "最近 " + data.retentionDays + " 天登录统计");
-      renderDetails("admin-security-kpis", [
+      if (data.totals) renderDetails("admin-security-kpis", [
         ["登录成功", data.totals.success || 0],
         ["登录失败", data.totals.failed || 0],
         ["限速拦截", data.totals.blocked || 0],
@@ -93,5 +94,5 @@ function setupAdminSecurity() {
     }
   }
 
-  return () => loadPage(filters, [""]);
+  return () => loadPage(filters, [""], true);
 }

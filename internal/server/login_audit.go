@@ -160,10 +160,14 @@ func (a *app) adminSecurity(w http.ResponseWriter, r *http.Request, actor string
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
-	totals, err := a.loginAuditTotals(ctx, cutoff)
-	if err != nil {
-		fail(w, 503, "暂时无法读取登录审计")
-		return
+	var totals map[string]int64
+	if q.Get("totals") != "0" {
+		var err error
+		totals, err = a.loginAuditTotals(ctx, cutoff)
+		if err != nil {
+			fail(w, 503, "暂时无法读取登录审计")
+			return
+		}
 	}
 	rows, err := a.db.QueryContext(ctx, `SELECT id,stamp,source,account,protocol,result FROM login_audit_events WHERE `+
 		strings.Join(filters, " AND ")+` ORDER BY id DESC LIMIT ?`, append(args, loginAuditPage+1)...)

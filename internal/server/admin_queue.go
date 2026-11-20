@@ -193,7 +193,7 @@ func (a *app) adminRetryDelivery(w http.ResponseWriter, r *http.Request, actor s
 		VALUES(?,?,?,?,?)`, id, actor, sender, expected.Due, now); letterError(w, err) {
 		return
 	}
-	if !letterError(w, a.commitMailbox(tx, sender)) {
+	if !letterError(w, a.commitOutbox(tx, sender)) {
 		w.WriteHeader(http.StatusNoContent)
 	}
 }

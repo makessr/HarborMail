@@ -711,9 +711,9 @@ func (a *app) list(w http.ResponseWriter, r *http.Request, owner string) {
 			query += contentFilter
 			args = append(args, contentArgs...)
 		} else {
-			query += ` AND instr(lower(concat(sender,' ',coalesce(e.to_list,recipient),' ',coalesce(e.cc_list,''),
-				' ',coalesce(e.bcc_list,''),' ',subject,' ',body)),lower(?))>0`
-			args = append(args, q)
+			generalFilter, generalArgs := a.mailGeneralQuery(owner, q)
+			query += generalFilter
+			args = append(args, generalArgs...)
 		}
 	}
 	filters, values, valid := letterListFilters(r.URL.Query())
@@ -757,19 +757,38 @@ func (a *app) list(w http.ResponseWriter, r *http.Request, owner string) {
 
 func (a *app) read(w http.ResponseWriter, r *http.Request, owner string) {
 	var m letter
-	var raw []byte
+	var raw, metadata []byte
 	var to sql.NullString
-	err := a.db.QueryRow(`SELECT l.id,l.sender,l.recipient,l.subject,l.body,l.stamp,l.folder,l.seen,l.star,l.raw,
+	err := a.db.QueryRowContext(r.Context(), `SELECT l.id,l.sender,l.recipient,l.subject,l.body,l.stamp,l.folder,l.seen,l.star,
+		CASE WHEN l.detail_meta IS NULL OR l.folder='drafts' THEN l.raw END,
+		CASE WHEN l.folder<>'drafts' THEN l.detail_meta END,
 		CASE WHEN l.folder='drafts' THEN coalesce(d.revision,0) ELSE 0 END,coalesce(s.resume_at,0),
 		e.to_list,coalesce(e.cc_list,''),coalesce(e.bcc_list,'')
 		FROM letters l LEFT JOIN web_drafts d ON d.letter_id=l.id
 		LEFT JOIN mail_snoozes s ON s.letter_id=l.id LEFT JOIN web_letter_recipients e ON e.letter_id=l.id
 		WHERE l.owner=? AND l.id=?`, owner, letterID(r)).Scan(&m.ID, &m.From, &m.To, &m.Subject, &m.Body, &m.Date,
-		&m.Folder, &m.Read, &m.Star, &raw, &m.DraftVersion, &m.SnoozeUntil, &to, &m.Cc, &m.Bcc)
+		&m.Folder, &m.Read, &m.Star, &raw, &metadata, &m.DraftVersion, &m.SnoozeUntil, &to, &m.Cc, &m.Bcc)
 	if letterError(w, err) {
 		return
 	}
-	recipients := visibleRecipients(raw)
+	var detail mailDetail
+	if len(metadata) == 0 {
+		detail = inspectMailDetail(raw)
+		if m.Folder != "drafts" && !a.recoveryMode {
+			if value, err := json.Marshal(detail); err == nil {
+				// The old row may have moved or changed through a draft since it was read.
+				_, _ = a.db.ExecContext(r.Context(), `UPDATE letters SET detail_meta=?
+					WHERE owner=? AND id=? AND detail_meta IS NULL AND folder<>'drafts' AND raw=?`, value, owner, m.ID, raw)
+			}
+		}
+	} else if err := json.Unmarshal(metadata, &detail); err != nil {
+		fallback, err := a.rawLetter(owner, m.ID)
+		if letterError(w, err) {
+			return
+		}
+		detail = inspectMailDetail(fallback)
+	}
+	recipients := detail.Recipients
 	if to.Valid {
 		m.To = to.String
 	} else {
@@ -779,13 +798,11 @@ func (a *app) read(w http.ResponseWriter, r *http.Request, owner string) {
 	if labelHTTPError(w, err) {
 		return
 	}
-	visitAttachments(raw, func(info attachmentInfo, _ io.Reader) bool {
-		m.Attachments = append(m.Attachments, info)
-		return true
-	})
-	view := inspectHTMLMail(raw, false)
-	m.HasHTML, m.HasText = view.hasHTML, view.hasText
-	m.ReplyAddress = replyAddress(raw, m.From)
+	m.Attachments, m.HasHTML, m.HasText = detail.Attachments, detail.HasHTML, detail.HasText
+	m.ReplyAddress = detail.Reply
+	if m.ReplyAddress == "" {
+		m.ReplyAddress, _ = address(m.From)
+	}
 	m.SenderAddress, m.SenderName = senderContact(m.From)
 	reply(w, 200, struct {
 		letter

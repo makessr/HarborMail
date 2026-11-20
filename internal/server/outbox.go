@@ -49,6 +49,7 @@ func (a *app) enqueue(m letter, raw []byte) (int64, error) {
 	id, err := enqueueLetter(a.db, m, raw)
 	if err == nil {
 		a.events.notify(m.From)
+		a.outboxWakeup.notify()
 	}
 	return id, err
 }
@@ -73,17 +74,21 @@ func insertOutbox(writer outboxWriter, m letter, raw []byte, state string, due i
 }
 
 func (a *app) runOutbox(ctx context.Context, connectRelay func(context.Context, string) (*smtp.Client, func(), error)) {
-	ticker := time.NewTicker(3 * time.Second)
-	defer ticker.Stop()
 	for ctx.Err() == nil {
+		recoveryAt := time.Now().Unix()
+		claimAt := recoveryAt
+		retry := false
 		if err := a.recoverOutbox(ctx); err != nil {
+			retry = true
 			if ctx.Err() == nil {
 				log.Print("outbox recovery: ", err)
 			}
 		} else {
 			for ctx.Err() == nil {
+				claimAt = time.Now().Unix()
 				job, err := a.claimOutbox()
 				if err != nil {
+					retry = true
 					log.Print("outbox claim: ", err)
 					break
 				}
@@ -98,11 +103,22 @@ func (a *app) runOutbox(ctx context.Context, connectRelay func(context.Context, 
 				}
 			}
 		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
+		var next sql.NullInt64
+		if !retry && ctx.Err() == nil {
+			probe, cancel := context.WithTimeout(ctx, 3*time.Second)
+			err := a.db.QueryRowContext(probe, `SELECT MIN(deadline) FROM (
+				SELECT MIN(due) AS deadline FROM outbox WHERE state IN ('queued','scheduled','undo') AND due>?
+				UNION ALL
+				SELECT MIN(lease) FROM outbox WHERE state IN ('preparing','sending') AND lease>?
+			) AS deadlines`, claimAt, recoveryAt).Scan(&next)
+			cancel()
+			retry = err != nil
 		}
+		delay := a.taskPollInterval()
+		if retry {
+			delay = 3 * time.Second
+		}
+		a.outboxWakeup.wait(ctx, next, delay)
 	}
 }
 
