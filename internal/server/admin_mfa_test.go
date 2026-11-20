@@ -7,13 +7,68 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
 )
+
+func TestAdminMFAEnrollmentCLI(t *testing.T) {
+	const owner = "admin+mail@harbor.test"
+	const uriHeading = "Authenticator URI (secret):\n"
+	const configHeading = "HARBOR_ADMIN_MFA configuration (secret):\n"
+	const qrHeading = "Authenticator QR code (secret):\n"
+
+	for _, showQR := range []bool{false, true} {
+		args := []string{owner}
+		if showQR {
+			args = append(args, "--qr")
+		}
+		var output bytes.Buffer
+		if err := runAdminMFAEnrollment(&output, args); err != nil {
+			t.Fatal(err)
+		}
+		prefix, enrollment, found := strings.Cut(output.String(), uriHeading)
+		if !found || (showQR && !strings.HasPrefix(prefix, qrHeading+"\x1b[30;107m")) || (!showQR && prefix != "") {
+			t.Fatalf("unexpected enrollment output format for QR=%t", showQR)
+		}
+		uriText, rest, found := strings.Cut(enrollment, "\n\n"+configHeading)
+		configText, recovery, hasRecovery := strings.Cut(rest, "\n\nSingle-use recovery codes:\n")
+		uri, err := url.Parse(uriText)
+		if !found || !hasRecovery || err != nil || uri.Scheme != "otpauth" || uri.Host != "totp" || uri.Path != "/Harbor Mail:"+owner {
+			t.Fatal("invalid enrollment URI or missing configuration or recovery codes")
+		}
+		config, err := parseAdminMFA(configText, map[string]bool{owner: true})
+		if err != nil || uri.Query().Get("secret") != totpBase32.EncodeToString(config[owner].secret) {
+			t.Fatal("authenticator URI and administrator configuration must share the same seed")
+		}
+		codes := strings.Fields(recovery)
+		if len(codes) != 8 {
+			t.Fatal("expected eight recovery codes")
+		}
+		for _, code := range codes {
+			if !config[owner].recovery[adminRecoveryHash(code)] {
+				t.Fatal("recovery code is missing from administrator configuration")
+			}
+		}
+	}
+
+	var rejected bytes.Buffer
+	if err := runAdminMFAEnrollment(&rejected, []string{owner, "--invalid"}); err == nil || rejected.Len() != 0 {
+		t.Fatal("invalid arguments must be rejected before writing enrollment data")
+	}
+}
+
+func TestAdminMFAQRText(t *testing.T) {
+	modules := [][]bool{{false, true, false, true}, {false, false, true, true}, {false, true, false, false}}
+	if got := adminMFAQRText(modules); got != "\x1b[30;107m ▀▄█\x1b[0m\n\x1b[30;107m ▀  \x1b[0m\n" {
+		t.Fatal("terminal output must preserve both rows of QR modules and pad the final row")
+	}
+}
 
 func TestAdminMFAUsesMySQLTime(t *testing.T) {
 	dsn := os.Getenv("HARBOR_TEST_MYSQL_DSN")

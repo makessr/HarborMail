@@ -234,7 +234,17 @@ MySQL 的 `3306` 和 Redis 的 `6379` 只在 Compose 网络内使用。宿主机
 
 「安全」位于 `/admin/security`，显示本实例 Web、SMTP 提交、IMAP 和 POP3 登录统计及最近 100 条记录。Web 登录与邮件客户端分别计数，三个邮件协议共享客户端计数。每五分钟同一来源最多 30 次，同一来源向同一账号最多 8 次。Web 超限返回 HTTP 429 和 `Retry-After`，邮件客户端收到临时认证失败。IPv6 按 /64 聚合，邮件协议使用 TCP 对端地址。SQLite 部署使用进程内限速。共享 MySQL 的 Harbor Mail 实例共用限速窗口，数据库无法确认额度时暂缓认证。后台登录统计与近期记录按实例展示，重启清空。
 
-为管理员启用网页登录第二因素时，在受控终端运行 `harbormail generate-admin-mfa admin@example.com`。将生成的种子录入支持 TOTP 的认证器，把配置 JSON 存入权限受限的 `HARBOR_ADMIN_MFA_FILE`，并离线保存一次性恢复码。多个管理员的配置合并到同一个 JSON 对象。共享数据库的所有实例须使用相同配置，并同步重启。种子启用或轮换会使旧管理员网页会话失效。验证码和恢复码均在登录会话成功入库时一次性消耗。MySQL 部署使用数据库时钟核对 TOTP 有效期。认证器遗失时可用恢复码登录，再由服务器运维轮换种子。配置和恢复码均是凭据，避免进入日志或仓库。[TOTP 标准](https://www.rfc-editor.org/rfc/rfc6238.html)
+为管理员启用网页登录第二因素时，在可信且不录屏、不记录输出的终端运行以下命令。把示例地址换成管理员邮箱。
+
+```sh
+docker run --rm -it --log-driver=none ghcr.io/makessr/harbormail:latest generate-admin-mfa admin@example.com --qr
+```
+
+二进制部署使用 `harbormail generate-admin-mfa admin@example.com --qr`。用支持 TOTP 的认证器扫描终端二维码。终端需支持 ANSI 色彩和 Unicode，必要时拉宽窗口避免换行。也可以省略 `--qr`，使用命令输出的 URI 或配置中的 `secret` 手动绑定。[认证器 URI 格式](https://github.com/google/google-authenticator/wiki/Key-Uri-Format)
+
+将配置 JSON 存入权限受限的 `HARBOR_ADMIN_MFA_FILE`。使用 Compose 时，将文件保存为 `${HARBOR_SECRETS_DIR:-./secrets}/admin-mfa.json`，并在部署命令中叠加 `-f compose.admin-mfa.yaml`。多个管理员的配置合并到同一个 JSON 对象。共享数据库的实例用同一份配置并同步重启，然后用认证器验证码登录管理后台确认绑定。一次性恢复码须离线保存。二维码、URI 和配置 JSON 均含凭据，避免截图、写入日志或提交到仓库。
+
+种子启用或轮换会使旧管理员网页会话失效。验证码和恢复码均在登录会话成功入库时一次性消耗。MySQL 部署使用数据库时钟核对 TOTP 有效期。认证器遗失时可用恢复码登录，再由服务器运维轮换种子。[TOTP 标准](https://www.rfc-editor.org/rfc/rfc6238.html)
 
 默认使用直接连接的来源。Web 服务位于反向代理之后时，应让后端仅允许可信代理访问，把这些代理的实际来源 IP 写入 `HARBOR_TRUSTED_PROXIES`，并让代理覆盖或正确追加 `X-Forwarded-For`。共享代理或多个实例部署可同时在代理层实施统一限速。[可信代理选择规则](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/X-Forwarded-For#selecting_an_ip_address)
 

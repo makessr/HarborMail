@@ -18,6 +18,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/skip2/go-qrcode"
 )
 
 var errAdminMFA = errors.New("admin second factor is required or invalid")
@@ -73,7 +75,12 @@ func adminRecoveryHash(code string) [32]byte {
 	return sha256.Sum256([]byte("Harbor Mail admin recovery\x00" + code))
 }
 
-func writeAdminMFAEnrollment(w io.Writer, owner string) error {
+func runAdminMFAEnrollment(w io.Writer, args []string) error {
+	showQR := len(args) == 2 && args[1] == "--qr"
+	if len(args) != 1 && !showQR {
+		return errors.New("usage: harbormail generate-admin-mfa ADMIN_EMAIL [--qr]")
+	}
+	owner := args[0]
 	if canonical, err := address(owner); err != nil || canonical != owner || strings.ToLower(owner) != owner {
 		return errors.New("provide the lowercase administrator email address")
 	}
@@ -98,9 +105,40 @@ func writeAdminMFAEnrollment(w io.Writer, owner string) error {
 	if err != nil {
 		return err
 	}
+	if showQR {
+		code, err := qrcode.New(uri, qrcode.Medium)
+		if err != nil {
+			return errors.New("could not encode the authenticator QR code")
+		}
+		if _, err := fmt.Fprintln(w, "Authenticator QR code (secret):\n"+adminMFAQRText(code.Bitmap())); err != nil {
+			return err
+		}
+	}
 	_, err = fmt.Fprintf(w, "Authenticator URI (secret):\n%s\n\nHARBOR_ADMIN_MFA configuration (secret):\n%s\n\nSingle-use recovery codes:\n%s\n",
 		uri, config, strings.Join(codes, "\n"))
 	return err
+}
+
+func adminMFAQRText(modules [][]bool) string {
+	var terminal strings.Builder
+	for row := 0; row < len(modules); row += 2 {
+		terminal.WriteString("\x1b[30;107m")
+		for col, upper := range modules[row] {
+			lower := row+1 < len(modules) && modules[row+1][col]
+			switch {
+			case upper && lower:
+				terminal.WriteRune('█')
+			case upper:
+				terminal.WriteRune('▀')
+			case lower:
+				terminal.WriteRune('▄')
+			default:
+				terminal.WriteByte(' ')
+			}
+		}
+		terminal.WriteString("\x1b[0m\n")
+	}
+	return terminal.String()
 }
 
 func adminTOTP(secret []byte, step int64) string {

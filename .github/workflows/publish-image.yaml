@@ -31,6 +31,7 @@ jobs:
             dist/harbormail-linux-arm64
             dist/harbormail-windows-amd64.exe
             dist/harbormail-systemd.tar.gz
+            dist/go-qrcode-LICENSE.txt
             dist/SHA256SUMS
           if-no-files-found: error
   publish:

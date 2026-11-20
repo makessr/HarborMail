@@ -8,3 +8,6 @@
 !internal/**
 !web/
 !web/**
+!docs/
+!docs/licenses/
+!docs/licenses/go-qrcode.txt
