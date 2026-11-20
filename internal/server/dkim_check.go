@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/cipher"
 	"crypto/x509"
 	"database/sql"
 	"encoding/base64"
@@ -78,6 +79,10 @@ func checkDKIMPrivateKey(domain, selector, public string, sealed []byte) string 
 	if err != nil {
 		return "secret_unusable"
 	}
+	return storedDKIMKeyState(box, domain, selector, public, sealed)
+}
+
+func storedDKIMKeyState(box cipher.AEAD, domain, selector, public string, sealed []byte) string {
 	if box == nil {
 		return "secret_missing"
 	}

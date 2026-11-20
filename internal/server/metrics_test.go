@@ -59,6 +59,8 @@ func TestMetricsCountUnresolvedMessages(t *testing.T) {
 		"harbor_outbox_paused 0\n",
 		"harbor_outbox_uncertain_messages 0\n",
 		"harbor_spam_training_failed_samples 0\n",
+		"harbor_dkim_active_domains 0\n",
+		"harbor_dkim_unusable_domains 0\n",
 	} {
 		if !strings.Contains(result.Body.String(), metric) {
 			t.Errorf("metrics missing %q: %s", metric, result.Body)
@@ -70,5 +72,50 @@ func TestMetricsCountUnresolvedMessages(t *testing.T) {
 		if !strings.Contains(result.Body.String(), "harbor_outbox_paused 1\n") {
 			t.Fatalf("paused state missing in metrics: %s", result.Body)
 		}
+	}
+}
+
+func TestMetricsDKIMDetectsUnusableKeysPerInstance(t *testing.T) {
+	db, err := openDB("sqlite", filepath.Join(t.TempDir(), "mail.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	correct := testDKIMCipher(t)
+	a := &app{db: db, dkimCipher: correct}
+	for _, domain := range []string{"healthy.test", "damaged.test", "staged.test"} {
+		installTestDKIMKey(t, a, domain)
+	}
+	if _, err := db.Exec(`UPDATE domain_dkim_keys SET public_key='different public key' WHERE domain='damaged.test'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE domain_dkim_keys SET slot='pending' WHERE domain='staged.test'`); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HARBOR_DKIM_KEY", strings.Repeat("70", 32))
+	wrong, err := loadDKIMCipher()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name   string
+		source *app
+		metric string
+	}{
+		{"matching secret", a, "harbor_dkim_unusable_domains 1\n"},
+		{"wrong secret", &app{db: db, dkimCipher: wrong}, "harbor_dkim_unusable_domains 2\n"},
+		{"missing secret", &app{db: db}, "harbor_dkim_unusable_domains 2\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result := httptest.NewRecorder()
+			tc.source.metrics(result, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+			body := result.Body.String()
+			if result.Code != http.StatusOK || !strings.Contains(body, "harbor_dkim_active_domains 2\n") || !strings.Contains(body, tc.metric) {
+				t.Fatalf("unexpected metric response: %d %s", result.Code, body)
+			}
+			if strings.Contains(body, ".test") || strings.Contains(body, "different public key") || strings.Contains(body, "harbor-") {
+				t.Fatal("metrics must not expose domains, selectors or key data")
+			}
+		})
 	}
 }

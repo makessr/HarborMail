@@ -38,6 +38,11 @@ func (a *app) metrics(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "metrics unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	activeDKIM, unusableDKIM, err := a.dkimKeyCounts(ctx)
+	if err != nil {
+		http.Error(w, "metrics unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	fmt.Fprintf(w, "# TYPE harbor_outbox_oldest_due_seconds gauge\nharbor_outbox_oldest_due_seconds %d\n", stats.OldestDueSeconds)
 	paused := 0
@@ -47,6 +52,33 @@ func (a *app) metrics(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "# TYPE harbor_outbox_paused gauge\nharbor_outbox_paused %d\n", paused)
 	fmt.Fprintf(w, "# TYPE harbor_outbox_uncertain_messages gauge\nharbor_outbox_uncertain_messages %d\n", stats.Uncertain)
 	fmt.Fprintf(w, "# TYPE harbor_spam_training_failed_samples gauge\nharbor_spam_training_failed_samples %d\n", stats.FailedTraining)
+	fmt.Fprintf(w, "# TYPE harbor_dkim_active_domains gauge\nharbor_dkim_active_domains %d\n", activeDKIM)
+	fmt.Fprintf(w, "# TYPE harbor_dkim_unusable_domains gauge\nharbor_dkim_unusable_domains %d\n", unusableDKIM)
+}
+
+func (a *app) dkimKeyCounts(ctx context.Context) (active, unusable int, err error) {
+	if a.dkimCipher == nil {
+		// Every active key is unusable when this instance has no decryption key.
+		err := a.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM domain_dkim_keys WHERE slot='active'`).Scan(&active)
+		return active, active, err
+	}
+	rows, err := a.db.QueryContext(ctx, `SELECT domain,selector,public_key,sealed_key FROM domain_dkim_keys WHERE slot='active'`)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var domain, selector, public string
+		var sealed []byte
+		if err := rows.Scan(&domain, &selector, &public, &sealed); err != nil {
+			return 0, 0, err
+		}
+		active++
+		if storedDKIMKeyState(a.dkimCipher, domain, selector, public, sealed) != "match" {
+			unusable++
+		}
+	}
+	return active, unusable, rows.Err()
 }
 
 type operationalCounts struct {

@@ -155,10 +155,13 @@ MySQL Compose 部署同时启动 Redis，运行在 Harbor Mail 专用内部网�
 | 邮件等待领取或恢复超时 | 到期或投递租约过期后等待超过 5 分钟，持续 5 分钟时告警。主动暂停投递或开启恢复模式的实例会继续提供队列指标，该实例暂不触发此告警。检查出站 worker 日志、数据库和 SMTP 中继 |
 | 待确认的投递邮件数增长 | 按邮件计数。同一封邮件有多个待确认地址时只计一次，其他地址仍在重试时也计入。核对中继日志，再决定如何处置 |
 | 垃圾训练失败记录增长 | 检查 Rspamd 控制器的连接、认证和配置 |
+| 此实例存在不可用的 DKIM 私钥 | 持续 2 分钟时告警。到告警实例核对 Secret 挂载和数据库，运行 `dkim-check` 排查 |
 | 挂载可用空间低于 20% | 10 分钟。用 `df -h`、`df -i` 和数据库日志定位增长 |
 | 备份完成时间缺失或超过 26 小时 | 检查调度、空间、上传和最后可恢复的副本 |
 
 项目例程使用 Docker `local` 日志轮转，MySQL binlog、外部代理日志和监控数据仍需各自限制保留期。
+
+`harbor_dkim_active_domains` 统计已启用签名的域名数，`harbor_dkim_unusable_domains` 统计当前实例无法解密或无法与库中公钥配对的数量。共享 MySQL 时前者在各实例相同，后者应按实例查看。待启用的轮换密钥不计入。这两项指标不查询 DNS，也不输出域名、选择器或密钥内容。
 
 在仓库根目录运行 `promtool test rules ops/prometheus-rules.test.yaml`，验证告警规则的触发和恢复。 [Prometheus 规则测试](https://prometheus.io/docs/prometheus/latest/configuration/unit_testing_rules/)
 

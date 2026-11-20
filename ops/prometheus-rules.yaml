@@ -29,6 +29,13 @@ groups:
           severity: warning
         annotations:
           summary: 新增垃圾邮件训练失败，检查 Rspamd 控制器
+      - alert: HarborDKIMKeysUnusable
+        expr: harbor_dkim_unusable_domains{job="harbor-mail"} > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Harbor Mail 有已启用的 DKIM 私钥在此实例不可用，运行 dkim-check 排查
       - alert: HarborVolumeFreeLow
         expr: node_filesystem_avail_bytes{job="harbor-node",mountpoint=~"/srv/harbor-(data|mysql|backup)"} / node_filesystem_size_bytes{job="harbor-node",mountpoint=~"/srv/harbor-(data|mysql|backup)"} < 0.2
         for: 10m

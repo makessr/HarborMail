@@ -4,6 +4,25 @@ rule_files:
 evaluation_interval: 1m
 
 tests:
+  - name: DKIM alerts only for a Harbor Mail instance with unusable signing keys
+    interval: 1m
+    input_series:
+      - series: 'harbor_dkim_unusable_domains{job="harbor-mail",instance="wrong-secret"}'
+        values: '0 1 1 1 0 0'
+      - series: 'harbor_dkim_unusable_domains{job="harbor-mail",instance="healthy"}'
+        values: '0+0x5'
+      - series: 'harbor_dkim_unusable_domains{job="other",instance="foreign"}'
+        values: '1+0x5'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: HarborDKIMKeysUnusable
+      - eval_time: 3m
+        alertname: HarborDKIMKeysUnusable
+        exp_alerts:
+          - exp_labels: {job: harbor-mail, instance: wrong-secret, severity: critical}
+            exp_annotations: {summary: Harbor Mail 有已启用的 DKIM 私钥在此实例不可用，运行 dkim-check 排查}
+      - eval_time: 4m
+        alertname: HarborDKIMKeysUnusable
   - name: Queue growth, overdue mail and application scrape failure
     interval: 1m
     input_series:
