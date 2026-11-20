@@ -37,10 +37,14 @@ func newRspamdScanner(endpoint string) (*rspamdScanner, error) {
 	}}, nil
 }
 
-func (scanner *rspamdScanner) check(session *delivery, raw []byte) (bool, error) {
+type scanVerdict struct {
+	spam, reject, virus, unavailable bool
+}
+
+func (scanner *rspamdScanner) check(session *delivery, raw []byte) (scanVerdict, error) {
 	req, err := http.NewRequest(http.MethodPost, scanner.endpoint, bytes.NewReader(raw))
 	if err != nil {
-		return false, err
+		return scanVerdict{}, err
 	}
 	req.Header.Set("Content-Type", "message/rfc822")
 	sender := session.sender
@@ -61,36 +65,42 @@ func (scanner *rspamdScanner) check(session *delivery, raw []byte) (bool, error)
 	}
 	resp, err := scanner.client.Do(req)
 	if err != nil {
-		return false, err
+		return scanVerdict{}, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return false, fmt.Errorf("unexpected scan status %d", resp.StatusCode)
+		return scanVerdict{}, fmt.Errorf("unexpected scan status %d", resp.StatusCode)
 	}
 	const responseLimit = 1 << 20
 	body, err := io.ReadAll(io.LimitReader(resp.Body, responseLimit+1))
 	if err != nil {
-		return false, err
+		return scanVerdict{}, err
 	}
 	if len(body) > responseLimit {
-		return false, errors.New("scan response is too large")
+		return scanVerdict{}, errors.New("scan response is too large")
 	}
 	var result struct {
-		Skipped bool   `json:"is_skipped"`
-		Action  string `json:"action"`
+		Skipped bool                       `json:"is_skipped"`
+		Action  string                     `json:"action"`
+		Symbols map[string]json.RawMessage `json:"symbols"`
 	}
 	if err := json.Unmarshal(body, &result); err != nil {
-		return false, errors.New("invalid scan response")
+		return scanVerdict{}, errors.New("invalid scan response")
 	}
+	_, infected := result.Symbols["CLAM_VIRUS"]
+	_, failed := result.Symbols["CLAM_VIRUS_FAIL"]
+	verdict := scanVerdict{virus: infected, unavailable: failed || result.Skipped || result.Action == "soft reject"}
 	if result.Skipped {
-		return false, nil
+		return verdict, nil
 	}
 	switch result.Action {
 	case "add header", "rewrite subject", "reject", "quarantine", "discard":
-		return true, nil
+		verdict.spam = true
+		verdict.reject = result.Action == "reject" || result.Action == "discard" || result.Action == "quarantine"
+		return verdict, nil
 	case "":
-		return false, errors.New("scan response has no action")
+		return scanVerdict{}, errors.New("scan response has no action")
 	default:
-		return false, nil
+		return verdict, nil
 	}
 }

@@ -20,11 +20,11 @@ Harbor Mail 是面向 Linux 部署的自建域名邮箱，提供中文 Web 邮�
 
 | 场景 | 支持内容 |
 | --- | --- |
-| 网页邮箱 | 多收件人、抄送与密送、富文本、附件、草稿自动保存、定时发送与撤销、授权别名发信、签名和模板 |
+| 网页邮箱 | 多收件人、抄送与密送、富文本、附件、草稿自动保存、定时发送与撤销、授权别名发信、可配置附件上限、签名和模板 |
 | 邮件整理 | 嵌套文件夹、标签、规则、全文搜索、保存搜索、稍后处理、批量操作及 EML 导入导出 |
 | 邮件协议 | SMTP 收信和提交、IMAP（含 IDLE）、POP3、应用密码及 TLS |
-| 管理后台 | 多域名、域管理员、邮箱与别名管理、容量配额、域名上线检查、投递队列、运行监控、审计和管理员 MFA |
-| 数据与部署 | SQLite、MySQL、可选 Redis 后台缓存、数据库迁移、备份与恢复工具 |
+| 管理后台 | 多域名、域管理员、邮箱与别名管理、容量配额、域名上线检查、病毒隔离、投递队列、运行监控、审计和管理员 MFA |
+| 数据与部署 | SQLite、MySQL、可选 Redis 后台缓存、旧邮箱 IMAPS 导入、数据库迁移、备份与恢复工具 |
 
 ## 优势
 
@@ -36,8 +36,8 @@ Harbor Mail 是面向 Linux 部署的自建域名邮箱，提供中文 Web 邮�
 ## 局限与运维成本
 
 - **公网收发需要额外配置。** 直接从公网接收邮件需要正确的 MX 记录和可达的 TCP 25。对外发信依赖 SMTP 中继，投递表现还受域名认证、中继和收件方策略影响。[接入真实域名](docs/deployment-and-usage.md#接入真实域名)
-- **自动垃圾邮件检测和训练依赖 Rspamd。** 基础安装可手动标记垃圾邮件并使用收信规则。杀毒可由 Rspamd 对接 ClamAV。[反垃圾邮件与杀毒部署](docs/spam-and-antivirus.md)
-- **网页发信有大小上限。** 每封最多 10 个附件，附件合计上限 6 MiB。网页发信编码后和 SMTP 收信的整封邮件上限均为 10 MiB。[邮件大小限制](docs/deployment-and-usage.md#当前范围)
+- **自动垃圾邮件检测和训练依赖 Rspamd。** 基础安装可手动标记垃圾邮件并使用收信规则。可通过 Compose 一键启用 Rspamd 和 ClamAV，也可自行对接。[反垃圾邮件与杀毒部署](docs/spam-and-antivirus.md)
+- **网页发信有大小上限。** 每封最多 10 个附件，默认附件合计 6 MiB、整封邮件 10 MiB，可按部署需要分别提高到 28 MiB 和 40 MiB。[邮件大小限制](docs/deployment-and-usage.md#当前范围)
 - **SQLite 面向单实例。** 多实例部署使用共享 MySQL，Redis 用于后台统计缓存。邮箱容量、并发和备份耗时需要按部署环境实测。[生产运行手册](ops/README.md)
 - **公网环境仍需现场验收。** 仓库中的回归和隔离演练已覆盖数据库及核心流程。实际域名的公网收发、证书续签和异地灾难恢复需要在部署环境验证。[生产运行手册](ops/README.md)
 
@@ -46,6 +46,8 @@ Harbor Mail 是面向 Linux 部署的自建域名邮箱，提供中文 Web 邮�
 Linux amd64 和 arm64 均可使用同一个发布镜像标签，由 Docker 选择对应架构。按指南创建首个管理员，启动默认的 MySQL + Redis，再打开网页邮箱。 [三步部署](docs/deployment-and-usage.md#docker-compose-部署)
 
 需要公网 HTTPS 时，可用 Cloudflare DNS-01 自动签发证书，Web 端口可自行选择。 [Cloudflare 自动证书](docs/deployment-and-usage.md#cloudflare-dns-01)
+
+需要切换到已有的域名邮箱时，可使用带续传的 IMAPS 迁移命令。 [旧邮箱迁移](docs/deployment-and-usage.md#从旧-imap-邮箱迁移)
 
 ## Linux 单二进制启动
 

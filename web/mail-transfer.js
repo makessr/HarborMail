@@ -62,8 +62,8 @@ async function downloadMailArchive(selection) {
       importError.textContent = "每批最多 100 封、合计 64 MiB，请分批处理";
       return;
     }
-    if (files.some(file => file.size > 10 * 1024 * 1024)) {
-      importError.textContent = "单封 EML 邮件最多 10 MiB";
+    if (files.some(file => file.size > mailMessageMiB * 1048576)) {
+      importError.textContent = "单封 EML 邮件最多 " + mailMessageMiB + " MiB";
       return;
     }
     importError.textContent = "";

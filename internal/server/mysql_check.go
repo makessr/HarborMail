@@ -22,6 +22,26 @@ func runMySQLCheck(out io.Writer) error {
 	return checkMySQL(ctx, out, source, os.Getenv("HARBOR_HARD_QUOTA") == "true")
 }
 
+func verifyMySQLMailCapacity(ctx context.Context, db *sql.DB, source string, limit int) error {
+	cfg, err := harborMySQLConfig(source)
+	if err != nil {
+		return err
+	}
+	var packet int
+	if err := db.QueryRowContext(ctx, "SELECT @@SESSION.max_allowed_packet").Scan(&packet); err != nil {
+		return err
+	}
+	return checkMySQLPacket(packet, cfg.MaxAllowedPacket, limit)
+}
+
+func checkMySQLPacket(server, driver, limit int) error {
+	required := limit + (1 << 20)
+	if server < required || (driver > 0 && driver < required) {
+		return fmt.Errorf("MySQL max_allowed_packet and DSN maxAllowedPacket must allow at least %d MiB, including metadata (server limit %d bytes)", required>>20, server)
+	}
+	return nil
+}
+
 func checkMySQL(ctx context.Context, out io.Writer, source string, hardQuota bool) error {
 	cfg, err := harborMySQLConfig(source)
 	if err != nil {
@@ -50,8 +70,12 @@ func checkMySQL(ctx context.Context, out io.Writer, source string, hardQuota boo
 	if globalReadOnly || sessionReadOnly {
 		return errors.New("MySQL is read-only; use a writable endpoint and check the DSN session settings")
 	}
-	if serverPacket <= mailLimit || (cfg.MaxAllowedPacket > 0 && cfg.MaxAllowedPacket <= mailLimit) {
-		return fmt.Errorf("the server max_allowed_packet and the driver limit must accommodate %d bytes of mail plus metadata (server limit %d bytes); check DSN maxAllowedPacket", mailLimit, serverPacket)
+	sizes, err := loadMailSizeLimits()
+	if err != nil {
+		return err
+	}
+	if err := checkMySQLPacket(serverPacket, cfg.MaxAllowedPacket, sizes.message); err != nil {
+		return err
 	}
 
 	status := "Mail table: SELECT, INSERT, UPDATE and DELETE privileges verified on letters."

@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/mail"
@@ -44,9 +45,9 @@ func (m *imapMailbox) CreateMessage(flags []string, date time.Time, body imap.Li
 	if m.folder != "drafts" {
 		return errIMAPReadOnly
 	}
-	raw, err := io.ReadAll(io.LimitReader(body, mailLimit+1))
-	if err != nil || len(raw) == 0 || len(raw) > mailLimit {
-		return errors.New("Draft must be between 1 byte and 10 MiB")
+	raw, err := io.ReadAll(io.LimitReader(body, int64(m.app.messageLimit())+1))
+	if err != nil || len(raw) == 0 || len(raw) > m.app.messageLimit() {
+		return fmt.Errorf("draft must be between 1 byte and %d MiB", m.app.messageLimit()>>20)
 	}
 	parsed, err := mail.ReadMessage(bytes.NewReader(raw))
 	if err != nil {

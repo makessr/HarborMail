@@ -9,6 +9,8 @@ function setupAdminAudit() {
   const status = adminElement("admin-audit-status");
   const more = adminElement("admin-audit-more");
   const labels = { ...accessLabels, retry: "提前重试投递", alias_add: "添加收信别名", alias_remove: "移除收信别名",
+    alias_send_grant: "授权别名发信", alias_send_revoke: "撤销别名发信",
+    quarantine_release: "释放隔离邮件", quarantine_discard: "删除隔离邮件",
     domain_add: "新增域名", domain_remove: "移除域名", dkim_generate: "生成 DKIM 密钥", dkim_enable: "启用 DKIM 签名", dkim_disable: "停用 DKIM 签名",
     delivery_confirmed: "确认中继已接收", delivery_rejected: "确认中继未接收",
     recipient_confirmed: "确认单地址已接收", recipient_rejected: "确认单地址未接收" };

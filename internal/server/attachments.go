@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"mime"
 	"mime/quotedprintable"
@@ -63,16 +64,18 @@ func attachmentName(name string) string {
 	return name
 }
 
-func decodeOutgoing(w http.ResponseWriter, r *http.Request, input *outgoingLetter) bool {
+func (a *app) decodeOutgoing(w http.ResponseWriter, r *http.Request, input *outgoingLetter) bool {
 	media, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if media != "multipart/form-data" {
 		return decode(w, r, input)
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, attachmentLimit+(512<<10))
+	limit := a.attachmentLimit()
+	limitMessage := fmt.Sprintf("附件总大小上限为 %d MiB", limit>>20)
+	r.Body = http.MaxBytesReader(w, r.Body, int64(limit+(512<<10)))
 	if err := r.ParseMultipartForm(1 << 20); err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
-			fail(w, 413, "附件总大小上限为 6 MiB")
+			fail(w, 413, limitMessage)
 		} else {
 			fail(w, 400, "无法读取上传内容")
 		}
@@ -99,10 +102,10 @@ func decodeOutgoing(w http.ResponseWriter, r *http.Request, input *outgoingLette
 		fail(w, 413, "每封邮件最多可添加 10 个附件")
 		return false
 	}
-	remaining := int64(attachmentLimit)
+	remaining := int64(limit)
 	for _, file := range files {
 		if file.Size > remaining {
-			fail(w, 413, "附件总大小上限为 6 MiB")
+			fail(w, 413, limitMessage)
 			return false
 		}
 		part, err := file.Open()
@@ -118,7 +121,7 @@ func decodeOutgoing(w http.ResponseWriter, r *http.Request, input *outgoingLette
 		}
 		remaining -= int64(len(data))
 		if remaining < 0 {
-			fail(w, 413, "附件总大小上限为 6 MiB")
+			fail(w, 413, limitMessage)
 			return false
 		}
 		input.files = append(input.files, uploadedAttachment{attachmentName(file.Filename), data})
@@ -200,8 +203,8 @@ func (a *app) downloadAttachment(w http.ResponseWriter, r *http.Request, owner s
 			fail(w, 422, "无法解码此附件。可下载原始邮件。")
 			return false
 		}
-		data, err := io.ReadAll(io.LimitReader(body, mailLimit+1))
-		if err != nil || len(data) > mailLimit {
+		data, err := io.ReadAll(io.LimitReader(body, maxSupportedMessage+1))
+		if err != nil || len(data) > maxSupportedMessage {
 			fail(w, 422, "无法解码此附件。可下载原始邮件。")
 			return false
 		}

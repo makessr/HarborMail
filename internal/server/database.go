@@ -15,6 +15,17 @@ import (
 )
 
 var sqliteSchema = []string{
+	`CREATE TABLE IF NOT EXISTS imap_import_checkpoints (
+		source_key TEXT NOT NULL PRIMARY KEY, owner TEXT NOT NULL, folder TEXT NOT NULL,
+		uid_validity INTEGER NOT NULL, last_uid INTEGER NOT NULL
+	)`,
+	`CREATE TABLE IF NOT EXISTS alias_send_permissions (
+		alias TEXT NOT NULL, owner TEXT NOT NULL, allowed BOOLEAN NOT NULL, PRIMARY KEY(alias,owner)
+	)`,
+	`CREATE TABLE IF NOT EXISTS inbound_quarantine (
+		id INTEGER PRIMARY KEY AUTOINCREMENT, sender TEXT NOT NULL, recipients TEXT NOT NULL,
+		stamp INTEGER NOT NULL, mail_size INTEGER NOT NULL, raw BLOB NOT NULL
+	)`,
 	`PRAGMA busy_timeout=5000`,
 	`PRAGMA journal_mode=WAL`,
 	`CREATE TABLE IF NOT EXISTS login_audit_events (
@@ -174,6 +185,17 @@ var sqliteSchema = []string{
 }
 
 var mysqlSchema = []string{
+	`CREATE TABLE IF NOT EXISTS imap_import_checkpoints (
+		source_key CHAR(64) NOT NULL PRIMARY KEY, owner VARCHAR(254) NOT NULL, folder VARCHAR(16) NOT NULL,
+		uid_validity BIGINT NOT NULL, last_uid BIGINT NOT NULL
+	) ENGINE=InnoDB DEFAULT CHARSET=ascii COLLATE=ascii_bin`,
+	`CREATE TABLE IF NOT EXISTS alias_send_permissions (
+		alias VARCHAR(254) NOT NULL, owner VARCHAR(254) NOT NULL, allowed BOOLEAN NOT NULL, PRIMARY KEY(alias,owner)
+	) ENGINE=InnoDB DEFAULT CHARSET=ascii COLLATE=ascii_bin`,
+	`CREATE TABLE IF NOT EXISTS inbound_quarantine (
+		id BIGINT AUTO_INCREMENT PRIMARY KEY, sender TEXT NOT NULL, recipients TEXT NOT NULL,
+		stamp BIGINT NOT NULL, mail_size BIGINT NOT NULL, raw LONGBLOB NOT NULL
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 	`CREATE TABLE IF NOT EXISTS login_audit_events (
 		id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY, stamp BIGINT NOT NULL,
 		source VARCHAR(48) NOT NULL, account VARCHAR(254) NOT NULL, protocol VARCHAR(8) NOT NULL,

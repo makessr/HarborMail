@@ -12,6 +12,8 @@
 .admin-bar nav a { color: var(--accent-ink); white-space: nowrap; }
 #admin-identity { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
 .admin-main { max-width: 1190px; margin: 0 auto; padding: 14px clamp(16px, 4vw, 40px) 32px; }
+.admin-row-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+
 .admin-nav { display: flex; gap: 6px; margin-bottom: 22px; border-bottom: 1px solid var(--line); overflow: auto; }
 .admin-nav a { flex: none; color: var(--muted); padding: 10px 12px; border-bottom: 2px solid transparent; text-decoration: none; }
 .admin-nav a:focus-visible { outline-offset: -3px; }

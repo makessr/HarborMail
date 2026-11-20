@@ -13,6 +13,7 @@
   <script src="/admin-overview.js" defer></script>
   <script src="/admin-runtime.js" defer></script>
   <script src="/admin-security.js" defer></script>
+  <script src="/admin-quarantine.js" defer></script>
   <script src="/admin-account-create.js" defer></script>
   <script src="/admin-domains.js" defer></script>
   <script src="/admin-storage.js" defer></script>
@@ -39,6 +40,7 @@
       <a id="admin-queue-link" href="/admin/queue">投递队列</a>
       <a id="admin-runtime-link" href="/admin/runtime">运行监控</a>
       <a id="admin-storage-link" href="/admin/storage">存储用量</a>
+      <a id="admin-quarantine-link" href="/admin/quarantine">隔离邮件</a>
       <a id="admin-security-link" href="/admin/security">安全</a>
       <a id="admin-audit-link" href="/admin/audit">审计</a>
     </nav>
@@ -49,6 +51,16 @@
       </button>
     </div>
     <p id="admin-status" role="status" aria-live="polite"></p>
+    <section id="admin-quarantine-view" class="admin-panel" hidden>
+      <div class="admin-table"><table><thead><tr><th>时间</th><th>发件地址</th><th>原收件地址</th><th>大小</th><th>操作</th></tr></thead><tbody id="admin-quarantine-items"></tbody></table></div>
+      <button type="button" class="secondary" id="admin-quarantine-more" hidden>下一页</button>
+      <dialog id="admin-quarantine-dialog"><form class="editor" id="admin-quarantine-form">
+        <h2 id="admin-quarantine-action"></h2>
+        <label>管理员密码<input name="password" type="password" autocomplete="current-password" required></label>
+        <p id="admin-quarantine-error" role="status"></p>
+        <footer><button type="button" class="secondary" id="admin-quarantine-cancel">取消</button><button type="submit" class="primary">确认</button></footer>
+      </form></dialog>
+    </section>
     <div id="admin-overview" hidden>
       <dl class="admin-kpis" id="admin-kpis" aria-label="关键指标"></dl>
       <div class="admin-overview-grid">
@@ -250,7 +262,7 @@
         <p id="admin-alias-status" role="status"></p>
         <div class="admin-table">
           <table>
-            <thead><tr><th scope="col">别名</th><th scope="col">主邮箱</th><th scope="col">来源</th><th scope="col">状态</th><th scope="col">操作</th></tr></thead>
+            <thead><tr><th scope="col">别名</th><th scope="col">主邮箱</th><th scope="col">来源</th><th scope="col">状态</th><th scope="col">别名发信</th><th scope="col">操作</th></tr></thead>
             <tbody id="admin-alias-items"></tbody>
           </table>
           <p id="admin-alias-empty" hidden>没有匹配的别名。</p>

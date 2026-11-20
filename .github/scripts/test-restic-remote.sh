@@ -115,7 +115,7 @@ snapshot_ids | jq -e --arg expired "${expired:0:8}" --arg retained "${retained:0
     length == 4 and contains([$oldest, $retained, $foreign, $current]) and (index($expired) == null)
   ' >/dev/null
 bash ops/backup.sh verify "$snapshot"
-[[ $(restic dump "$snapshot" /harbor-schema) == delivery-timeline-v1 ]]
+[[ $(restic dump "$snapshot" /harbor-schema) == inbound-quarantine-v1 ]]
 
 mkdir -m 0700 -- "$work/legacy"
 cp -- "$work/recovered/harbor.db" "$work/legacy/harbor.db"

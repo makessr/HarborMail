@@ -37,7 +37,7 @@ func (a *app) listenIMAPS(runtime *serviceRuntime, addr string, config *tls.Conf
 	service := server.New(imapBackend{app: a})
 	enableHarborIMAPCommands(service)
 	service.AutoLogout = server.MinAutoLogout
-	service.MaxLiteralSize = mailLimit
+	service.MaxLiteralSize = uint32(a.messageLimit())
 	log.Printf("IMAPS listening on %s", listener.Addr())
 	done := runtime.serve("IMAPS", func() error { return service.Serve(listener) })
 	runtime.stops = append(runtime.stops, func(context.Context) {

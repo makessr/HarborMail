@@ -37,10 +37,12 @@ func (a *app) replySession(w http.ResponseWriter, owner string) {
 		role = "domain_admin"
 	}
 	reply(w, http.StatusOK, struct {
-		Email        string `json:"email"`
-		Role         string `json:"role"`
-		RecoveryMode bool   `json:"recoveryMode,omitempty"`
-	}{owner, role, a.recoveryMode})
+		Email         string `json:"email"`
+		Role          string `json:"role"`
+		AttachmentMiB int    `json:"attachmentMiB"`
+		MessageMiB    int    `json:"messageMiB"`
+		RecoveryMode  bool   `json:"recoveryMode,omitempty"`
+	}{Email: owner, Role: role, AttachmentMiB: a.attachmentLimit() >> 20, MessageMiB: a.messageLimit() >> 20, RecoveryMode: a.recoveryMode})
 }
 
 func (a *app) adminPage(w http.ResponseWriter, r *http.Request) {

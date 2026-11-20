@@ -222,7 +222,8 @@ func purgeRetiredMailbox(ctx context.Context, tx *sql.Tx, owner string) error {
 	for _, query := range []string{
 		`DELETE FROM letters WHERE owner=?`, `DELETE FROM outbox WHERE sender=?`,
 		`DELETE FROM outbox_recipient_progress WHERE sender=?`,
-		`DELETE FROM managed_aliases WHERE owner=?`, `DELETE FROM mailbox_quota WHERE owner=?`,
+		`DELETE FROM managed_aliases WHERE owner=?`, `DELETE FROM alias_send_permissions WHERE owner=?`,
+		`DELETE FROM imap_import_checkpoints WHERE owner=?`, `DELETE FROM mailbox_quota WHERE owner=?`,
 		`DELETE FROM managed_accounts WHERE email=?`,
 	} {
 		if _, err := tx.ExecContext(ctx, query, owner); err != nil {

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"net/http"
 	"slices"
@@ -47,10 +48,14 @@ func (a *app) requireSenderIdentity(ctx context.Context, db folderQueryer, owner
 	if author == "" || author == owner {
 		return nil
 	}
-	if !a.sendAliases[author] {
+	allowed, err := a.senderAliasAllowed(ctx, db, owner, author)
+	if err != nil {
+		return err
+	}
+	if !allowed {
 		return errSendAs
 	}
-	err := a.checkDestination(ctx, db, author, owner)
+	err = a.checkDestination(ctx, db, author, owner)
 	if errors.Is(err, errDestinationChanged) {
 		return errSendAs
 	}
@@ -66,18 +71,28 @@ func (a *app) validateSenderIdentity(w http.ResponseWriter, ctx context.Context,
 	return !letterError(w, err)
 }
 
+func (a *app) senderAliasAllowed(ctx context.Context, db folderQueryer, owner, alias string) (bool, error) {
+	var allowed bool
+	err := db.QueryRowContext(ctx, `SELECT allowed FROM alias_send_permissions WHERE alias=? AND owner=?`, alias, owner).Scan(&allowed)
+	if errors.Is(err, sql.ErrNoRows) {
+		return a.sendAliases[alias], nil
+	}
+	return allowed, err
+}
+
 func (a *app) senderIdentities(w http.ResponseWriter, r *http.Request, owner string) {
 	aliases := make([]string, 0)
-	var managed map[string]string
-	if len(a.sendAliases) != 0 {
-		var err error
-		managed, err = a.managedAliases(r.Context(), owner)
-		if letterError(w, err) {
-			return
+	managed, err := a.managedAliases(r.Context(), owner)
+	if letterError(w, err) {
+		return
+	}
+	for alias, target := range a.aliases {
+		if target == owner {
+			managed[alias] = owner
 		}
 	}
-	for alias := range a.sendAliases {
-		if alias == owner || (a.aliases[alias] != owner && managed[alias] != owner) {
+	for alias := range managed {
+		if alias == owner {
 			continue
 		}
 		err := a.requireSenderIdentity(r.Context(), a.db, owner, alias)

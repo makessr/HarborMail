@@ -47,9 +47,9 @@ func parseAdminAuditFilter(params url.Values) (adminAuditFilter, error) {
 		return filter, errors.New("审计筛选条件过长")
 	}
 	switch filter.Action {
-	case "", "sessions", "app_passwords", "suspend", "restore", "retry", "alias_add", "alias_remove", "password_reset", "account_create",
+	case "", "sessions", "app_passwords", "suspend", "restore", "retry", "alias_add", "alias_remove", "alias_send_grant", "alias_send_revoke", "password_reset", "account_create",
 		"domain_add", "domain_remove", "dkim_generate", "dkim_enable", "dkim_disable", "storage_alert", "storage_quota", "delivery_confirmed", "delivery_rejected",
-		"mailbox_retire", "mailbox_restore", "mailbox_purge", "mailbox_rename", "recipient_confirmed", "recipient_rejected":
+		"mailbox_retire", "mailbox_restore", "mailbox_purge", "mailbox_rename", "recipient_confirmed", "recipient_rejected", "quarantine_release", "quarantine_discard":
 	default:
 		return filter, errors.New("无效的审计操作类型")
 	}
@@ -106,7 +106,7 @@ func (a *app) readAdminAudit(ctx context.Context, filter adminAuditFilter, limit
 	case "":
 	case "retry":
 		only = 2
-	case "alias_add", "alias_remove":
+	case "alias_add", "alias_remove", "alias_send_grant", "alias_send_revoke":
 		only = 3
 	case "delivery_confirmed", "delivery_rejected", "recipient_confirmed", "recipient_rejected":
 		only = 4
@@ -240,7 +240,7 @@ func (a *app) adminAuditExport(w http.ResponseWriter, r *http.Request, _ string)
 			previousDue = time.Unix(event.PreviousDue, 0).UTC().Format(time.RFC3339)
 		case "delivery_confirmed", "delivery_rejected", "recipient_confirmed", "recipient_rejected":
 			job = strconv.FormatInt(event.JobID, 10)
-		case "restore", "alias_add", "alias_remove", "account_create", "domain_add", "domain_remove", "dkim_generate", "dkim_enable", "dkim_disable", "storage_alert", "storage_quota",
+		case "restore", "alias_add", "alias_remove", "alias_send_grant", "alias_send_revoke", "account_create", "domain_add", "domain_remove", "dkim_generate", "dkim_enable", "dkim_disable", "storage_alert", "storage_quota",
 			"mailbox_retire", "mailbox_restore", "mailbox_purge", "mailbox_rename":
 		default:
 			affected = strconv.FormatInt(event.Affected, 10)

@@ -1,0 +1,73 @@
+services:
+  harbor:
+    environment:
+      HARBOR_RSPAMD_URL: http://rspamd:11333/checkv2
+      HARBOR_RSPAMD_TIMEOUT_SECONDS: ${HARBOR_RSPAMD_TIMEOUT_SECONDS:-15}
+      HARBOR_SCAN_FAILURE: ${HARBOR_SCAN_FAILURE:-defer}
+      HARBOR_VIRUS_ACTION: ${HARBOR_VIRUS_ACTION:-quarantine}
+    depends_on:
+      rspamd:
+        condition: service_healthy
+    networks:
+      - default
+      - mail_scan
+
+  rspamd:
+    image: rspamd/rspamd:4
+    restart: unless-stopped
+    depends_on:
+      clamav:
+        condition: service_healthy
+      rspamd-redis:
+        condition: service_healthy
+    volumes:
+      - ./ops/rspamd/antivirus.conf:/etc/rspamd/local.d/antivirus.conf:ro
+      - ./ops/rspamd/redis.conf:/etc/rspamd/local.d/redis.conf:ro
+      - ./ops/rspamd/options.inc:/etc/rspamd/local.d/options.inc:ro
+      - ./ops/rspamd/worker-controller.inc:/etc/rspamd/local.d/worker-controller.inc:ro
+      - rspamd_data:/var/lib/rspamd
+    networks:
+      - mail_scan
+      - scanner_backend
+      - scanner_updates
+
+  clamav:
+    image: clamav/clamav:1.4
+    restart: unless-stopped
+    volumes:
+      - clamav_signatures:/var/lib/clamav
+    networks:
+      - scanner_backend
+      - scanner_updates
+    healthcheck:
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10m
+
+  rspamd-redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - rspamd_redis:/data
+    networks:
+      - scanner_backend
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+networks:
+  mail_scan:
+    internal: true
+  scanner_backend:
+    internal: true
+  scanner_updates:
+
+volumes:
+  clamav_signatures:
+  rspamd_data:
+  rspamd_redis:

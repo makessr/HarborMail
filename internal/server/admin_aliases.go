@@ -14,6 +14,7 @@ type adminAlias struct {
 	Alias   string `json:"alias"`
 	Owner   string `json:"owner"`
 	Managed bool   `json:"managed"`
+	SendAs  bool   `json:"sendAs"`
 	State   string `json:"state"`
 }
 
@@ -49,6 +50,15 @@ func (a *app) adminAliasList(w http.ResponseWriter, r *http.Request, actor strin
 		}
 		items = append(items, adminAlias{Alias: alias, Owner: owner, Managed: true, State: state})
 	}
+	for i := range items {
+		if items[i].State != "active" {
+			continue
+		}
+		items[i].SendAs, err = a.senderAliasAllowed(ctx, a.db, items[i].Owner, items[i].Alias)
+		if letterError(w, err) {
+			return
+		}
+	}
 	slices.SortFunc(items, func(left, right adminAlias) int { return strings.Compare(left.Alias, right.Alias) })
 	owners := make([]string, 0, len(names))
 	for owner := range names {
@@ -68,7 +78,7 @@ func (a *app) adminAliasChange(w http.ResponseWriter, r *http.Request, actor str
 	alias := strings.ToLower(strings.TrimSpace(input.Alias))
 	owner := strings.ToLower(strings.TrimSpace(input.Owner))
 	canonical, err := address(alias)
-	if err != nil || canonical != alias || (input.Action != "alias_add" && input.Action != "alias_remove") {
+	if err != nil || canonical != alias || (input.Action != "alias_add" && input.Action != "alias_remove" && input.Action != "alias_send_grant" && input.Action != "alias_send_revoke") {
 		fail(w, 400, "请输入有效的别名地址")
 		return
 	}
@@ -130,12 +140,29 @@ func (a *app) adminAliasChange(w http.ResponseWriter, r *http.Request, actor str
 			return
 		}
 		_, err = tx.ExecContext(ctx, `INSERT INTO managed_aliases(alias,owner) VALUES(?,?)`, alias, owner)
-	} else {
+	} else if input.Action == "alias_remove" {
 		if err != nil || previous != owner {
 			fail(w, 409, "此别名已变化或由服务器配置管理，请刷新后重试")
 			return
 		}
 		_, err = tx.ExecContext(ctx, `DELETE FROM managed_aliases WHERE alias=? AND owner=?`, alias, owner)
+		if err == nil {
+			_, err = tx.ExecContext(ctx, `DELETE FROM alias_send_permissions WHERE alias=? AND owner=?`, alias, owner)
+		}
+	} else {
+		target, lookupErr := a.destination(ctx, tx, alias)
+		if lookupErr != nil && !errors.Is(lookupErr, errDestinationChanged) {
+			letterError(w, lookupErr)
+			return
+		}
+		if owner == alias || target.owner == "" || target.owner != owner {
+			fail(w, 409, "该别名当前未绑定此主邮箱")
+			return
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM alias_send_permissions WHERE alias=? AND owner=?`, alias, owner); letterError(w, err) {
+			return
+		}
+		_, err = tx.ExecContext(ctx, `INSERT INTO alias_send_permissions(alias,owner,allowed) VALUES(?,?,?)`, alias, owner, input.Action == "alias_send_grant")
 	}
 	if letterError(w, err) {
 		return

@@ -35,6 +35,8 @@ type app struct {
 	snoozeWakeup        taskWakeup
 	stopping            <-chan struct{}
 	spamScanner         *rspamdScanner
+	scanPolicy          inboundScanPolicy
+	sizes               mailSizeLimits
 	spamTrainer         *rspamdTrainer
 	sharedMailboxEvents bool
 	accounts            map[string][]byte
@@ -224,14 +226,9 @@ func (s *delivery) Data(r io.Reader) error {
 	if err != nil {
 		return err
 	}
-	folder := "inbox"
-	if scanner := s.app.spamScanner; scanner != nil {
-		spam, err := scanner.check(s, raw)
-		if err != nil {
-			log.Print("Rspamd scan unavailable: ", err)
-		} else if spam {
-			folder = "junk"
-		}
+	folder, err := s.scanIncoming(raw)
+	if err != nil || folder == "" {
+		return err
 	}
 	m := interpret(raw, s.sender, "")
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -279,10 +276,13 @@ func (s *delivery) Logout() error { return nil }
 func (a *app) smtpServer(backend smtp.Backend, config *tls.Config) *smtp.Server {
 	s := smtp.NewServer(backend)
 	s.Domain = a.domain
-	s.MaxMessageBytes = mailLimit
+	s.MaxMessageBytes = int64(a.messageLimit())
 	s.MaxRecipients = 20
 	s.ReadTimeout = 30 * time.Second
 	s.WriteTimeout = 30 * time.Second
+	if a.messageLimit() > mailLimit {
+		s.ReadTimeout = 2 * time.Minute
+	}
 	if config != nil {
 		s.TLSConfig = config.Clone()
 	}

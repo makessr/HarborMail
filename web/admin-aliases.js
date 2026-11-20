@@ -15,17 +15,20 @@ function setupAdminAliases() {
   let owners = [];
   let mode = "alias_add";
 
-  function open(entry) {
-    mode = entry ? "alias_remove" : "alias_add";
+  const titles = { alias_add: "添加收信别名", alias_remove: "移除收信别名",
+    alias_send_grant: "授权别名发信", alias_send_revoke: "撤销别名发信" };
+
+  function open(entry, operation = entry ? "alias_remove" : "alias_add") {
+    mode = operation;
     form.reset();
     errorOutput.textContent = "";
     form.elements.owner.replaceChildren(...(entry ? [entry.owner] : owners).map(owner => new Option(owner, owner)));
     form.elements.owner.disabled = Boolean(entry);
     form.elements.alias.value = entry?.alias || "";
     form.elements.alias.readOnly = Boolean(entry);
-    adminElement("admin-alias-title").textContent = entry ? "移除收信别名" : "添加收信别名";
-    adminElement("admin-alias-impact").hidden = !entry;
-    save.textContent = entry ? "确认移除" : "保存别名";
+    adminElement("admin-alias-title").textContent = titles[mode];
+    adminElement("admin-alias-impact").hidden = mode !== "alias_remove";
+    save.textContent = "确认";
     dialog.showModal();
   }
 
@@ -33,16 +36,26 @@ function setupAdminAliases() {
     const query = search.value.trim().toLowerCase();
     const matching = aliases.filter(entry => entry.alias.includes(query) || entry.owner.includes(query));
     items.replaceChildren(...matching.map(entry => {
-      let action = "—";
+      const actions = document.createElement("div");
+      actions.className = "admin-row-actions";
+      if (entry.state === "active") {
+        const toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.className = "secondary";
+        toggle.textContent = entry.sendAs ? "撤销发信" : "授权发信";
+        toggle.addEventListener("click", () => open(entry, entry.sendAs ? "alias_send_revoke" : "alias_send_grant"));
+        actions.append(toggle);
+      }
       if (entry.managed) {
-        action = document.createElement("button");
+        const action = document.createElement("button");
         action.type = "button";
         action.className = "secondary";
         action.textContent = "移除";
         action.setAttribute("aria-label", "移除 " + entry.alias);
         action.addEventListener("click", () => open(entry));
+        actions.append(action);
       }
-      return deliveryRow([entry.alias, entry.owner, entry.managed ? "后台" : "服务器配置", states[entry.state], action]);
+      return deliveryRow([entry.alias, entry.owner, entry.managed ? "后台" : "服务器配置", states[entry.state], entry.sendAs ? "已授权" : "未授权", actions.childElementCount ? actions : "—"]);
     }));
     adminElement("admin-alias-empty").hidden = matching.length !== 0;
   }
@@ -102,7 +115,7 @@ function setupAdminAliases() {
         return;
       }
       dialog.close();
-      message.textContent = mode === "alias_add" ? "已添加收信别名。" : "已移除收信别名。";
+      message.textContent = titles[mode] + "成功。";
       await load();
     } catch {
       errorOutput.textContent = "未收到操作结果，请关闭窗口并刷新核对。";

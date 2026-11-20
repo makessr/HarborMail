@@ -94,13 +94,13 @@ func importMessage(raw []byte, owner string) (letter, bool) {
 	return m, true
 }
 
-func readImportFile(header *multipart.FileHeader) ([]byte, error) {
+func readImportFile(header *multipart.FileHeader, limit int) ([]byte, error) {
 	file, err := header.Open()
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
-	return io.ReadAll(io.LimitReader(file, mailLimit+1))
+	return io.ReadAll(io.LimitReader(file, int64(limit)+1))
 }
 
 func (a *app) importMessages(ctx context.Context, owner, folder string, files []*multipart.FileHeader) error {
@@ -123,11 +123,11 @@ func (a *app) importMessages(ctx context.Context, owner, folder string, files []
 		origin = "sent"
 	}
 	for i, file := range files {
-		raw, err := readImportFile(file)
+		raw, err := readImportFile(file, a.messageLimit())
 		if err != nil {
 			return err
 		}
-		if len(raw) > mailLimit {
+		if len(raw) > a.messageLimit() {
 			return errTransferSize
 		}
 		m, valid := importMessage(raw, owner)
@@ -182,8 +182,8 @@ func (a *app) importMail(w http.ResponseWriter, r *http.Request, owner string) {
 			return
 		}
 		total += file.Size
-		if file.Size > mailLimit {
-			fail(w, http.StatusRequestEntityTooLarge, "单封 EML 邮件最多 10 MiB")
+		if file.Size > int64(a.messageLimit()) {
+			fail(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("单封 EML 邮件最多 %d MiB", a.messageLimit()>>20))
 			return
 		}
 	}

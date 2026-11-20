@@ -68,7 +68,7 @@ async function loadForwardOriginal(item, signal) {
   const blob = await response.blob();
   if (blob.size > attachmentSizeLimit) {
     const alternatives = item.hasHTML && !item.hasText ? "可从阅读区下载原邮件。" : "可以改用正文引用。";
-    throw new Error("原邮件超过 6 MiB 的附件上限。" + alternatives);
+    throw new Error("原邮件超过 " + attachmentSizeLimit / 1048576 + " MiB 的附件上限。" + alternatives);
   }
   return new File([blob], "原邮件.eml");
 }

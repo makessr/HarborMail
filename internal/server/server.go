@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -41,6 +42,17 @@ func env(key, fallback string) string {
 }
 
 func Run() {
+	var importOptions *imapImportOptions
+	if len(os.Args) > 1 && os.Args[1] == "import-imap" {
+		options, err := parseIMAPImport(os.Args[2:])
+		if errors.Is(err, flag.ErrHelp) {
+			return
+		}
+		if err != nil {
+			log.Fatal(err)
+		}
+		importOptions = &options
+	}
 	if len(os.Args) > 1 && os.Args[1] == "dkim-verify" {
 		if err := runDKIMVerify(os.Stdin, os.Stdout, net.DefaultResolver, os.Args[2:]); err != nil {
 			log.Fatal(err)
@@ -135,6 +147,10 @@ func Run() {
 		log.Fatal("set HARBOR_ACCOUNTS or HARBOR_ACCOUNTS_FILE to account JSON mapping email addresses to bcrypt hashes")
 	}
 	a := &app{accounts: make(map[string][]byte), domain: domain}
+	a.sizes, err = loadMailSizeLimits()
+	if err != nil {
+		log.Fatal(err)
+	}
 	switch os.Getenv("HARBOR_RECOVERY_MODE") {
 	case "true":
 		a.recoveryMode = true
@@ -164,6 +180,17 @@ func Run() {
 		log.Fatal(err)
 	}
 	a.spamScanner, err = newRspamdScanner(os.Getenv("HARBOR_RSPAMD_URL"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	if a.spamScanner != nil {
+		seconds, err := strconv.Atoi(env("HARBOR_RSPAMD_TIMEOUT_SECONDS", "4"))
+		if err != nil || seconds < 1 || seconds > 30 {
+			log.Fatal("HARBOR_RSPAMD_TIMEOUT_SECONDS must be between 1 and 30")
+		}
+		a.spamScanner.client.Timeout = time.Duration(seconds) * time.Second
+	}
+	a.scanPolicy, err = loadInboundScanPolicy(a.spamScanner != nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -241,6 +268,14 @@ func Run() {
 		log.Fatal(err)
 	}
 	defer a.db.Close()
+	if driver == "mysql" && a.messageLimit() > mailLimit {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		err = verifyMySQLMailCapacity(ctx, a.db, dbSource, a.messageLimit())
+		cancel()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
 	a.dkimCipher, err = loadDKIMCipher()
 	if err != nil {
 		log.Fatal(err)
@@ -276,6 +311,17 @@ func Run() {
 	}
 	if err := a.registerConfiguredAccounts(); err != nil {
 		log.Fatal(err)
+	}
+	if importOptions != nil {
+		if a.recoveryMode {
+			log.Fatal("import-imap is unavailable in recovery mode")
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		if err := a.importIMAP(ctx, *importOptions, os.Stdout); err != nil {
+			log.Fatal(err)
+		}
+		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	err = a.removeStaleAdminSessions(ctx, privileged)
@@ -334,6 +380,10 @@ func (a *app) serve(ctx context.Context, transportTLS inboundTLS) error {
 		Addr: listen, Handler: a.routes(),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second,
 		WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second,
+	}
+	if a.messageLimit() > mailLimit {
+		server.ReadTimeout = 2 * time.Minute
+		server.WriteTimeout = 150 * time.Second
 	}
 	webListener, err := net.Listen("tcp", listen)
 	if err != nil {
@@ -556,6 +606,9 @@ func (a *app) routes() http.Handler {
 	mux.HandleFunc("GET /admin/runtime", a.adminPage)
 	mux.HandleFunc("GET /admin/storage", a.adminPage)
 	mux.HandleFunc("GET /admin/security", a.adminPage)
+	mux.HandleFunc("GET /admin/quarantine", a.adminPage)
+	mux.HandleFunc("GET /api/admin/quarantine", a.adminOnly(a.adminQuarantine))
+	mux.HandleFunc("POST /api/admin/quarantine/{id}", a.adminOnly(a.adminChangeQuarantine))
 	mux.HandleFunc("GET /api/admin/overview", a.adminOnly(a.adminOverview))
 	mux.HandleFunc("GET /api/admin/accounts", a.domainAdminOnly(a.adminAccountList))
 	mux.HandleFunc("POST /api/admin/accounts", a.domainAdminOnly(a.adminCreateAccount))
@@ -875,7 +928,7 @@ func (a *app) send(w http.ResponseWriter, r *http.Request, owner string) {
 		return
 	}
 	var input outgoingLetter
-	if !decodeOutgoing(w, r, &input) {
+	if !a.decodeOutgoing(w, r, &input) {
 		return
 	}
 	if strings.ContainsAny(input.Subject, "\r\n") || len(input.Subject) > 300 ||
@@ -905,8 +958,8 @@ func (a *app) send(w http.ResponseWriter, r *http.Request, owner string) {
 	if letterError(w, err) {
 		return
 	}
-	if len(raw) > mailLimit {
-		fail(w, 413, "编码后的邮件超出 10 MiB，请减少附件或正文")
+	if len(raw) > a.messageLimit() {
+		fail(w, 413, a.oversizedMessage())
 		return
 	}
 	ctx := r.Context()

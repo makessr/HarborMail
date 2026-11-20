@@ -2,7 +2,20 @@
 
 Harbor Mail 对接 Rspamd 扫描公网 SMTP 来信，并可提交用户分类反馈。需要杀毒时，可让 Rspamd 的 antivirus 模块调用 ClamAV。两项均为可选组件。
 
-## 对接 Rspamd
+## Docker 一键启用
+
+按[快速部署](deployment-and-usage.md#docker-compose-部署)完成初始配置后，在 `.env` 的 `COMPOSE_FILE` 末尾追加 `:compose.mail-scan.yaml`。Windows 开发机沿用 Compose 的分隔符 `;`。
+
+```bash
+docker compose up -d --no-build --wait --wait-timeout 900
+docker compose ps
+```
+
+首次启动需要下载镜像、更新病毒库并加载签名，可能需要数分钟。Rspamd、ClamAV 和扫描专用 Redis 均不发布宿主机端口。病毒库、Rspamd 和扫描 Redis 分别使用持久卷，扫描使用的 Redis 与 Harbor Mail 后台缓存分开。内置控制器仅监听容器回环地址，如需用户分类训练，可按原有训练配置接入可信的专用控制器。 [Rspamd 容器](https://docs.rspamd.com/getting-started/installation/#docker-installation) · [ClamAV 容器](https://docs.clamav.net/manual/Installing/Docker.html)
+
+默认启用病毒隔离和扫描故障临时拒收。进入后台「隔离邮件」可查看信封发件人、收件人、邮件时间和大小。核实误报后可释放到原收件人的「垃圾邮件」，也可永久删除。两项操作都需要全站管理员重新验证密码，并记入操作审计。隔离区最多 1,000 封、合计 256 MiB，达到上限后需从后台清理，新增隔离邮件会收到 SMTP 451。
+
+## 对接自管 Rspamd
 
 1. 按上游安装说明部署 Rspamd，启用 Harbor Mail 能访问的私有 normal worker。Docker 可将两个服务加入同一可信网络。Linux 原生部署可使用本机回环监听。[Rspamd 安装指南](https://docs.rspamd.com/getting-started/installation/)
 2. Docker 在 `.env` 设置 `HARBOR_RSPAMD_URL=http://rspamd:11333/checkv2`，用实际可解析的服务名替换 `rspamd`，再运行 `docker compose up -d --no-build --wait`。systemd 部署在 `/etc/harbormail/harbormail.env` 配置，例如 `HARBOR_RSPAMD_URL=http://127.0.0.1:11333/checkv2`，然后重启 Harbor Mail。
@@ -48,8 +61,15 @@ clamav {
 
 3. 运行 `rspamadm configtest` 后重启 Rspamd。在隔离环境用 EICAR 标准测试附件核对 `CLAM_VIRUS`、Rspamd 的 action 和 Harbor Mail 的最终收件目录。[EICAR 测试文件](https://www.eicar.org/download-anti-malware-testfile/)
 
-### 扫描范围与故障行为
+### 扫描范围与处置策略
 
-Harbor Mail 把 Rspamd 的 `reject`、`quarantine` 等动作作为垃圾邮件分类信号，邮件原文仍可保留，用户的收信移动规则也可能覆盖目标目录。Rspamd 超时或不可用时，Harbor Mail 继续按收件规则投递。Rspamd 日志中的 `CLAM_VIRUS_FAIL` 表示其杀毒检查出错。
+| 配置项 | 自行对接默认值 | 一键部署默认值 | 可选行为 |
+| --- | --- | --- | --- |
+| `HARBOR_SPAM_ACTION` | `junk` | `junk` | `reject` 在公网 SMTP 的 DATA 阶段以 554 拒收 Rspamd 标为拒收、丢弃或隔离的垃圾邮件 |
+| `HARBOR_VIRUS_ACTION` | `junk` | `quarantine` | `quarantine` 将 `CLAM_VIRUS` 命中交由全站管理员处置，`reject` 在 SMTP 阶段拒收，`junk` 进入原有垃圾邮件分类流程 |
+| `HARBOR_SCAN_FAILURE` | `deliver` | `defer` | `defer` 遇到 HTTP 故障、扫描跳过、Rspamd `soft reject` 或 `CLAM_VIRUS_FAIL` 时返回 451，发送方可重试 |
+| `HARBOR_RSPAMD_TIMEOUT_SECONDS` | `4` | `15` | HTTP 扫描超时，范围 1 至 30 秒 |
 
-需要在 SMTP 层拒收病毒邮件，或扫描器故障时延迟接受邮件，可部署独立 SMTP 网关在 Harbor Mail 前执行拒收或临时拒收策略。当前扫描只覆盖公网 SMTP 入口。网页发信、SMTP Submission、站内投递和 EML 导入需要在各自入口另行实施扫描策略。
+普通垃圾邮件分类仍可由用户规则覆盖。拒收和隔离在邮件进入邮箱前完成。使用自管 ClamAV 时，请保持 `CLAM_VIRUS` 和 `CLAM_VIRUS_FAIL` 符号，分别用于标记命中和故障。确认扫描服务及其上游大小限制能覆盖 Harbor Mail 接收上限。
+
+扫描覆盖公网 SMTP 入口。网页发信、SMTP Submission、站内投递、EML 导入和 IMAP 迁移沿用各自的现有路径。

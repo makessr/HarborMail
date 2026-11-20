@@ -47,6 +47,7 @@ type submission struct {
 	app        *app
 	conn       *smtp.Conn
 	owner      string
+	author     string
 	recipients []webTarget
 	failures   int
 }
@@ -89,9 +90,17 @@ func (s *submission) Mail(from string, _ *smtp.MailOptions) error {
 	if s.owner == "" {
 		return &smtp.SMTPError{Code: 530, EnhancedCode: smtp.EnhancedCode{5, 7, 0}, Message: "Authentication required"}
 	}
-	if !strings.EqualFold(from, s.owner) {
-		return &smtp.SMTPError{Code: 553, EnhancedCode: smtp.EnhancedCode{5, 7, 1}, Message: "Envelope sender must match the authenticated account"}
+	author, err := address(from)
+	if err != nil || !strings.EqualFold(author, from) {
+		return &smtp.SMTPError{Code: 553, EnhancedCode: smtp.EnhancedCode{5, 7, 1}, Message: "Invalid envelope sender"}
 	}
+	author = strings.ToLower(author)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.app.requireSenderIdentity(ctx, s.app.db, s.owner, author); err != nil {
+		return submissionSenderError(err)
+	}
+	s.author = author
 	return nil
 }
 
@@ -109,7 +118,7 @@ func (s *submission) Rcpt(to string, _ *smtp.RcptOptions) error {
 	if err != nil {
 		return &smtp.SMTPError{Code: 451, Message: "Temporary mailbox failure"}
 	}
-	if target.owner == "" && !s.app.hasRelayFor(s.owner) {
+	if target.owner == "" && !s.app.hasRelayFor(s.author) {
 		return &smtp.SMTPError{Code: 550, EnhancedCode: smtp.EnhancedCode{5, 7, 1}, Message: "External delivery requires a configured relay"}
 	}
 	for _, existing := range s.recipients {
@@ -132,17 +141,24 @@ func (s *submission) Data(r io.Reader) error {
 	if err != nil {
 		return err
 	}
-	raw, err = validateSubmission(raw, s.owner)
+	raw, err = validateSubmission(raw, s.author)
 	if err != nil {
 		return &smtp.SMTPError{Code: 554, EnhancedCode: smtp.EnhancedCode{5, 7, 1}, Message: err.Error()}
 	}
 	envelope := webEnvelope{Recipients: submissionRecipients(raw, s.recipients), Targets: s.recipients}
 	m := interpret(raw, s.owner, envelope.Recipients.indexedAddress())
 	m.From = s.owner
+	if s.author != s.owner {
+		m.author = s.author
+		envelope.Author = s.author
+	}
 	m.recipients = &envelope.Recipients
 	if err := s.app.storeSubmission(m, raw, envelope); err != nil {
 		if isQuotaExceeded(err) {
 			return smtpQuotaExceeded()
+		}
+		if errors.Is(err, errSendAs) {
+			return submissionSenderError(err)
 		}
 		if errors.Is(err, errAccountSuspended) {
 			return &smtp.SMTPError{Code: 550, EnhancedCode: smtp.EnhancedCode{5, 7, 1}, Message: "Sender mailbox is suspended"}
@@ -153,7 +169,15 @@ func (s *submission) Data(r io.Reader) error {
 	return nil
 }
 
+func submissionSenderError(err error) error {
+	if errors.Is(err, errSendAs) {
+		return &smtp.SMTPError{Code: 553, EnhancedCode: smtp.EnhancedCode{5, 7, 1}, Message: "Envelope sender is not authorized"}
+	}
+	return &smtp.SMTPError{Code: 451, EnhancedCode: smtp.EnhancedCode{4, 3, 0}, Message: "Sender authorization temporarily unavailable"}
+}
+
 func (s *submission) Reset() {
+	s.author = ""
 	s.recipients = nil
 }
 
@@ -199,6 +223,9 @@ func (a *app) storeSubmission(m letter, raw []byte, envelope webEnvelope) error 
 		return err
 	}
 	if err := a.requireActiveAccount(ctx, tx, m.From); err != nil {
+		return err
+	}
+	if err := a.requireSenderIdentity(ctx, tx, m.From, m.author); err != nil {
 		return err
 	}
 	for _, target := range envelope.Targets {

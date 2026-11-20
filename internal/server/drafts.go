@@ -33,7 +33,7 @@ func (a *app) saveWebDraft(w http.ResponseWriter, r *http.Request, owner string,
 		}
 	}
 	var input outgoingLetter
-	if !decodeOutgoing(w, r, &input) {
+	if !a.decodeOutgoing(w, r, &input) {
 		return
 	}
 	fields := input.recipientFields()
@@ -103,8 +103,8 @@ func (a *app) saveWebDraft(w http.ResponseWriter, r *http.Request, owner string,
 	if letterError(w, err) {
 		return
 	}
-	if len(raw) > mailLimit {
-		fail(w, 413, "编码后的草稿超出 10 MiB")
+	if len(raw) > a.messageLimit() {
+		fail(w, 413, a.oversizedMessage())
 		return
 	}
 	if existing {
@@ -239,8 +239,8 @@ func (a *app) sendDraft(w http.ResponseWriter, r *http.Request, owner string) {
 	if letterError(w, err) {
 		return
 	}
-	if len(raw) > mailLimit {
-		fail(w, 413, "编码后的邮件超出 10 MiB，请减少附件或正文")
+	if len(raw) > a.messageLimit() {
+		fail(w, 413, a.oversizedMessage())
 		return
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE letters SET folder='trash',previous='drafts'

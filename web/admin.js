@@ -3,7 +3,7 @@
 const adminElement = id => document.getElementById(id);
 const domainAdminOnly = document.body.hasAttribute("data-domain-admin");
 if (domainAdminOnly) {
-  for (const page of ["overview", "queue", "runtime", "storage", "security", "audit"]) {
+  for (const page of ["overview", "queue", "runtime", "storage", "security", "quarantine", "audit"]) {
     adminElement("admin-" + page + "-link").hidden = true;
   }
   adminElement("admin-domain-add").hidden = true;
@@ -15,15 +15,16 @@ const showAudit = location.pathname === "/admin/audit";
 const showAliases = location.pathname === "/admin/aliases";
 const showRuntime = location.pathname === "/admin/runtime";
 const showStorage = location.pathname === "/admin/storage";
+const showQuarantine = location.pathname === "/admin/quarantine";
 const showSecurity = location.pathname === "/admin/security";
 const showAccounts = location.pathname === "/admin/accounts" ||
   ((location.pathname === "/admin" || location.pathname === "/admin/") && Boolean(domainFromLink));
-const section = showStorage ? "storage" : showSecurity ? "security" : showRuntime ? "runtime" : showAliases ? "aliases" : showAudit ? "audit" : showQueue ? "queue" :
+const section = showQuarantine ? "quarantine" : showStorage ? "storage" : showSecurity ? "security" : showRuntime ? "runtime" : showAliases ? "aliases" : showAudit ? "audit" : showQueue ? "queue" :
   showDomains ? "domains" : showAccounts ? "accounts" : "overview";
 const activePanel = adminElement({
   audit: "admin-audit-view", queue: "admin-delivery", domains: "admin-domains", accounts: "admin-account-view",
   aliases: "admin-alias-view", runtime: "admin-runtime-view", storage: "admin-storage-view",
-  security: "admin-security-view", overview: "admin-overview"
+  quarantine: "admin-quarantine-view", security: "admin-security-view", overview: "admin-overview"
 }[section]);
 const statusOutput = adminElement("admin-status");
 const refresh = adminElement("admin-refresh");
@@ -47,7 +48,7 @@ const domainOf = address => address.slice(address.lastIndexOf("@") + 1).replace(
 adminElement("admin-" + section + "-link").setAttribute("aria-current", "page");
 if (section !== "overview") {
   const title = { queue: "投递队列", domains: "域名", accounts: "邮箱账号", audit: "操作审计",
-    aliases: "别名管理", runtime: "运行监控", storage: "存储用量", security: "安全" }[section];
+    aliases: "别名管理", runtime: "运行监控", storage: "存储用量", security: "安全", quarantine: "隔离邮件" }[section];
   adminElement("admin-title").textContent = title;
   document.title = title + " · Harbor Mail";
 }
@@ -629,7 +630,7 @@ accountDomain.addEventListener("change", renderAccounts);
 accountRole.addEventListener("change", renderAccounts);
 accountStatus.addEventListener("change", renderAccounts);
 find.addEventListener("input", renderAccounts);
-const loadPage = showStorage ? setupAdminStorage() : showSecurity ? setupAdminSecurity() : showRuntime ? setupAdminRuntime() : showAliases ? setupAdminAliases() :
+const loadPage = showQuarantine ? setupAdminQuarantine() : showStorage ? setupAdminStorage() : showSecurity ? setupAdminSecurity() : showRuntime ? setupAdminRuntime() : showAliases ? setupAdminAliases() :
   showAudit ? setupAdminAudit() : showQueue ? () => loadDeliveryQueue() : loadOverview;
 refresh.addEventListener("click", loadPage);
 logout.addEventListener("click", async () => {

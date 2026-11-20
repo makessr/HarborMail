@@ -38,8 +38,9 @@ const editor = byId("editor");
 const editorForm = byId("editor-form");
 const selectedFiles = [];
 const attachmentCountLimit = 10;
-const attachmentSizeLimit = 6 * 1024 * 1024;
-const attachmentLimitMessage = "每封邮件最多添加 10 个附件，合计不超过 6 MiB。";
+let attachmentSizeLimit = 6 * 1024 * 1024;
+let mailMessageMiB = 10;
+const attachmentLimitMessage = () => "每封邮件最多添加 10 个附件，合计不超过 " + attachmentSizeLimit / 1048576 + " MiB。";
 const customFolders = new Map();
 const folderDialog = byId("folder-dialog");
 const folderForm = byId("folder-form");
@@ -122,8 +123,12 @@ function showLogin() {
   byId("login").hidden = false;
 }
 
-async function openSession({ email, role, recoveryMode = false }, keepMailbox = false) {
+async function openSession({ email, role, recoveryMode = false, attachmentMiB = 6, messageMiB = 10 }, keepMailbox = false) {
   state.recoveryMode = recoveryMode;
+  attachmentSizeLimit = attachmentMiB * 1048576;
+  mailMessageMiB = messageMiB;
+  byId("attachment-limits").textContent = attachmentLimitMessage();
+  byId("eml-import-limits").textContent = "每批最多 100 封、合计 64 MiB，单封最多 " + mailMessageMiB + " MiB。";
   byId("mail-recovery-mode").hidden = !recoveryMode;
   const url = new URL(location.href);
   const adminDenied = url.searchParams.get("notice") === "admin-forbidden";
@@ -805,7 +810,7 @@ async function resumeDraft() {
 
 async function loadLetterAttachments(item, signal) {
   const attachments = item.attachments || [];
-  if (attachments.length > attachmentCountLimit) throw new Error(attachmentLimitMessage);
+  if (attachments.length > attachmentCountLimit) throw new Error(attachmentLimitMessage());
   const files = [];
   let bytes = 0;
   for (const { part, name } of attachments) {
@@ -813,7 +818,7 @@ async function loadLetterAttachments(item, signal) {
     if (!response.ok) throw new Error("无法读取附件「" + name + "」，请刷新后重试。");
     const blob = await response.blob();
     bytes += blob.size;
-    if (bytes > attachmentSizeLimit) throw new Error(attachmentLimitMessage);
+    if (bytes > attachmentSizeLimit) throw new Error(attachmentLimitMessage());
     files.push(new File([blob], name));
   }
   return files;
@@ -859,7 +864,7 @@ byId("attachments").addEventListener("change", (event) => {
   const files = [...selectedFiles, ...picker.files];
   picker.value = "";
   if (files.length > attachmentCountLimit || files.reduce((size, file) => size + file.size, 0) > attachmentSizeLimit) {
-    byId("send-error").textContent = attachmentLimitMessage;
+    byId("send-error").textContent = attachmentLimitMessage();
     return;
   }
   selectedFiles.splice(0, selectedFiles.length, ...files);
