@@ -159,3 +159,6 @@ sudo systemctl stop harbormail.service
 [[ $(systemctl show --property Result --value harbormail.service) == success ]]
 printf 'MySQL systemd service passed SMTP, Web, restart, and Redis cache checks.\n'
 bash .github/scripts/test-systemd-backup.sh
+sudo sqlite3 -batch -bail -readonly "$state/harbor.db" ".backup $work/remote-source.db"
+sudo chown "$(id -u)" "$work/remote-source.db"
+bash .github/scripts/test-restic-remote.sh "$work/remote-source.db"

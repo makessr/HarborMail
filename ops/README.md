@@ -185,6 +185,8 @@ systemctl list-timers harbor-backup.timer
 
 用 `bash ops/backup.sh verify SNAPSHOT_ID` 验证指定快照。恢复演练应沿用快照生成时的 `HARBOR_BACKUP_INSTANCE`，脚本会核对 Restic 主机名和实例标签。回读时只提取数据库产物和校验清单，并核对清单中的 SHA-256 对应这份数据库。
 
+CI 使用带身份验证的独立 HTTPS Restic 仓库验证上传、恢复和保留策略。部署时先在实际异地仓库验证快照回读，再查看保留计划，确认范围后执行清理。可使用独立仓库口令，并通过受限配置为 REST 后端传入 `RESTIC_REST_USERNAME` 和 `RESTIC_REST_PASSWORD`。 [Restic REST 仓库配置](https://restic.readthedocs.io/en/stable/030_preparing_a_new_repo.html#rest-server)
+
 SQLite 和 MySQL 都会在上传、验证和导出时检查首个公开版本的必备表，覆盖账号、别名、文件夹与 IMAP UID、邮件和投递队列。检查失败时会列出缺失的表。SQLite 还会运行数据库完整性检查。早于首个公开版本的 SQLite 快照可能缺少这些表，应在隔离副本上升级后再生成新快照。
 
 MySQL 备份账户需读取整个 Harbor 数据库，以涵盖后续版本增加的表。验证导入需在隔离服务器预建空的 `harbor_verify_*` 数据库，设置 `HARBOR_BACKUP_VERIFY_DB` 和 `HARBOR_BACKUP_VERIFY_CNF`，验证账户只应有该库权限。脚本导入后读取邮件和队列计数，保留验证库供复查。自动转储会跳过 MySQL 触发器，Harbor 首次从恢复库启动时会按已启用的配额设置重建触发器和用量，避免恢复时依赖原服务器的触发器属主。自建触发器、部署配置及配套密钥按下文独立备份。 [Restic 恢复选项](https://restic.readthedocs.io/en/stable/050_restore.html)
