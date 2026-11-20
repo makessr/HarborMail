@@ -41,6 +41,12 @@ func env(key, fallback string) string {
 }
 
 func Run() {
+	if len(os.Args) > 1 && os.Args[1] == "dns-check" {
+		if err := runDomainDNSCheck(os.Stdout, net.DefaultResolver, os.Args[2:]); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "mysql-check" {
 		if len(os.Args) != 2 {
 			log.Fatal("usage: harbormail mysql-check")

@@ -56,6 +56,16 @@ docker compose -f compose.yaml -f compose.mysql.yaml -f compose.registry.yaml \
 
 空库通过预检时会明确提示尚未验证表权限，初始化后请再运行一次。建表、建索引和建触发器权限及生产数据容量，仍需用相同账号在隔离环境演练。 [MySQL EXPLAIN](https://dev.mysql.com/doc/refman/8.4/en/explain.html) · [MySQL 数据包限制](https://dev.mysql.com/doc/refman/8.4/en/server-system-variables.html#sysvar_max_allowed_packet)
 
+### 邮件域名 DNS 预检
+
+配置好邮件域名的 DNS 后，从部署主机运行 `harbormail dns-check example.com selector1`。`selector1` 换成中继提供的 DKIM 选择器。暂时没有选择器时，可省略最后一个参数。Docker Compose 部署可运行：
+
+```bash
+docker compose run --rm --no-deps -T harbor dns-check example.com selector1
+```
+
+命令查询当前环境解析器看到的记录，约五秒内输出 JSON。MX、SPF、该域的 DMARC 及手动指定的 DKIM 均找到时返回 0。`missing` 表示缺失，`multiple` 表示有多条匹配的 TXT，`null` 表示域名明确拒收，`error` 表示查询失败，`skipped` 表示未提供 DKIM 选择器。预检只核对记录是否存在及是否重复，实信的签名、SPF 发信授权、DMARC 对齐和投递仍需验收。 [Null MX 标准](https://www.rfc-editor.org/rfc/rfc7505.html)
+
 ### SMTP 中继预检
 
 为每个使用外发中继的发件域选一个发件地址。使用部署时相同的 Compose 文件、项目名及环境配置，保留已启用的中继认证、按域中继和私有 CA 覆盖文件。下面是已配置全局中继认证时的示例。 [Docker Compose run](https://docs.docker.com/reference/cli/docker/compose/run/)

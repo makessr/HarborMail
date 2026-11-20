@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -73,19 +72,6 @@ func validDNSName(name string) bool {
 		}
 	}
 	return true
-}
-
-type dnsCheck struct {
-	State string `json:"state"`
-	Count int    `json:"count,omitempty"`
-}
-
-type domainDNS struct {
-	MX    dnsCheck  `json:"mx"`
-	Hosts []*net.MX `json:"hosts,omitempty"`
-	SPF   dnsCheck  `json:"spf"`
-	DMARC dnsCheck  `json:"dmarc"`
-	DKIM  dnsCheck  `json:"dkim"`
 }
 
 var dnsCheckSlots = make(chan struct{}, 4)
@@ -228,72 +214,5 @@ func (a *app) adminDomainDNS(w http.ResponseWriter, r *http.Request, actor strin
 		return
 	}
 
-	resolver := net.DefaultResolver
-	var result domainDNS
-	result.DKIM.State = "skipped"
-	var checks sync.WaitGroup
-	checks.Go(func() {
-		hosts, err := resolver.LookupMX(ctx, domain+".")
-		result.MX = classifyDNS(len(hosts), err)
-		if len(hosts) == 1 && hosts[0].Host == "." && hosts[0].Pref == 0 {
-			result.MX.State = "null"
-		}
-		result.Hosts = hosts
-	})
-	checks.Go(func() {
-		result.SPF = checkTXTDNS(ctx, resolver, domain+".", func(record string) bool {
-			fields := strings.Fields(record)
-			return len(fields) > 0 && strings.EqualFold(fields[0], "v=spf1")
-		})
-	})
-	checks.Go(func() {
-		result.DMARC = checkTXTDNS(ctx, resolver, "_dmarc."+domain+".", func(record string) bool {
-			first, _, _ := strings.Cut(record, ";")
-			key, value, _ := strings.Cut(first, "=")
-			return strings.TrimSpace(key) == "v" && strings.TrimSpace(value) == "DMARC1"
-		})
-	})
-	if selector != "" {
-		checks.Go(func() {
-			result.DKIM = checkTXTDNS(ctx, resolver, dkimName+".", func(record string) bool {
-				for _, field := range strings.Split(record, ";") {
-					key, value, _ := strings.Cut(field, "=")
-					if strings.TrimSpace(key) == "p" && strings.TrimSpace(value) != "" {
-						return true
-					}
-				}
-				return false
-			})
-		})
-	}
-	checks.Wait()
-	reply(w, http.StatusOK, result)
-}
-
-func checkTXTDNS(ctx context.Context, resolver *net.Resolver, name string, matches func(string) bool) dnsCheck {
-	records, err := resolver.LookupTXT(ctx, name)
-	count := 0
-	for _, record := range records {
-		if matches(record) {
-			count++
-		}
-	}
-	result := classifyDNS(count, err)
-	if result.State == "present" && count > 1 {
-		result.State = "multiple"
-	}
-	return result
-}
-
-func classifyDNS(count int, err error) dnsCheck {
-	if err != nil {
-		var dnsErr *net.DNSError
-		if !errors.As(err, &dnsErr) || !dnsErr.IsNotFound {
-			return dnsCheck{State: "error"}
-		}
-	}
-	if count == 0 {
-		return dnsCheck{State: "missing"}
-	}
-	return dnsCheck{State: "present", Count: count}
+	reply(w, http.StatusOK, lookupDomainDNS(ctx, net.DefaultResolver, domain, selector))
 }
