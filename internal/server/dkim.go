@@ -86,23 +86,29 @@ func openDKIMKey(box cipher.AEAD, domain, selector string, sealed []byte) (*rsa.
 	return key, nil
 }
 
-func checkDKIMPublicKey(ctx context.Context, resolver *net.Resolver, name, public string) bool {
+func checkDKIMPublicKey(ctx context.Context, resolver *net.Resolver, name, public string) string {
 	records, err := resolver.LookupTXT(ctx, name+".")
-	if err != nil || len(records) != 1 {
-		return false
+	if state := classifyDNS(len(records), err).State; state != "present" {
+		return state
+	}
+	if len(records) != 1 {
+		return "multiple"
 	}
 	tags := make(map[string]string)
 	for _, field := range strings.Split(records[0], ";") {
 		key, value, ok := strings.Cut(field, "=")
 		key = strings.TrimSpace(key)
 		if _, duplicate := tags[key]; duplicate {
-			return false
+			return "mismatch"
 		}
 		if ok {
 			tags[key] = strings.Join(strings.Fields(value), "")
 		}
 	}
-	return len(tags) == 3 && tags["v"] == "DKIM1" && tags["k"] == "rsa" && tags["p"] == public
+	if len(tags) == 3 && tags["v"] == "DKIM1" && tags["k"] == "rsa" && tags["p"] == public {
+		return "match"
+	}
+	return "mismatch"
 }
 
 func activeDKIMSelector(ctx context.Context, db folderQueryer, domain string) (string, error) {

@@ -72,39 +72,9 @@ func runDomainDNSCheck(out io.Writer, resolver *net.Resolver, args []string) err
 }
 
 func configuredDKIMSelector(ctx context.Context, domain string) (string, error) {
-	var db *sql.DB
-	var err error
-	switch env("HARBOR_DB_DRIVER", "sqlite") {
-	case "sqlite":
-		path, err := filepath.Abs(env("HARBOR_DB", "data/harbor.db"))
-		if err != nil {
-			return "", errors.New("could not resolve the configured SQLite database path")
-		}
-		path = filepath.ToSlash(path)
-		if !strings.HasPrefix(path, "/") {
-			path = "/" + path
-		}
-		uri := url.URL{Scheme: "file", Path: path, RawQuery: "mode=ro"}
-		db, err = sql.Open("sqlite", uri.String())
-		if err != nil {
-			return "", errors.New("could not open the configured SQLite database")
-		}
-	case "mysql":
-		source, err := fileSetting("HARBOR_MYSQL_DSN")
-		if err != nil {
-			return "", err
-		}
-		config, err := harborMySQLConfig(source)
-		if err != nil {
-			return "", err
-		}
-		connector, err := mysql.NewConnector(config)
-		if err != nil {
-			return "", errors.New("could not configure the MySQL connection")
-		}
-		db = sql.OpenDB(connector)
-	default:
-		return "", errors.New("use the sqlite or mysql database driver for --configured")
+	db, err := openConfiguredCheckDB()
+	if err != nil {
+		return "", err
 	}
 	defer db.Close()
 	selector, err := activeDKIMSelector(ctx, db, domain)
@@ -115,6 +85,42 @@ func configuredDKIMSelector(ctx context.Context, domain string) (string, error) 
 		return "", errors.New("no active DKIM selector is configured for this domain")
 	}
 	return selector, nil
+}
+
+func openConfiguredCheckDB() (*sql.DB, error) {
+	switch env("HARBOR_DB_DRIVER", "sqlite") {
+	case "sqlite":
+		path, err := filepath.Abs(env("HARBOR_DB", "data/harbor.db"))
+		if err != nil {
+			return nil, errors.New("could not resolve the configured SQLite database path")
+		}
+		path = filepath.ToSlash(path)
+		if !strings.HasPrefix(path, "/") {
+			path = "/" + path
+		}
+		uri := url.URL{Scheme: "file", Path: path, RawQuery: "mode=ro"}
+		db, err := sql.Open("sqlite", uri.String())
+		if err != nil {
+			return nil, errors.New("could not open the configured SQLite database")
+		}
+		return db, nil
+	case "mysql":
+		source, err := fileSetting("HARBOR_MYSQL_DSN")
+		if err != nil {
+			return nil, err
+		}
+		config, err := harborMySQLConfig(source)
+		if err != nil {
+			return nil, err
+		}
+		connector, err := mysql.NewConnector(config)
+		if err != nil {
+			return nil, errors.New("could not configure the MySQL connection")
+		}
+		return sql.OpenDB(connector), nil
+	default:
+		return nil, errors.New("use the sqlite or mysql database driver")
+	}
 }
 
 func lookupDomainDNS(ctx context.Context, resolver *net.Resolver, domain, selector string) domainDNS {

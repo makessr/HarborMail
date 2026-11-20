@@ -83,6 +83,16 @@ secrets_dir=${HARBOR_SECRETS_DIR:-./secrets}
 
 备份数据库时单独离线备份 `dkim-key`。数据库存储的是加密私钥，恢复时使用原来的加密密钥。启用签名的域在密钥缺失或无法解密时会等待重试。邮件的 From 地址须与 SMTP 信封发件地址一致。 [DKIM 密钥要求](https://www.rfc-editor.org/rfc/rfc8301.html)
 
+#### DKIM 上线预检
+
+升级实例、恢复备份或更换密钥文件后，从每个部署实例用实际的数据库配置和 DKIM 密钥检查当前签名配置。
+
+```bash
+docker compose run --rm --no-deps -T harbor dkim-check example.com
+```
+
+单二进制部署执行 `harbormail dkim-check example.com`。轮换时追加 `--pending` 检查待启用的选择器。命令只读取配置和 DNS，不改动密钥或发送邮件。JSON 输出中的 `keyState` 和 `dnsState` 均为 `match` 才返回 0。`secret_missing` 或 `secret_unusable` 表示应核对密钥文件挂载和格式，`decrypt_failed` 表示文件中的密钥无法解密库里的私钥。DNS 侧会区分缺失、重复、内容不匹配或查询失败。正式投递仍以收件方返回的验签结果为准。 [DKIM 公钥查询](https://www.rfc-editor.org/rfc/rfc6376.html#section-3.6.2.1)
+
 ### SMTP 中继预检
 
 为每个使用外发中继的发件域选一个发件地址。使用部署时相同的 Compose 文件、项目名及环境配置，保留已启用的中继认证、按域中继和私有 CA 覆盖文件。下面是已配置全局中继认证时的示例。 [Docker Compose run](https://docs.docker.com/reference/cli/docker/compose/run/)

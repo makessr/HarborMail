@@ -125,9 +125,9 @@ func (a *app) adminChangeDKIM(w http.ResponseWriter, r *http.Request, actor stri
 		}
 		if err == nil {
 			dnsCtx, stop := context.WithTimeout(ctx, 5*time.Second)
-			matches := checkDKIMPublicKey(dnsCtx, net.DefaultResolver, dkimDNSKey(domain, selector, public).Name, public)
+			state := checkDKIMPublicKey(dnsCtx, net.DefaultResolver, dkimDNSKey(domain, selector, public).Name, public)
 			stop()
-			if !matches {
+			if state != "match" {
 				fail(w, http.StatusConflict, "DNS 尚未返回匹配的 DKIM TXT 记录")
 				return
 			}
