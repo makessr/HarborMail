@@ -13,8 +13,12 @@ import (
 	"github.com/emersion/go-smtp"
 )
 
-func runRelayCheck(out io.Writer, sender string) error {
-	sender = strings.TrimSpace(sender)
+func runRelayCheck(out io.Writer, args ...string) error {
+	checkSender := len(args) == 2 && args[1] == "--mail-from"
+	if len(args) != 1 && !checkSender {
+		return errors.New("usage: harbormail relay-check SENDER_EMAIL [--mail-from]")
+	}
+	sender := strings.TrimSpace(args[0])
 	email, err := address(sender)
 	if err != nil || !strings.EqualFold(email, sender) {
 		return errors.New("relay-check requires a plain sender email address")
@@ -51,6 +55,17 @@ func runRelayCheck(out io.Writer, sender string) error {
 	} else {
 		_, err = fmt.Fprintln(out, "TLS verified; SMTP authentication is not configured")
 	}
+	if err != nil || !checkSender {
+		return err
+	}
+	if err := client.Mail(email, nil); err != nil {
+		return fmt.Errorf("MAIL FROM: %w", relayCheckError(ctx, err))
+	}
+	if err := client.Reset(); err != nil {
+		return fmt.Errorf("RSET: %w", relayCheckError(ctx, err))
+	}
+	_ = client.Quit()
+	_, err = fmt.Fprintln(out, "SMTP relay accepted MAIL FROM and reset the transaction. No mail was sent.")
 	return err
 }
 

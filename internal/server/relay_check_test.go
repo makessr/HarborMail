@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -32,6 +33,9 @@ func checkRelayMode(t *testing.T, mode string) {
 		t.Setenv(key, "")
 	}
 	var out bytes.Buffer
+	if err := runRelayCheck(&out, "user@example.com", "--invalid"); err == nil || !strings.Contains(err.Error(), "usage:") {
+		t.Fatalf("invalid option: %v", err)
+	}
 	if err := runRelayCheck(&out, "user@example.com"); err == nil || !strings.Contains(err.Error(), "no SMTP relay") {
 		t.Fatalf("missing relay: %v", err)
 	}
@@ -52,10 +56,10 @@ func checkRelayMode(t *testing.T, mode string) {
 	if err := os.WriteFile(passwordPath, []byte("fixture-password\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	var envelopeCommands atomic.Int32
+	var envelopeCommands, resets, deliveries atomic.Int32
 	a := &app{}
 	server := a.smtpServer(smtp.BackendFunc(func(*smtp.Conn) (smtp.Session, error) {
-		return relayCheckSession{envelopes: &envelopeCommands}, nil
+		return &relayCheckSession{envelopes: &envelopeCommands, resets: &resets, deliveries: &deliveries}, nil
 	}), &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12})
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -99,29 +103,67 @@ func checkRelayMode(t *testing.T, mode string) {
 		t.Fatalf("per-domain relay: %s %v", out.String(), err)
 	}
 	out.Reset()
-	err = runRelayCheck(&out, "user@bad.example.com")
+	err = runRelayCheck(&out, "user@bad.example.com", "--mail-from")
 	if err == nil || err.Error() != "SMTP relay authentication failed (SMTP 535)" ||
 		strings.Contains(out.String(), "bad-secret") || strings.Contains(out.String(), "fixture-user") {
 		t.Fatalf("credential redaction: %s %v", out.String(), err)
 	}
 	if count := envelopeCommands.Load(); count != 0 {
-		t.Fatalf("relay check attempted %d mail transactions", count)
+		t.Fatalf("unexpected MAIL FROM commands without a successful opt-in: %d", count)
+	}
+
+	out.Reset()
+	if err := runRelayCheck(&out, "user@TEAM.EXAMPLE.COM", "--mail-from"); err != nil ||
+		!strings.Contains(out.String(), "(per-domain, "+mode+")") || !strings.Contains(out.String(), "accepted MAIL FROM and reset") {
+		t.Fatalf("sender probe: %s %v", out.String(), err)
+	}
+	out.Reset()
+	err = runRelayCheck(&out, "blocked@example.com", "--mail-from")
+	if err == nil || err.Error() != "MAIL FROM: SMTP relay check failed (SMTP 550)" ||
+		strings.Contains(out.String(), "accepted MAIL FROM") || !strings.Contains(out.String(), "authentication verified") {
+		t.Fatalf("sender rejection: %s %v", out.String(), err)
+	}
+	if envelopeCommands.Load() != 2 || resets.Load() != 1 || deliveries.Load() != 0 {
+		t.Fatal("sender probe must reset the accepted envelope without using RCPT or DATA")
 	}
 }
 
 type relayCheckSession struct {
-	relayFixture
-	envelopes *atomic.Int32
+	envelopes, resets, deliveries *atomic.Int32
+	accepted                      bool
 }
 
-func (s relayCheckSession) Mail(_ string, _ *smtp.MailOptions) error {
+func (s *relayCheckSession) Mail(from string, _ *smtp.MailOptions) error {
 	s.envelopes.Add(1)
-	return errors.New("unexpected MAIL FROM")
+	if from != "user@team.example.com" {
+		return &smtp.SMTPError{Code: 550, Message: "Rejected sender; private relay policy"}
+	}
+	s.accepted = true
+	return nil
 }
 
-func (s relayCheckSession) AuthMechanisms() []string { return []string{sasl.Plain} }
+func (s *relayCheckSession) Reset() {
+	if s.accepted {
+		s.resets.Add(1)
+		s.accepted = false
+	}
+}
 
-func (s relayCheckSession) Auth(mechanism string) (sasl.Server, error) {
+func (s *relayCheckSession) Logout() error { return nil }
+
+func (s *relayCheckSession) Rcpt(_ string, _ *smtp.RcptOptions) error {
+	s.deliveries.Add(1)
+	return errors.New("unexpected RCPT")
+}
+
+func (s *relayCheckSession) Data(io.Reader) error {
+	s.deliveries.Add(1)
+	return errors.New("unexpected DATA")
+}
+
+func (s *relayCheckSession) AuthMechanisms() []string { return []string{sasl.Plain} }
+
+func (s *relayCheckSession) Auth(mechanism string) (sasl.Server, error) {
 	if mechanism != sasl.Plain {
 		return nil, smtp.ErrAuthUnknownMechanism
 	}

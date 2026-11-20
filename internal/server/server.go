@@ -60,10 +60,7 @@ func Run() {
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "relay-check" {
-		if len(os.Args) != 3 {
-			log.Fatal("usage: harbormail relay-check SENDER_EMAIL")
-		}
-		if err := runRelayCheck(os.Stdout, os.Args[2]); err != nil {
+		if err := runRelayCheck(os.Stdout, os.Args[2:]...); err != nil {
 			log.Fatal(err)
 		}
 		return

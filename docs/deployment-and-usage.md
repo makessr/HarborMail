@@ -272,7 +272,7 @@ docker run --rm -it --log-driver=none ghcr.io/makessr/harbormail:latest generate
 
 私有 CA 与系统 CA 一起使用。Harbor Mail 在启动时读取证书文件，文件无法读取或没有有效 PEM 证书时会报错。STARTTLS 和隐式 TLS 都验证证书链及中继地址中的主机名。
 
-上线前可运行 `harbormail relay-check hello@example.com`，从实际部署环境验证选中的中继、TLS 和已配置的认证。 [SMTP 中继预检](../ops/README.md#smtp-中继预检)
+上线前可运行 `harbormail relay-check hello@example.com`，验证选中的中继、TLS 和认证。追加 `--mail-from` 还可检查中继是否在信封阶段接受该地址，整个过程不会投递邮件。 [SMTP 中继预检](../ops/README.md#smtp-中继预检)
 
 选中域名后可手动检查 MX、SPF 和该域的 DMARC 记录。有 DKIM 选择器时，也可检查对应的公钥记录。填入中继提供的选择器或邮件 DKIM 签名中 `s=` 的值。结果以服务器 DNS 解析器看到的记录为准，实际投递和发信认证仍需联调。[DKIM 查询规则](https://www.rfc-editor.org/rfc/rfc6376.html#section-3.6.2.1) · [DMARC 标准](https://www.rfc-editor.org/info/rfc9989/)
 

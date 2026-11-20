@@ -67,7 +67,9 @@ docker compose -f compose.yaml -f compose.mysql.yaml -f compose.registry.yaml \
 
 单二进制部署使用服务的运行环境和可读的凭据文件执行 `/usr/local/bin/harbormail relay-check hello@example.com`。按域配置时，命令选取对应的专用中继。其余地址沿用全局中继。
 
-命令显示选中的中继、TLS 模式和认证结果。检查通过返回 0，配置、连接、证书或认证失败时返回非零状态。每次网络检查最多 20 秒。检查不读取数据库或队列，也不提交邮件。中继是否允许该发件地址、实际公网收发及 SPF、DKIM、DMARC 结果仍需实信验收。
+命令显示选中的中继、TLS 模式和认证结果。每次网络检查最多 20 秒。需要确认中继是否在信封阶段接受发件地址时，在地址后加 `--mail-from`，例如 `harbormail relay-check hello@example.com --mail-from`。命令在已验证的 TLS 连接上执行 `MAIL FROM`，接受后立即通过 `RSET` 取消事务，不提交收件人或正文。检查通过返回 0，失败返回非零状态和对应阶段。 [SMTP RSET](https://www.rfc-editor.org/rfc/rfc5321.html#section-4.1.1.5)
+
+检查不读取数据库或队列。中继可能在收件人或正文阶段继续校验，实际公网收发以及 SPF、DKIM、DMARC 结果仍需实信验收。
 
 CI 用两个独立 Harbor Mail 实例，验证默认中继、按域中继和跨实例回复。演练覆盖 SMTP AUTH、STARTTLS、隐式 TLS，以及发件归档、收件入箱和回复的邮件线程标头。
 

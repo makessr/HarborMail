@@ -47,7 +47,7 @@ ARM64 源码构建把 `GOARCH=amd64` 改为 `GOARCH=arm64`。准备好二进制�
 
 GitHub 的 `Verify Harbor Mail` 工作流统一执行 Go 回归、SQLite 与 MySQL 8.4 验证、前端和运维脚本语法检查及 Prometheus 告警规则测试。拉取请求与镜像、二进制发布都会运行这套检查，也可从 Actions 手动运行。
 
-`Publish Harbor Mail image` 检查通过后会并行构建 GHCR 镜像和同一提交的单文件程序。登录 GitHub 后，可在该次运行的 **Artifacts** 下载 Linux amd64、Linux arm64、Windows amd64、systemd 模板和 `SHA256SUMS`。推送 `vMAJOR.MINOR.PATCH` 版本标签时，同一构建流程会把这些文件上传到 GitHub Releases。
+`Publish Harbor Mail image` 检查通过后会并行构建 GHCR 镜像和同一提交的单文件程序。Actions 的 **Artifacts** 用于验收，下载需要登录 GitHub，文件会到期。推送 `vMAJOR.MINOR.PATCH` 标签后，Linux amd64、Linux arm64、Windows amd64、systemd 模板和 `SHA256SUMS` 会发布到 [GitHub Releases](https://github.com/makessr/HarborMail/releases/latest)，可公开下载。
 
 | 目录 | 内容 |
 | --- | --- |
