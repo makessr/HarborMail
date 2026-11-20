@@ -27,7 +27,10 @@
 <body>
   <main id="login" class="login" hidden>
     <form id="login-form" class="login-form">
-      <h1 class="brand"><img src="/harbor-mail-logo.png" alt="" width="64" height="64"> Harbor Mail</h1>
+      <div class="login-heading">
+        <h1 class="brand"><img src="/harbor-mail-logo.png" alt="" width="64" height="64"> Harbor Mail</h1>
+        <a class="icon" href="https://github.com/makessr/HarborMail" target="_blank" rel="noopener noreferrer" aria-label="Harbor Mail 的 GitHub 仓库（在新标签页打开）" title="GitHub"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#github-fill"></use></svg></a>
+      </div>
       <label>邮箱<input name="email" type="email" autocomplete="username" required></label>
       <label>密码<input name="password" type="password" autocomplete="current-password" required></label>
       <label id="login-mfa-field" hidden>管理员验证码或恢复码<input name="code" type="text" autocomplete="one-time-code" maxlength="32" spellcheck="false"></label>
@@ -73,6 +76,7 @@
           <button id="show-app-passwords">应用密码</button>
           <button id="show-web-sessions">登录设备</button>
           <button id="show-signatures">邮件签名</button>
+          <a href="https://github.com/makessr/HarborMail" target="_blank" rel="noopener noreferrer" aria-label="Harbor Mail 的 GitHub 仓库（在新标签页打开）"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#github-fill"></use></svg> GitHub</a>
           <button id="logout">退出</button>
         </div>
       </details>
