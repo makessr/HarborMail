@@ -16,16 +16,12 @@ function renderDomainRows(domains) {
       overviewLink("查看账号", "/admin/accounts?" + new URLSearchParams({ domain: name })),
       overviewLink("新建邮箱", "/admin/accounts?" + new URLSearchParams({ domain: name, create: "1" }))
     );
-    const dns = overviewLink("检查 DNS", "#admin-dns-title");
-    dns.addEventListener("click", () => {
-      if (dnsDomain.disabled) return;
-      if (dnsDomain.value !== name) {
-        dnsDomain.value = name;
-        dnsResults.hidden = true;
-        dnsStatus.textContent = "";
-      }
-      dnsDomain.focus();
-    });
+    const dns = document.createElement("button");
+    dns.type = "button";
+    dns.className = "secondary";
+    dns.textContent = "DNS 记录";
+    dns.setAttribute("aria-label", "配置 " + name + " 的 DNS 记录");
+    dns.addEventListener("click", () => openDNSPlan(name));
     actions.append(dns);
     if (!domainAdminOnly) {
       const dkim = document.createElement("button");
@@ -161,7 +157,7 @@ function setupAdminDomains() {
     adminElement("admin-domain-dialog-title").textContent = title;
     adminElement("admin-domain-impact").textContent = removing
       ? "移除后，此域名将从后台列表中消失。"
-      : "登记后可检查 DNS 和创建邮箱。公网收信需要配置 MX。";
+      : "登记后会显示收发邮件所需的 DNS 记录。";
     save.textContent = title;
     errorOutput.textContent = "";
     dialog.showModal();
@@ -199,11 +195,7 @@ function setupAdminDomains() {
       dialog.close();
       status.textContent = (remove ? "已移除 " : "已登记 ") + name + "。";
       await loadOverview();
-      if (!remove && Array.from(dnsDomain.options).some(option => option.value === name)) {
-        dnsDomain.value = name;
-        dnsResults.hidden = true;
-        dnsStatus.textContent = "";
-      }
+      if (!remove) void openDNSPlan(name);
     } catch {
       errorOutput.textContent = "未收到保存结果，请关闭窗口并刷新域名列表核对。";
     } finally {

@@ -225,6 +225,8 @@ MySQL 的 `3306`、两个 Redis 的 `6379` 和扫描组件端口均留在 Compos
 
 ## 管理后台
 
+首次登录全站管理后台，可从概览的「首次设置」添加域名、创建邮箱和检查收发。账号、别名、配额、队列、隔离及审计由后台处理。监听端口、数据库连接、证书、SMTP 中继和扫描服务由服务器配置。DNS 记录在域名服务商发布。
+
 「存储用量」位于 `/admin/storage`，也可从账号列表进入。选定主邮箱后，按文件夹和投递状态查看原始邮件的数量与字节数。计算包括附件和实际保存的副本，队列按任务计数。统计按请求计算，不修改数据，也不包含数据库索引、重复文本字段、空闲页或备份，因此不能用来估算磁盘剩余空间或判断配额。
 
 管理员可为每个主邮箱保存容量预警阈值（整数 MiB，最大 1 TiB，填 0 关闭）。用量以文件夹和投递队列保存的原文之和计算，达到 80% 和 100% 时在存储页显示状态。保存阈值时需验证管理员主邮箱密码，变更与审计同事务写入 SQLite 或 MySQL。预警随用量查询更新，收发仍按原有规则进行。
@@ -263,7 +265,7 @@ docker run --rm -it --log-driver=none ghcr.io/makessr/harbormail:latest generate
 
 升级共享 MySQL 的部署时，将所有实例更新至支持共享限速的版本。程序启动时会自动创建限速表。
 
-「域名」位于 `/admin/domains`，显示后台登记的域名，以及由已有主邮箱和别名汇总出的域名。管理员可以先登记域名，再检查 DNS、查看关联账号或直接创建邮箱。新增和移除须重新验证管理员主邮箱密码，域名登记与审计随 SQLite 或 MySQL 保存。后台只允许移除没有主邮箱和别名的登记。新增域名后，公网收发仍需按[接入真实域名](#接入真实域名)完成 DNS 和中继配置。
+「域名」位于 `/admin/domains`，显示后台登记的域名，以及由已有主邮箱和别名汇总出的域名。管理员登记域名后，后台会立即打开「DNS 记录」，给出可复制的名称和值。域名列表也可重新打开清单。添加记录后，再运行「检查 DNS」、查看关联账号或创建邮箱。新增和移除须重新验证管理员主邮箱密码，域名登记与审计随 SQLite 或 MySQL 保存。后台只允许移除没有主邮箱和别名的登记。新增域名后，公网收发仍需按[接入真实域名](#接入真实域名)完成 DNS 和中继配置。
 
 可用 `HARBOR_DOMAIN_ADMINS` 或 `HARBOR_DOMAIN_ADMINS_FILE` 分配域管理员，例如 `{"operator@example.com":["team.example.com"]}`。账号须来自启动配置。域管理员可以在授权域创建普通邮箱、管理同时位于授权范围的别名和目标邮箱、检查 DNS。全站安全、投递队列、审计与管理员账号操作仍由全站管理员负责。可为域管理员同样配置 TOTP。
 
@@ -380,10 +382,21 @@ Docker 的 MySQL 模式已包含 Redis。如果使用已有 Redis，将 `compose
 
 ## 接入真实域名
 
-1. 将邮件主机名解析到收信服务器，将每个收信域名的 MX 指向该主机，并把公网 TCP 25 转发到 Harbor Mail 的 SMTP 端口。
-2. 给 Web 界面配 HTTPS。使用反向代理时保持 Web 监听在内部地址，代理端配置登录接口限流，后端开启 Secure Cookie。
-3. 配置支持发件域名的 SMTP 中继，按中继要求配置 SPF、DKIM 和 DMARC。外部邮件先入发件箱，再由中继投递。
-4. 备份 SQLite 文件时使用 SQLite 在线备份工具，或停服后备份整个数据库目录。证书与账号配置另行备份。
+1. 选一个指向服务器的邮件主机，例如 `mail.example.com`。登录「管理后台 → 域名」添加邮件域 `example.com`，在打开的「DNS 记录」中填写主机名、公网 IP 和中继商提供的 SPF include，复制记录到域名的 DNS 服务商。
+2. 直收公网邮件需要让 TCP 25 到达 Harbor Mail。Docker 部署可在 `.env` 设置 `HARBOR_SMTP_BIND=0.0.0.0` 和 `HARBOR_SMTP_PORT=25` 后重建服务，并核对云安全组及防火墙。检查现有 TCP 25 是否已被占用，已有收信网关时使用其转发方案。公网邮件服务器按 MX 连接 TCP 25。
+3. 给 Web 邮箱配 HTTPS。使用 1Panel 时，在网站管理里为 Web 邮箱建立反向代理。同机 OpenResty 使用宿主机网络时，回源可填 `http://127.0.0.1:8080`。代理在独立容器网络时，使用它可访问的私有回源地址。SMTP 走自己的 TCP 端口。为代理端配置登录限流，在 Harbor Mail 设置 `HARBOR_SECURE_COOKIE=true`。 [1Panel 反向代理](https://1panel.cn/blog/reverse-proxy-security-v1-2-0.html)
+4. 配置支持发件域名的 SMTP 中继。中继商有专用退信域名或要求额外的 TXT、CNAME 时，按其记录名称和值添加。外发邮件入队后由中继投递。备份和恢复按[生产运行手册](../ops/README.md)执行。
+
+| 类型 | 名称示例 | 值或来源 |
+| --- | --- | --- |
+| A | `mail.example.com` | 服务器的公网 IPv4 |
+| AAAA | `mail.example.com` | 服务器的公网 IPv6，确认公网 IPv6 SMTP 可达后添加 |
+| MX | `example.com` | `mail.example.com`，优先级 `10` |
+| TXT（SPF） | `example.com` | 中继商给出的授权值。已有 SPF 时合并授权并保留单条记录 |
+| TXT 或 CNAME（DKIM） | 选择器对应的 `._domainkey` 名称 | 复制内置 DKIM 公钥或使用中继商给出的记录 |
+| TXT（DMARC） | `_dmarc.example.com` | 新域可从 `v=DMARC1; p=none` 开始，已有域保留当前策略 |
+
+DNS 后台若要求相对名称，在 `example.com` 区域中分别填 `mail`、`@` 和 `_dmarc`。使用 Cloudflare 时，MX 指向的 `mail` 的 A 或 AAAA 记录选择「仅 DNS」。已有旧邮件服务时，在确认切换时机后再调整 MX。 [Cloudflare 邮件记录](https://developers.cloudflare.com/dns/manage-dns-records/how-to/email-records/) · [SPF 标准](https://www.rfc-editor.org/info/rfc7208/)
 
 全站管理员可在「管理后台 → 域名 → 域名上线检查」核对 DNS、内置 DKIM 和中继连接。HTTPS 探测使用管理员配置的 `HARBOR_PUBLIC_HTTPS_HOST`（默认使用 `HARBOR_CLIENT_HOST`）及 `HARBOR_PUBLIC_HTTPS_PORT`（默认 443），从 Harbor Mail 所在网络检查证书。上传收件方导出的 EML 可核验 DKIM，文件仅用于当前请求。公网 TCP 25、实际收发和 SPF/DMARC 对齐仍需在外部收件方验收。[上线验收](../ops/README.md#首次启动与上线验收)
 

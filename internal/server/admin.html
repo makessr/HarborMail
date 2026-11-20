@@ -16,6 +16,7 @@
   <script src="/admin-quarantine.js" defer></script>
   <script src="/admin-account-create.js" defer></script>
   <script src="/admin-domains.js" defer></script>
+  <script src="/admin-dns-plan.js" defer></script>
   <script src="/admin-storage.js" defer></script>
   <script src="/admin-mailbox-lifecycle.js" defer></script>
   <script src="/admin.js" defer></script>
@@ -62,6 +63,19 @@
       </form></dialog>
     </section>
     <div id="admin-overview" hidden>
+      <details class="admin-panel admin-onboarding" open>
+        <summary>首次设置</summary>
+        <ol class="admin-onboarding-steps">
+          <li><a href="/admin/domains?create=1">添加邮件域名</a><span>复制 DNS 记录，到域名服务商添加。</span></li>
+          <li><a href="/admin/accounts">创建邮箱</a><span>选择域名，创建用户的登录地址。</span></li>
+          <li><a href="/admin/domains#admin-dns-title">检查收发配置</a><span>检查 DNS 和 SMTP 中继，再测试收发。</span></li>
+        </ol>
+        <dl class="admin-settings-locations">
+          <dt>管理后台</dt><dd>域名、邮箱、别名、配额、队列、隔离和审计。</dd>
+          <dt>服务器配置</dt><dd>Docker 的 <code>.env</code> 和 Compose 设置端口、数据库、证书、中继和扫描服务。</dd>
+          <dt>域名服务商</dt><dd>发布 A、MX、SPF、DKIM 和 DMARC。</dd>
+        </dl>
+      </details>
       <dl class="admin-kpis" id="admin-kpis" aria-label="关键指标"></dl>
       <div class="admin-overview-grid">
         <section class="admin-panel" aria-labelledby="admin-trend-title">
@@ -411,6 +425,35 @@
         </footer>
       </div>
     </form>
+  </dialog>
+  <dialog id="admin-dns-plan-dialog" class="admin-dns-plan" aria-labelledby="admin-dns-plan-title">
+    <div class="editor">
+      <header class="heading">
+        <h2 id="admin-dns-plan-title">DNS 记录</h2>
+        <button class="icon" id="admin-dns-plan-close" type="button" aria-label="关闭"><svg class="glyph" aria-hidden="true"><use href="/icons.svg#close-line"></use></svg></button>
+      </header>
+      <form id="admin-dns-plan-form" class="admin-dns-plan-inputs">
+        <label>邮件主机名<input name="host" maxlength="254" autocomplete="off" spellcheck="false" placeholder="mail.example.com"></label>
+        <label>公网 IPv4<input name="ipv4" maxlength="15" inputmode="decimal" autocomplete="off" placeholder="服务器公网地址"></label>
+        <label>公网 IPv6（选填）<input name="ipv6" maxlength="45" autocomplete="off" spellcheck="false"></label>
+        <label>中继 SPF include（选填）<input name="spfInclude" maxlength="254" autocomplete="off" spellcheck="false" placeholder="中继商提供的域名"></label>
+        <button class="secondary" id="admin-dns-plan-build" type="submit">生成记录</button>
+      </form>
+      <p id="admin-dns-plan-status" role="status"></p>
+      <div id="admin-dns-plan-output" hidden>
+        <div class="admin-table"><table>
+          <thead><tr><th scope="col">类型</th><th scope="col">名称</th><th scope="col">值</th></tr></thead>
+          <tbody id="admin-dns-plan-records"></tbody>
+        </table></div>
+        <p class="admin-note">在域名的 DNS 服务商添加记录。Cloudflare 的邮件主机请选择「仅 DNS」，并确认公网 TCP 25 能到达收信服务。</p>
+        <p class="admin-note">已有 SPF 时合并中继授权，保留一条 SPF。已有 DMARC 时保留当前策略。</p>
+        <p class="admin-note" id="admin-dns-plan-dkim-note" hidden>中继商提供的 DKIM 记录也按其要求添加。</p>
+        <footer>
+          <button class="secondary" id="admin-dns-plan-dkim" type="button" hidden>管理 DKIM</button>
+          <button class="secondary" id="admin-dns-plan-check" type="button">检查 DNS</button>
+        </footer>
+      </div>
+    </div>
   </dialog>
   <dialog id="admin-account-add-dialog" aria-labelledby="admin-account-add-title">
     <form class="editor" id="admin-account-add-form" method="post">

@@ -143,6 +143,16 @@ async function loadOverview() {
     renderAccounts();
     activePanel.hidden = false;
     statusOutput.textContent = "";
+    if (showDomains && !domainAdminOnly) {
+      const url = new URL(location.href);
+      if (url.searchParams.get("create") === "1") {
+        url.searchParams.delete("create");
+        history.replaceState(null, "", url);
+        openDomainEditor();
+      } else if (url.hash === "#admin-dns-title") {
+        adminElement("admin-dns-title").scrollIntoView({ block: "start" });
+      }
+    }
     if (showAccounts && domainFromLink && data.domains.some(domain => domain.name === domainFromLink)) {
       const url = new URL(location.href);
       if (url.searchParams.get("create") === "1") {
@@ -653,6 +663,7 @@ window.addEventListener("pageshow", event => {
 });
 if (showQueue) setupDeliveryQueue();
 const openAccountCreate = showAccounts ? setupAdminAccountCreate() : null;
+const openDNSPlan = showDomains ? setupDNSPlan() : null;
 const openDomainEditor = showDomains ? setupAdminDomains() : null;
 const openDKIMEditor = showDomains && !domainAdminOnly ? setupAdminDKIM() : null;
 if (showAccounts && !domainAdminOnly) setupMailboxLifecycle();

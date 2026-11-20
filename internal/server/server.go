@@ -621,6 +621,7 @@ func (a *app) routes() http.Handler {
 	mux.HandleFunc("POST /api/admin/accounts/{email}/password", a.adminOnly(a.adminResetPassword))
 	mux.HandleFunc("POST /api/admin/accounts/{email}/lifecycle", a.adminOnly(a.adminMailboxLifecycle))
 	mux.HandleFunc("GET /api/admin/domains/{domain}/dns", a.domainAdminOnly(a.adminDomainDNS))
+	mux.HandleFunc("GET /api/admin/domains/{domain}/dns-plan", a.domainAdminOnly(a.adminDomainDNSPlan))
 	mux.HandleFunc("POST /api/admin/domains/{domain}/verify", a.adminOnly(a.adminVerifyDomainMail))
 	mux.HandleFunc("POST /api/admin/domains", a.adminOnly(a.adminChangeDomain))
 	mux.HandleFunc("GET /api/admin/domains/{domain}/dkim", a.adminOnly(a.adminDKIMStatus))
