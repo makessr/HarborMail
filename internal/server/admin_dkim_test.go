@@ -108,6 +108,27 @@ func TestAdminDKIMLifecycle(t *testing.T) {
 			t.Fatalf("unexpected preflight report: %+v", result)
 		}
 	}
+	checkBatch := func(slot string, failed int, domains []string, args ...string) dkimCheckBatch {
+		t.Helper()
+		var out bytes.Buffer
+		err := runDKIMCheck(&out, net.DefaultResolver, append([]string{"--all"}, args...))
+		if (err == nil) != (len(domains) > 0 && failed == 0) {
+			t.Fatalf("unexpected batch exit result: %v", err)
+		}
+		var result dkimCheckBatch
+		if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+			t.Fatal(err)
+		}
+		if result.Slot != slot || result.Checked != len(domains) || result.Failed != failed || len(result.Domains) != len(domains) || result.Domains == nil {
+			t.Fatalf("unexpected batch report: %+v", result)
+		}
+		for i, name := range domains {
+			if result.Domains[i].Domain != name || result.Domains[i].Slot != slot {
+				t.Fatalf("unexpected batch item: %+v", result.Domains[i])
+			}
+		}
+		return result
+	}
 	admin := login("admin@" + domain)
 	change(login("user@"+domain), "generate", "", password, http.StatusForbidden)
 	change(admin, "generate", "", "wrong", http.StatusForbidden)
@@ -116,7 +137,9 @@ func TestAdminDKIMLifecycle(t *testing.T) {
 		t.Fatal("key generation must only return a pending public record")
 	}
 	check("not_configured", "skipped", "active")
+	checkBatch("active", 0, nil)
 	check("match", "missing", "pending", "--pending")
+	checkBatch("pending", 1, []string{domain}, "--pending")
 	change(admin, "enable", first.Pending.Selector, password, http.StatusConflict)
 	wrongRecord := *first.Pending
 	wrongRecord.TXT += "x"
@@ -129,6 +152,17 @@ func TestAdminDKIMLifecycle(t *testing.T) {
 		t.Fatal("DNS confirmation must activate the pending key")
 	}
 	check("match", "match", "active")
+	const secondDomain = "zz-mail.test"
+	if _, err := db.Exec(`INSERT INTO domain_dkim_keys(domain,slot,selector,public_key,sealed_key)
+		VALUES (?,'active','fixture','fixture-public',X'00')`, secondDomain); err != nil {
+		t.Fatal(err)
+	}
+	batch := checkBatch("active", 1, []string{domain, secondDomain})
+	if batch.Domains[0].KeyState != "match" || batch.Domains[0].DNSState != "match" ||
+		batch.Domains[1].KeyState != "decrypt_failed" || batch.Domains[1].DNSState != "missing" {
+		t.Fatalf("batch did not preserve each domain's result: %+v", batch)
+	}
+	checkBatch("pending", 0, nil, "--pending")
 	t.Setenv("HARBOR_DKIM_KEY", "")
 	check("secret_missing", "match", "active")
 	t.Setenv("HARBOR_DKIM_KEY", "not-hex")

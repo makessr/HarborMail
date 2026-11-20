@@ -93,6 +93,8 @@ docker compose run --rm --no-deps -T harbor dkim-check example.com
 
 单二进制部署执行 `harbormail dkim-check example.com`。轮换时追加 `--pending` 检查待启用的选择器。命令只读取配置和 DNS，不改动密钥或发送邮件。JSON 输出中的 `keyState` 和 `dnsState` 均为 `match` 才返回 0。`secret_missing` 或 `secret_unusable` 表示应核对密钥文件挂载和格式，`decrypt_failed` 表示文件中的密钥无法解密库里的私钥。DNS 侧会区分缺失、重复、内容不匹配或查询失败。正式投递仍以收件方返回的验签结果为准。 [DKIM 公钥查询](https://www.rfc-editor.org/rfc/rfc6376.html#section-3.6.2.1)
 
+多域名部署可用 `docker compose run --rm --no-deps -T harbor dkim-check --all` 一次检查所有已启用的 DKIM 域名。`--all --pending` 检查所有待启用的密钥。JSON 包含检查数 `checked`、失败数 `failed` 和按域名排序的结果。至少检查到一个域名且全部通过才返回 0。对应状态下没有配置时，输出空列表和 `checked: 0`。恢复后请与备份前记录的预期域名核对，避免漏掉尚未恢复的配置。
+
 #### 收件原文验签
 
 向外部邮箱发送一封测试邮件，从收件方下载原始 `.eml`，保留完整邮件头和正文。用要确认的签名域和选择器执行验签。省略选择器时，确认该域任一签名通过即可。
@@ -353,5 +355,5 @@ bash ops/backup.sh export SNAPSHOT_ID /srv/harbor-recovery/restore-drill
 
 1. 暂停外部写入并停止所有连接原库的 Harbor 实例。记录原镜像版本、Compose 文件顺序、环境文件和数据路径。保留原数据目录或 MySQL 库及对应凭据。
 2. 使用新的数据目录或恢复库启动。SQLite 绑定挂载可通过 `HARBOR_DATA_PATH` 指向新目录。MySQL 使用新的 DSN 文件，通过独立的 `HARBOR_SECRETS_DIR` 为对应部署指定文件。各实例统一设置 `HARBOR_PAUSE_OUTBOX=true`。保留原配置与数据，禁止让意外启动的旧实例访问恢复库。
-3. 检查 `/healthz`、登录、样本邮件、邮件协议及发件箱。将恢复的队列与中继日志对照，处置已成功投递和结果待确认的任务。确认可切换后，在所有实例将 `HARBOR_PAUSE_OUTBOX` 改为 `false`，重建 Harbor 容器，再逐步开放流量。
+3. 检查 `/healthz`、登录、样本邮件、邮件协议及发件箱。启用内置 DKIM 的部署，在各实例运行 `dkim-check --all`，核对预期域名及检查结果。将恢复的队列与中继日志对照，处置已成功投递和结果待确认的任务。确认可切换后，在所有实例将 `HARBOR_PAUSE_OUTBOX` 改为 `false`，重建 Harbor 容器，再逐步开放流量。
 4. 回滚时再次关闭外部写入并停止所有 Harbor 实例。若恢复库已接受新写入，先保留该库并记录新增邮件、队列及账号变更，以便对账。恢复原数据目录或 DSN，用支持暂停队列且与原库兼容的镜像启动。逐实例确认「发件队列」显示「暂停」，核对队列并决定如何处理分叉后，再恢复投递和外部写入。
