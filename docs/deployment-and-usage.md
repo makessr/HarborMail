@@ -395,6 +395,8 @@ docker compose -f compose.yaml -f compose.acme.yaml up -d --build --wait
 
 Harbor 在启动时检查缓存目录能否写入。出现 `HARBOR_ACME_CACHE is not writable` 时，检查目录权限与挂载的读写状态。首次签发成功后客户端即可建立受信任的 TLS 连接。续签成功后，新建连接使用新证书，无需重启 Harbor。容器重建时保留 `harbor_data` 卷。 [Go autocert](https://pkg.go.dev/golang.org/x/crypto%40v0.59.0/acme/autocert)
 
+CI 使用本地 Pebble 测试 CA 验证 HTTP-01、TLS-ALPN-01、证书续签和缓存重启。接入真实域名前，使用 CA 的测试环境和独立缓存核对公网挑战路径、实际接入节点提供的证书，以及续签后的证书有效期。 [Pebble 测试 CA](https://github.com/letsencrypt/pebble/tree/v2.10.3)
+
 ## 邮箱偏好
 
 在网页左下角打开「邮箱偏好」。可以选择浅色、深色或跟随当前设备系统主题，并在舒适与紧凑列表间切换。紧凑列表隐藏邮件正文摘要，保留发件人、主题、日期和发件箱状态。「打开邮件时自动标为已读」默认开启，可关闭并通过阅读工具栏手动标记。

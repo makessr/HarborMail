@@ -19,6 +19,19 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+      - name: Test ACME issuance and renewal
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          fixture="$RUNNER_TEMP/harbor-pebble"
+          mkdir -p "$fixture"
+          archive="$fixture/pebble-linux-amd64.tar.gz"
+          curl --fail --silent --show-error --location --retry 3 --max-time 45 \
+            https://github.com/letsencrypt/pebble/releases/download/v2.10.3/pebble-linux-amd64.tar.gz \
+            --output "$archive"
+          printf '%s  %s\n' 7e33cf3e426b67e9e647c44e8cc91683caa8ab331f7a99e5e27fcee291c4c7e2 "$archive" | sha256sum --check
+          tar -xzf "$archive" -C "$fixture" --strip-components=3 pebble-linux-amd64/linux/amd64/pebble
+          HARBOR_TEST_PEBBLE="$fixture/pebble" go test ./internal/server -run '^TestACMECertificateLifecycle$' -count=1 -timeout=2m -v
       - name: Test SQLite and MySQL
         shell: bash
         run: |
