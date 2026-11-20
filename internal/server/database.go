@@ -63,6 +63,15 @@ var sqliteSchema = []string{
 	)`,
 	`CREATE INDEX IF NOT EXISTS outbox_sender ON outbox(sender,id)`,
 	`CREATE INDEX IF NOT EXISTS outbox_ready ON outbox(state,due,lease)`,
+	`CREATE TABLE IF NOT EXISTS domain_dkim_keys (
+		domain TEXT NOT NULL, slot TEXT NOT NULL, selector TEXT NOT NULL, public_key TEXT NOT NULL,
+		sealed_key BLOB NOT NULL, PRIMARY KEY(domain,slot)
+	)`,
+	`CREATE TABLE IF NOT EXISTS outbox_dkim_signatures (
+		outbox_id INTEGER PRIMARY KEY, selector TEXT NOT NULL, header TEXT NOT NULL
+	)`,
+	`CREATE TRIGGER IF NOT EXISTS delete_outbox_dkim_signature AFTER DELETE ON outbox
+		BEGIN DELETE FROM outbox_dkim_signatures WHERE outbox_id=OLD.id; END`,
 	`CREATE TABLE IF NOT EXISTS outbox_recipient_progress (
 		outbox_id INTEGER NOT NULL, sender TEXT NOT NULL, recipient TEXT NOT NULL,
 		state TEXT NOT NULL, attempts INTEGER NOT NULL, due INTEGER NOT NULL, smtp_code INTEGER NOT NULL,
@@ -226,6 +235,14 @@ var mysqlSchema = []string{
 		claim CHAR(64) NOT NULL DEFAULT '', reason VARCHAR(160) NOT NULL DEFAULT '',
 		KEY outbox_sender (sender,id), KEY outbox_ready (state,due,lease)
 	) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin`,
+	`CREATE TABLE IF NOT EXISTS domain_dkim_keys (
+		domain VARCHAR(253) NOT NULL, slot VARCHAR(8) NOT NULL, selector VARCHAR(63) NOT NULL, public_key TEXT NOT NULL,
+		sealed_key BLOB NOT NULL, PRIMARY KEY(domain,slot)
+	) ENGINE=InnoDB DEFAULT CHARACTER SET ascii COLLATE ascii_bin`,
+	`CREATE TABLE IF NOT EXISTS outbox_dkim_signatures (
+		outbox_id BIGINT PRIMARY KEY, selector VARCHAR(63) NOT NULL, header TEXT NOT NULL,
+		FOREIGN KEY(outbox_id) REFERENCES outbox(id) ON DELETE CASCADE
+	) ENGINE=InnoDB DEFAULT CHARACTER SET ascii COLLATE ascii_bin`,
 	`CREATE TABLE IF NOT EXISTS outbox_recipient_progress (
 		outbox_id BIGINT NOT NULL, sender VARCHAR(254) NOT NULL, recipient VARCHAR(254) NOT NULL,
 		state VARCHAR(16) NOT NULL, attempts INT NOT NULL, due BIGINT NOT NULL, smtp_code INT NOT NULL,

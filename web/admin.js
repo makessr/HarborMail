@@ -566,7 +566,7 @@ adminElement("admin-dns-form").addEventListener("submit", async event => {
       ["MX", mx], ["SPF", describeDNS(data.spf)], ["DMARC", describeDNS(data.dmarc)], ["DKIM", describeDNS(data.dkim)]
     ]);
     dnsResults.hidden = false;
-    dnsStatus.textContent = "检查结果 · " + domain + (selector ? " · DKIM " + selector : "");
+    dnsStatus.textContent = "检查结果 · " + domain + (data.dkimSelector ? " · DKIM " + data.dkimSelector : "");
   } catch (error) {
     dnsStatus.textContent = error.message;
   } finally {
@@ -602,5 +602,6 @@ window.addEventListener("pageshow", event => {
 if (showQueue) setupDeliveryQueue();
 const openAccountCreate = showAccounts ? setupAdminAccountCreate() : null;
 const openDomainEditor = showDomains ? setupAdminDomains() : null;
+const openDKIMEditor = showDomains && !domainAdminOnly ? setupAdminDKIM() : null;
 if (showAccounts && !domainAdminOnly) setupMailboxLifecycle();
 void loadPage();

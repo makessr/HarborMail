@@ -221,6 +221,10 @@ func Run() {
 		log.Fatal(err)
 	}
 	defer a.db.Close()
+	a.dkimCipher, err = loadDKIMCipher()
+	if err != nil {
+		log.Fatal(err)
+	}
 	if driver == "mysql" {
 		limiter := &mysqlLoginLimiter{db: a.db}
 		a.webLogin.shared, a.webLogin.scope = limiter, "web"
@@ -544,6 +548,8 @@ func (a *app) routes() http.Handler {
 	mux.HandleFunc("POST /api/admin/accounts/{email}/lifecycle", a.adminOnly(a.adminMailboxLifecycle))
 	mux.HandleFunc("GET /api/admin/domains/{domain}/dns", a.domainAdminOnly(a.adminDomainDNS))
 	mux.HandleFunc("POST /api/admin/domains", a.adminOnly(a.adminChangeDomain))
+	mux.HandleFunc("GET /api/admin/domains/{domain}/dkim", a.adminOnly(a.adminDKIMStatus))
+	mux.HandleFunc("POST /api/admin/domains/{domain}/dkim", a.adminOnly(a.adminChangeDKIM))
 	mux.HandleFunc("GET /api/admin/queue", a.adminOnly(a.adminQueue))
 	mux.HandleFunc("POST /api/admin/queue/{id}/retry", a.adminOnly(a.adminRetryDelivery))
 	mux.HandleFunc("POST /api/admin/queue/{id}/resolve", a.adminOnly(a.adminResolveDelivery))

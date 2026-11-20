@@ -9,7 +9,7 @@ function setupAdminAudit() {
   const status = adminElement("admin-audit-status");
   const more = adminElement("admin-audit-more");
   const labels = { ...accessLabels, retry: "提前重试投递", alias_add: "添加收信别名", alias_remove: "移除收信别名",
-    domain_add: "新增域名", domain_remove: "移除域名",
+    domain_add: "新增域名", domain_remove: "移除域名", dkim_generate: "生成 DKIM 密钥", dkim_enable: "启用 DKIM 签名", dkim_disable: "停用 DKIM 签名",
     delivery_confirmed: "确认中继已接收", delivery_rejected: "确认中继未接收",
     recipient_confirmed: "确认单地址已接收", recipient_rejected: "确认单地址未接收" };
   const timestamp = new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "medium" });

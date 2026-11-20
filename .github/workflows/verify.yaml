@@ -101,6 +101,7 @@ jobs:
               ([.ports[].target] | index(8081) | not)'
           docker compose -f compose.yaml -f compose.mysql.yaml -f compose.registry.yaml \
             -f compose.relay-auth.yaml -f compose.domain-relays.yaml -f compose.relay-ca.yaml config --quiet
+          docker compose -f compose.yaml -f compose.mysql.yaml -f compose.registry.yaml -f compose.dkim.yaml config --quiet
           docker run --rm --network none --volume "$PWD:/src:ro" --workdir /src \
             --entrypoint /bin/promtool prom/prometheus:v3.5.0 test rules ops/prometheus-rules.test.yaml
           docker run --rm --network none --volume "$PWD:/src:ro" --workdir /src \

@@ -27,6 +27,15 @@ function renderDomainRows(domains) {
       dnsDomain.focus();
     });
     actions.append(dns);
+    if (!domainAdminOnly) {
+      const dkim = document.createElement("button");
+      dkim.type = "button";
+      dkim.className = "secondary";
+      dkim.textContent = "DKIM";
+      dkim.setAttribute("aria-label", "管理 " + name + " 的 DKIM");
+      dkim.addEventListener("click", () => openDKIMEditor(name));
+      actions.append(dkim);
+    }
     if (!domainAdminOnly && managed && accounts === 0 && aliases === 0) {
       const remove = document.createElement("button");
       remove.type = "button";
@@ -40,6 +49,97 @@ function renderDomainRows(domains) {
     content.append(row);
   }
   adminElement("admin-domain-list").replaceChildren(content);
+}
+
+function setupAdminDKIM() {
+  const dialog = adminElement("admin-dkim-dialog");
+  const form = adminElement("admin-dkim-form");
+  const close = adminElement("admin-dkim-close");
+  const status = adminElement("admin-dkim-status");
+  const controls = adminElement("admin-dkim-controls");
+  const dns = adminElement("admin-dkim-dns");
+  const { password, recordName, recordValue } = form.elements;
+  const buttons = [...form.querySelectorAll("button[name=action]")];
+  const [generate, enable, disable] = buttons;
+  let domain = "";
+  let current = {};
+
+  function render(data) {
+    current = data;
+    const record = data.pending || data.active;
+    renderDetails("admin-dkim-state", [
+      ["当前选择器", data.active?.selector || "未启用"],
+      ...(data.pending ? [["待启用选择器", data.pending.selector]] : [])
+    ]);
+    dns.hidden = !record;
+    recordName.value = record?.name || "";
+    recordValue.value = record?.txt || "";
+    controls.hidden = !data.available && !data.active;
+    generate.hidden = !data.available;
+    generate.textContent = data.pending ? "重新生成待启用密钥" : data.active ? "生成轮换密钥" : "生成密钥";
+    enable.hidden = !data.available || !data.pending;
+    disable.hidden = !data.active;
+    status.textContent = data.available
+      ? (data.pending ? "添加上面的 TXT 记录，再检查 DNS 并启用。" : "")
+      : "请先在服务器配置 DKIM 加密密钥。";
+  }
+
+  function busy(value) {
+    close.disabled = password.disabled = value;
+    for (const button of buttons) button.disabled = value;
+  }
+
+  async function request(data) {
+    const endpoint = "/api/admin/domains/" + encodeURIComponent(domain) + "/dkim";
+    const response = await fetch(endpoint, data ? {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data)
+    } : undefined);
+    if (response.status === 401) {
+      location.replace("/");
+      return;
+    }
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "无法读取 DKIM 配置");
+    render(result);
+  }
+
+  close.addEventListener("click", () => dialog.close());
+  dialog.addEventListener("cancel", event => { if (close.disabled) event.preventDefault(); });
+  dialog.addEventListener("close", () => form.reset());
+  form.addEventListener("submit", async event => {
+    event.preventDefault();
+    if (close.disabled || !event.submitter?.value) return;
+    const action = event.submitter.value;
+    const selector = action === "disable" ? current.active?.selector : current.pending?.selector;
+    const data = { action, selector, password: password.value };
+    password.value = "";
+    busy(true);
+    status.textContent = "";
+    try {
+      await request(data);
+    } catch (error) {
+      status.textContent = error.message;
+    } finally {
+      busy(false);
+    }
+  });
+
+  return async name => {
+    domain = name;
+    render({});
+    adminElement("admin-dkim-title").textContent = "DKIM 签名 · " + domain;
+    status.textContent = "正在读取 DKIM 配置…";
+    dialog.showModal();
+    busy(true);
+    try {
+      await request();
+    } catch (error) {
+      status.textContent = error.message;
+    } finally {
+      busy(false);
+      close.focus();
+    }
+  };
 }
 
 function setupAdminDomains() {

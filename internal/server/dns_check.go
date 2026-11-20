@@ -2,13 +2,18 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
 	"net"
+	"net/url"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/go-sql-driver/mysql"
 )
 
 type dnsCheck struct {
@@ -17,37 +22,43 @@ type dnsCheck struct {
 }
 
 type domainDNS struct {
-	MX    dnsCheck  `json:"mx"`
-	Hosts []*net.MX `json:"hosts,omitempty"`
-	SPF   dnsCheck  `json:"spf"`
-	DMARC dnsCheck  `json:"dmarc"`
-	DKIM  dnsCheck  `json:"dkim"`
+	MX           dnsCheck  `json:"mx"`
+	Hosts        []*net.MX `json:"hosts,omitempty"`
+	SPF          dnsCheck  `json:"spf"`
+	DMARC        dnsCheck  `json:"dmarc"`
+	DKIM         dnsCheck  `json:"dkim"`
+	DKIMSelector string    `json:"dkimSelector,omitempty"`
 }
 
 func runDomainDNSCheck(out io.Writer, resolver *net.Resolver, args []string) error {
 	if len(args) < 1 || len(args) > 2 {
-		return errors.New("usage: harbormail dns-check DOMAIN [DKIM_SELECTOR]")
+		return errors.New("usage: harbormail dns-check DOMAIN [DKIM_SELECTOR | --configured]")
 	}
 	domain := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(args[0])), ".")
 	if !strings.Contains(domain, ".") || !validDNSName(domain) || len("_dmarc."+domain) > 253 {
 		return errors.New("provide a fully qualified mail domain; use Punycode for internationalized domains")
 	}
 	selector := ""
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	if len(args) == 2 {
 		selector = strings.ToLower(strings.TrimSpace(args[1]))
-		if !validDNSName(selector) || len(selector+"._domainkey."+domain) > 253 {
+		if selector == "--configured" {
+			var err error
+			selector, err = configuredDKIMSelector(ctx, domain)
+			if err != nil {
+				return err
+			}
+		} else if !validDNSName(selector) || len(selector+"._domainkey."+domain) > 253 {
 			return errors.New("invalid DKIM selector")
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 	result := lookupDomainDNS(ctx, resolver, domain, selector)
 	report := struct {
-		Domain   string `json:"domain"`
-		Selector string `json:"dkimSelector,omitempty"`
+		Domain string `json:"domain"`
 		domainDNS
-	}{domain, selector, result}
+	}{domain, result}
 	encoder := json.NewEncoder(out)
 	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(report); err != nil {
@@ -60,10 +71,57 @@ func runDomainDNSCheck(out io.Writer, resolver *net.Resolver, args []string) err
 	return nil
 }
 
+func configuredDKIMSelector(ctx context.Context, domain string) (string, error) {
+	var db *sql.DB
+	var err error
+	switch env("HARBOR_DB_DRIVER", "sqlite") {
+	case "sqlite":
+		path, err := filepath.Abs(env("HARBOR_DB", "data/harbor.db"))
+		if err != nil {
+			return "", errors.New("could not resolve the configured SQLite database path")
+		}
+		path = filepath.ToSlash(path)
+		if !strings.HasPrefix(path, "/") {
+			path = "/" + path
+		}
+		uri := url.URL{Scheme: "file", Path: path, RawQuery: "mode=ro"}
+		db, err = sql.Open("sqlite", uri.String())
+		if err != nil {
+			return "", errors.New("could not open the configured SQLite database")
+		}
+	case "mysql":
+		source, err := fileSetting("HARBOR_MYSQL_DSN")
+		if err != nil {
+			return "", err
+		}
+		config, err := harborMySQLConfig(source)
+		if err != nil {
+			return "", err
+		}
+		connector, err := mysql.NewConnector(config)
+		if err != nil {
+			return "", errors.New("could not configure the MySQL connection")
+		}
+		db = sql.OpenDB(connector)
+	default:
+		return "", errors.New("use the sqlite or mysql database driver for --configured")
+	}
+	defer db.Close()
+	selector, err := activeDKIMSelector(ctx, db, domain)
+	if err != nil {
+		return "", errors.New("could not read the active DKIM selector from the configured database")
+	}
+	if selector == "" {
+		return "", errors.New("no active DKIM selector is configured for this domain")
+	}
+	return selector, nil
+}
+
 func lookupDomainDNS(ctx context.Context, resolver *net.Resolver, domain, selector string) domainDNS {
 	dkimName := selector + "._domainkey." + domain
 	var result domainDNS
 	result.DKIM.State = "skipped"
+	result.DKIMSelector = selector
 	var checks sync.WaitGroup
 	checks.Go(func() {
 		hosts, err := resolver.LookupMX(ctx, domain+".")

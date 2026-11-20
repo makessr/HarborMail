@@ -1,0 +1,10 @@
+services:
+  harbor:
+    environment:
+      HARBOR_DKIM_KEY_FILE: /run/secrets/dkim_key
+    secrets:
+      - dkim_key
+
+secrets:
+  dkim_key:
+    file: "${HARBOR_SECRETS_DIR:-./secrets}/dkim-key"

@@ -133,6 +133,9 @@
 .admin-domain-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
 .admin-domain-actions :is(a, button) { white-space: nowrap; }
 .admin-domain-actions button { padding: 4px 8px; }
+#admin-dkim-dns label + label { margin-top: 10px; }
+#admin-dkim-dns textarea { width: 100%; overflow-wrap: anywhere; resize: vertical; }
+#admin-dkim-controls footer { flex-wrap: wrap; }
 #admin-domain-error { color: var(--danger); }
 #admin-accounts .secondary { white-space: nowrap; padding: 5px 8px; }
 .admin-access-target { overflow-wrap: anywhere; }

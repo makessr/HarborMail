@@ -258,7 +258,7 @@ docker run --rm -it --log-driver=none ghcr.io/makessr/harbormail:latest generate
 
 `HARBOR_DOMAIN_DEFAULT_QUOTAS`（或对应 `_FILE`）接收 JSON，例如 `{"team.example.com":2048}`。已启用硬配额时，新创建的该域邮箱继承此值，单位为 MiB。全站管理员仍可逐邮箱覆盖。更改默认值用于后续新建邮箱。
 
-`HARBOR_DOMAIN_RELAYS_FILE` 可配置每个发件域的专用中继。JSON 的域名键对应 `address`（主机和端口）、`tls`（`starttls` 或 `implicit`）、`user` 与 `password`。认证字段同时留空表示仅使用 TLS。可选字段 `caFile` 为该域的中继添加私有 CA。未单独配置中继的域沿用全局中继及其 CA。Docker 部署可加载 `compose.domain-relays.yaml`，将文件存为秘密目录下的 `domain-relays.json`。各发件域的 DKIM 仍由对应中继签名。
+`HARBOR_DOMAIN_RELAYS_FILE` 可配置每个发件域的专用中继。JSON 的域名键对应 `address`（主机和端口）、`tls`（`starttls` 或 `implicit`）、`user` 与 `password`。认证字段同时留空表示仅使用 TLS。可选字段 `caFile` 为该域的中继添加私有 CA。未单独配置中继的域沿用全局中继及其 CA。Docker 部署可加载 `compose.domain-relays.yaml`，将文件存为秘密目录下的 `domain-relays.json`。各发件域可由中继执行 DKIM 签名，也可启用 [Harbor Mail 内置 DKIM](../ops/README.md#启用内置-dkim)。
 
 ```json
 {
@@ -274,7 +274,7 @@ docker run --rm -it --log-driver=none ghcr.io/makessr/harbormail:latest generate
 
 上线前可运行 `harbormail relay-check hello@example.com`，验证选中的中继、TLS 和认证。追加 `--mail-from` 还可检查中继是否在信封阶段接受该地址，整个过程不会投递邮件。 [SMTP 中继预检](../ops/README.md#smtp-中继预检)
 
-选中域名后可手动检查 MX、SPF 和该域的 DMARC 记录。有 DKIM 选择器时，也可检查对应的公钥记录。填入中继提供的选择器或邮件 DKIM 签名中 `s=` 的值。结果以服务器 DNS 解析器看到的记录为准，实际投递和发信认证仍需联调。[DKIM 查询规则](https://www.rfc-editor.org/rfc/rfc6376.html#section-3.6.2.1) · [DMARC 标准](https://www.rfc-editor.org/info/rfc9989/)
+选中域名后可手动检查 MX、SPF 和该域的 DMARC 记录。已启用内置 DKIM 时，留空即可检查当前选择器。也可以手动检查其他选择器的公钥记录。填入中继提供的选择器或邮件 DKIM 签名中 `s=` 的值。结果以服务器 DNS 解析器看到的记录为准，实际投递和发信认证仍需联调。[DKIM 查询规则](https://www.rfc-editor.org/rfc/rfc6376.html#section-3.6.2.1) · [DMARC 标准](https://www.rfc-editor.org/info/rfc9989/)
 
 服务启动前，也可从终端运行 [DNS 预检](../ops/README.md#邮件域名-dns-预检)，无需登录后台。
 

@@ -363,6 +363,28 @@
       <footer><button class="primary" id="admin-domain-save" type="submit">新增域名</button></footer>
     </form>
   </dialog>
+  <dialog id="admin-dkim-dialog" aria-labelledby="admin-dkim-title">
+    <form class="editor" id="admin-dkim-form" method="post">
+      <header class="heading">
+        <h2 id="admin-dkim-title">DKIM 签名</h2>
+        <button class="icon" id="admin-dkim-close" type="button" aria-label="关闭"><svg class="glyph" aria-hidden="true"><use href="/icons.svg#close-line"></use></svg></button>
+      </header>
+      <dl id="admin-dkim-state"></dl>
+      <div id="admin-dkim-dns" hidden>
+        <label>TXT 记录名<input name="recordName" type="text" readonly></label>
+        <label>TXT 记录值<textarea name="recordValue" rows="4" readonly></textarea></label>
+      </div>
+      <p id="admin-dkim-status" role="status"></p>
+      <div id="admin-dkim-controls" hidden>
+        <label>管理员主邮箱密码<input name="password" type="password" maxlength="72" autocomplete="current-password" required></label>
+        <footer>
+          <button class="secondary" name="action" value="generate" type="submit">生成密钥</button>
+          <button class="primary" name="action" value="enable" type="submit" hidden>检查 DNS 并启用</button>
+          <button class="secondary" name="action" value="disable" type="submit" hidden>停用并移除当前私钥</button>
+        </footer>
+      </div>
+    </form>
+  </dialog>
   <dialog id="admin-account-add-dialog" aria-labelledby="admin-account-add-title">
     <form class="editor" id="admin-account-add-form" method="post">
       <header class="heading">

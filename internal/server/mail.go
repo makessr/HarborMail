@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/cipher"
 	"crypto/rand"
 	"crypto/tls"
 	"database/sql"
@@ -49,6 +50,7 @@ type app struct {
 	domainRelays        map[string]domainRelay
 	domainAdmins        map[string]map[string]bool
 	domainQuota         map[string]int64
+	dkimCipher          cipher.AEAD
 }
 
 type letter struct {

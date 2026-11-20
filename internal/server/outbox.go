@@ -1,13 +1,11 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"database/sql"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"strings"
@@ -33,15 +31,18 @@ type deliveryStatus struct {
 }
 
 type outboxJob struct {
-	tracked    bool
-	message    letter
-	raw        []byte
-	claim      string
-	attempts   int
-	sendAt     int64
-	localOwner string
-	envelope   *webEnvelope
-	localDone  bool
+	tracked      bool
+	message      letter
+	raw          []byte
+	claim        string
+	attempts     int
+	sendAt       int64
+	localOwner   string
+	envelope     *webEnvelope
+	localDone    bool
+	dkimPrepared bool
+	dkimHeader   string
+	dkimErr      error
 }
 
 func (a *app) enqueue(m letter, raw []byte) (int64, error) {
@@ -259,6 +260,9 @@ func (a *app) processOutbox(job *outboxJob, connect relayConnector) error {
 			return err
 		}
 	}
+	if err := a.prepareDKIM(ctx, job); err != nil {
+		return a.resolveOutboxError(job, err, false)
+	}
 	client, closeClient, err := connect(ctx)
 	if err != nil {
 		return a.resolveOutboxError(job, err, false)
@@ -276,7 +280,7 @@ func (a *app) processOutbox(job *outboxJob, connect relayConnector) error {
 	if err != nil {
 		return a.resolveOutboxError(job, err, false)
 	}
-	if _, err := io.Copy(data, bytes.NewReader(job.raw)); err != nil {
+	if err := job.writeExternalMessage(data); err != nil {
 		return a.resolveOutboxError(job, err, false)
 	}
 
@@ -311,7 +315,11 @@ func (a *app) markOutboxSending(ctx context.Context, job *outboxJob) error {
 func (a *app) resolveOutboxError(job *outboxJob, cause error, submitted bool) error {
 	var response *smtp.SMTPError
 	reason := "无法连接 SMTP 中继或投递暂时受阻。"
-	if errors.Is(cause, errRelayAuthentication) {
+	if errors.Is(cause, errDKIMAuthor) {
+		return a.finishOutbox(job, "failed", "DKIM 要求邮件 From 与发件地址一致。", 0)
+	} else if errors.Is(cause, errDKIMSigning) {
+		reason = "DKIM 签名暂不可用，请检查签名密钥和数据库。"
+	} else if errors.Is(cause, errRelayAuthentication) {
 		reason = "SMTP 中继认证失败，请检查中继凭据。"
 	} else if errors.As(cause, &response) {
 		if response.Code >= 500 && response.Code <= 599 {

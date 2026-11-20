@@ -1,12 +1,10 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
-	"io"
 	"time"
 
 	"github.com/emersion/go-smtp"
@@ -96,6 +94,11 @@ func (a *app) processRecipientDelivery(ctx context.Context, job *outboxJob, addr
 		return err
 	}
 	state, reason, due := summarizeRecipients(recipients)
+	if errors.Is(job.dkimErr, errDKIMAuthor) {
+		reason += " DKIM 要求邮件 From 与发件地址一致。"
+	} else if errors.Is(job.dkimErr, errDKIMSigning) {
+		reason += " DKIM 签名暂不可用，请检查签名密钥和数据库。"
+	}
 	return a.finishOutbox(job, state, reason, due)
 }
 
@@ -105,6 +108,11 @@ func (a *app) sendToOneRecipient(ctx context.Context, job *outboxJob, item recip
 	}
 	if err := a.checkDestination(ctx, a.db, item.Address, ""); errors.Is(err, errDestinationChanged) {
 		return a.recordRecipientAttempt(job, item, "preparing", "failed", 550, 0)
+	} else if err != nil {
+		return a.recordRecipientResult(job, item, err, false)
+	}
+	if err := a.prepareDKIM(ctx, job); errors.Is(err, errDKIMAuthor) {
+		return a.recordRecipientAttempt(job, item, "preparing", "failed", 0, 0)
 	} else if err != nil {
 		return a.recordRecipientResult(job, item, err, false)
 	}
@@ -123,7 +131,7 @@ func (a *app) sendToOneRecipient(ctx context.Context, job *outboxJob, item recip
 	if err != nil {
 		return a.recordRecipientResult(job, item, err, false)
 	}
-	if _, err := io.Copy(data, bytes.NewReader(job.raw)); err != nil {
+	if err := job.writeExternalMessage(data); err != nil {
 		return a.recordRecipientResult(job, item, err, false)
 	}
 	// Commit the only recipient at risk of replay before writing the DATA terminator.

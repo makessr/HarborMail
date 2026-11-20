@@ -27,10 +27,10 @@ var migrationIdentifier = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
 var migrationTables = strings.Fields(`
 	account_access account_password_overrides admin_account_actions admin_alias_actions admin_delivery_retries admin_delivery_resolutions admin_mfa_used
-	app_passwords contacts custom_folders draft_creation_keys imap_deleted imap_uid_state imap_uids
+	app_passwords contacts custom_folders domain_dkim_keys draft_creation_keys imap_deleted imap_uid_state imap_uids
 	letters mail_label_links mail_labels mail_rules mail_snoozes mail_templates mail_threads
 	mailbox_preferences mailbox_send_delay mailbox_storage_alerts mailbox_quota mailbox_quota_meta mailbox_retirements managed_accounts managed_aliases managed_domains
-	outbox outbox_recipient_progress outbox_schedule saved_searches sessions signature_settings spam_controller_pauses spam_feedback
+	outbox outbox_dkim_signatures outbox_recipient_progress outbox_schedule saved_searches sessions signature_settings spam_controller_pauses spam_feedback
 	web_drafts web_letter_recipients web_outbox_envelopes web_session_details
 `)
 

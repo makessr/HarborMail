@@ -58,6 +58,8 @@ func TestAuthenticatedRelayRoundTrip(t *testing.T) {
 	}
 	local, localWeb := newHarbor("harbor", defaultSender, teamSender)
 	remote, remoteWeb := newHarbor("remote", receiver)
+	local.dkimCipher = testDKIMCipher(t)
+	selector, public := installTestDKIMKey(t, local, "team.harbor.test")
 
 	global := startRoundTripRelay(t, remote, pair, ca, "starttls", defaultSender, "default")
 	team := startRoundTripRelay(t, remote, pair, ca, "implicit", teamSender, "team")
@@ -154,9 +156,13 @@ func TestAuthenticatedRelayRoundTrip(t *testing.T) {
 	send(loggedIn(localWeb, defaultSender), localWeb, receiver, "Default route", 0)
 	send(loggedIn(localWeb, teamSender), localWeb, receiver, "Team route", 0)
 	received(local, defaultSender, defaultSender, "sent", "Default route")
-	received(remote, receiver, defaultSender, "inbox", "Default route")
-	received(local, teamSender, teamSender, "sent", "Team route")
+	_, unsigned := received(remote, receiver, defaultSender, "inbox", "Default route")
+	_, sent := received(local, teamSender, teamSender, "sent", "Team route")
 	id, original := received(remote, receiver, teamSender, "inbox", "Team route")
+	verifyTestDKIM(t, original, "team.harbor.test", selector, public)
+	if bytes.HasPrefix(unsigned, []byte("DKIM-Signature:")) || bytes.HasPrefix(sent, []byte("DKIM-Signature:")) {
+		t.Fatal("DKIM modified a domain without signing enabled or the locally stored original")
+	}
 	send(loggedIn(remoteWeb, receiver), remoteWeb, teamSender, "Re: Team route", id)
 	received(remote, receiver, receiver, "sent", "Re: Team route")
 	_, returned := received(local, teamSender, receiver, "inbox", "Re: Team route")

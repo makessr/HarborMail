@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"net"
 	"net/http"
@@ -134,6 +133,9 @@ func (a *app) adminChangeDomain(w http.ResponseWriter, r *http.Request, actor st
 			fail(w, http.StatusConflict, "此域名仍有主邮箱或别名，无法移除")
 			return
 		}
+		if _, err = tx.ExecContext(ctx, `DELETE FROM domain_dkim_keys WHERE domain=?`, domain); letterError(w, err) {
+			return
+		}
 		_, err = tx.ExecContext(ctx, `DELETE FROM managed_domains WHERE name=?`, domain)
 	}
 	if letterError(w, err) {
@@ -151,7 +153,7 @@ func (a *app) adminChangeDomain(w http.ResponseWriter, r *http.Request, actor st
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (a *app) domainHasAddresses(ctx context.Context, tx *sql.Tx, domain string) (bool, error) {
+func (a *app) domainHasAddresses(ctx context.Context, tx folderQueryer, domain string) (bool, error) {
 	for email := range a.accounts {
 		if emailDomain(email) == domain {
 			return true, nil
@@ -201,6 +203,12 @@ func (a *app) adminDomainDNS(w http.ResponseWriter, r *http.Request, actor strin
 		return
 	}
 	selector := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("selector")))
+	if selector == "" {
+		selector, err = activeDKIMSelector(ctx, a.db, domain)
+		if letterError(w, err) {
+			return
+		}
+	}
 	dkimName := selector + "._domainkey." + domain
 	if selector != "" && (!validDNSName(selector) || len(dkimName) > 253) {
 		fail(w, http.StatusBadRequest, "DKIM 选择器格式无效")

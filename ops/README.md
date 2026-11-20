@@ -66,6 +66,23 @@ docker compose run --rm --no-deps -T harbor dns-check example.com selector1
 
 命令查询当前环境解析器看到的记录，约五秒内输出 JSON。MX、SPF、该域的 DMARC 及手动指定的 DKIM 均找到时返回 0。`missing` 表示缺失，`multiple` 表示有多条匹配的 TXT，`null` 表示域名明确拒收，`error` 表示查询失败，`skipped` 表示未提供 DKIM 选择器。预检只核对记录是否存在及是否重复，实信的签名、SPF 发信授权、DMARC 对齐和投递仍需验收。 [Null MX 标准](https://www.rfc-editor.org/rfc/rfc7505.html)
 
+### 启用内置 DKIM
+
+内置签名默认关闭。首次启用时，在部署目录生成一次 32 字节加密密钥。已配置 `HARBOR_SECRETS_DIR` 时使用同一目录。
+
+```bash
+secrets_dir=${HARBOR_SECRETS_DIR:-./secrets}
+(umask 077; set -C; openssl rand -hex 32 > "$secrets_dir/dkim-key")
+```
+
+确保容器内 UID `10001` 可读该文件。在 `.env` 的 `COMPOSE_FILE` 末尾加 `:compose.dkim.yaml`，然后运行 `docker compose up -d --no-build --wait`。单二进制部署把 `HARBOR_DKIM_KEY_FILE` 指向服务账号可读的密钥文件。systemd 可以用 `LoadCredential=dkim-key:/etc/harbormail/dkim-key` 和 `Environment=HARBOR_DKIM_KEY_FILE=%d/dkim-key` 挂载 root 专用文件。共享 MySQL 的所有实例使用同一密钥，并在开启签名前统一升级。
+
+在「管理后台 → 域名 → DKIM」生成密钥。把显示的记录名和值添加到 DNS，然后选择「检查 DNS 并启用」。Harbor Mail 会验证公钥一致，再启用该域的 RSA-SHA256 2048 位签名。轮换时先生成并发布新记录，再启用新选择器。为已经发出的邮件保留旧公钥记录。
+
+运行 `docker compose run --rm --no-deps -T harbor dns-check example.com --configured` 可用指定域名的当前选择器做预检。内置签名仍通过既有 SMTP 中继外发。向外部邮箱发一封测试邮件，在收件方查看 `Authentication-Results`，确认 `dkim=pass` 且签名域是你的域名。若中继会添加页脚或改写正文，需要让它保留原文，或由中继按改写后的内容完成 DKIM 签名。
+
+备份数据库时单独离线备份 `dkim-key`。数据库存储的是加密私钥，恢复时使用原来的加密密钥。启用签名的域在密钥缺失或无法解密时会等待重试。邮件的 From 地址须与 SMTP 信封发件地址一致。 [DKIM 密钥要求](https://www.rfc-editor.org/rfc/rfc8301.html)
+
 ### SMTP 中继预检
 
 为每个使用外发中继的发件域选一个发件地址。使用部署时相同的 Compose 文件、项目名及环境配置，保留已启用的中继认证、按域中继和私有 CA 覆盖文件。下面是已配置全局中继认证时的示例。 [Docker Compose run](https://docs.docker.com/reference/cli/docker/compose/run/)
