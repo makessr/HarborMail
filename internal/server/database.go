@@ -374,22 +374,9 @@ func openDB(driver, source string) (*sql.DB, error) {
 		db.SetMaxOpenConns(1)
 		schema = sqliteSchema
 	case "mysql":
-		cfg, err := mysql.ParseDSN(source)
-		if err != nil || cfg.DBName == "" {
-			return nil, errors.New("HARBOR_MYSQL_DSN must contain a valid MySQL DSN with a database name")
-		}
-		cfg.ClientFoundRows = true
-		if err := cfg.Apply(mysql.Charset("utf8mb4", "utf8mb4_bin")); err != nil {
-			return nil, fmt.Errorf("configure MySQL character set: %w", err)
-		}
-		if cfg.Timeout == 0 {
-			cfg.Timeout = 5 * time.Second
-		}
-		if cfg.ReadTimeout == 0 {
-			cfg.ReadTimeout = 20 * time.Second
-		}
-		if cfg.WriteTimeout == 0 {
-			cfg.WriteTimeout = 20 * time.Second
+		cfg, err := harborMySQLConfig(source)
+		if err != nil {
+			return nil, err
 		}
 		connector, err := mysql.NewConnector(cfg)
 		if err != nil {
@@ -428,6 +415,27 @@ func openDB(driver, source string) (*sql.DB, error) {
 		return nil, fmt.Errorf("reserve the Junk folder name: %w", err)
 	}
 	return db, nil
+}
+
+func harborMySQLConfig(source string) (*mysql.Config, error) {
+	cfg, err := mysql.ParseDSN(source)
+	if err != nil || cfg.DBName == "" {
+		return nil, errors.New("HARBOR_MYSQL_DSN must contain a valid MySQL DSN with a database name")
+	}
+	cfg.ClientFoundRows = true
+	if err := cfg.Apply(mysql.Charset("utf8mb4", "utf8mb4_bin")); err != nil {
+		return nil, fmt.Errorf("configure MySQL character set: %w", err)
+	}
+	if cfg.Timeout == 0 {
+		cfg.Timeout = 5 * time.Second
+	}
+	if cfg.ReadTimeout == 0 {
+		cfg.ReadTimeout = 20 * time.Second
+	}
+	if cfg.WriteTimeout == 0 {
+		cfg.WriteTimeout = 20 * time.Second
+	}
+	return cfg, nil
 }
 
 func initIMAPSchema(ctx context.Context, db *sql.DB, driver string) error {

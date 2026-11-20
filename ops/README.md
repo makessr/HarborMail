@@ -43,6 +43,19 @@ Environment=HARBOR_MYSQL_DSN_FILE=%d/mysql-dsn
 
 配置好生产挂载和备份账号后，从外部网络核对 MX 与 TCP 25 连通性、HTTPS 与邮件客户端证书、实际收发和备份恢复。Web 反向代理应允许 `/api/events` 的 SSE 长连接通过。 [域名、DNS 与 TLS 配置](../docs/deployment-and-usage.md#接入真实域名)
 
+### MySQL 预检
+
+MySQL 服务启动后，在首次部署、升级或更换数据库地址时，用实际部署的 Compose 文件和应用凭据执行预检。
+
+```bash
+docker compose -f compose.yaml -f compose.mysql.yaml -f compose.registry.yaml \
+  run --rm --no-deps -T harbor mysql-check
+```
+
+单二进制部署使用与服务相同的 `HARBOR_MYSQL_DSN_FILE` 或 `HARBOR_MYSQL_DSN`，执行 `/usr/local/bin/harbormail mysql-check`。检查最多 20 秒。命令检查连接、实例和会话的只读设置、数据包下限，以及现有 `letters` 表的基本读写权限。它使用 `EXPLAIN` 检查权限，全程只查询数据库。检查失败返回非零退出码。启用硬配额时也会提示二进制日志的触发器策略。
+
+空库通过预检时会明确提示尚未验证表权限，初始化后请再运行一次。建表、建索引和建触发器权限及生产数据容量，仍需用相同账号在隔离环境演练。 [MySQL EXPLAIN](https://dev.mysql.com/doc/refman/8.4/en/explain.html) · [MySQL 数据包限制](https://dev.mysql.com/doc/refman/8.4/en/server-system-variables.html#sysvar_max_allowed_packet)
+
 ### SMTP 中继预检
 
 为每个使用外发中继的发件域选一个发件地址。使用部署时相同的 Compose 文件、项目名及环境配置，保留已启用的中继认证、按域中继和私有 CA 覆盖文件。下面是已配置全局中继认证时的示例。 [Docker Compose run](https://docs.docker.com/reference/cli/docker/compose/run/)

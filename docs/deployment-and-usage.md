@@ -110,6 +110,8 @@ docker compose ps
 
 开通公网访问见 [Cloudflare 自动证书](#cloudflare-dns-01)和 [公网邮件收发](#接入真实域名)。
 
+更换 MySQL 地址或账号前，先运行 [MySQL 预检](../ops/README.md#mysql-预检)。
+
 ### 配置宿主机端口
 
 端口被占用时，修改 `.env` 中已有的端口值，再运行 `docker compose up -d --no-build --wait`。浏览器和客户端也改用新端口。部署失败可先看 `docker compose logs --tail=80 harbor mysql redis`。
