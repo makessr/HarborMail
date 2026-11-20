@@ -1,0 +1,27 @@
+scrape_configs:
+  - job_name: harbor-public
+    scrape_interval: 1m
+    scrape_timeout: 10s
+    metrics_path: /probe
+    static_configs:
+      - targets: ["https://mail.example.invalid/healthz"]
+        labels:
+          probe_module: harbor_https
+      - targets: ["mail.example.invalid:465", "mail.example.invalid:993", "mail.example.invalid:995"]
+        labels:
+          probe_module: harbor_tls
+      - targets: ["mail.example.invalid:587"]
+        labels:
+          probe_module: harbor_smtp_starttls
+      - targets: ["mail.example.invalid:25"]
+        labels:
+          probe_module: harbor_smtp_banner
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - source_labels: [probe_module]
+        target_label: __param_module
+      - target_label: __address__
+        replacement: "127.0.0.1:9115"

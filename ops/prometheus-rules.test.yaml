@@ -119,3 +119,48 @@ tests:
             exp_annotations: {summary: Harbor Mail 最近 26 小时没有已记录的成功备份}
       - eval_time: 11m
         alertname: HarborDailyBackupStale
+  - name: Public probe failure, scrape failure and certificate renewal
+    interval: 1m
+    input_series:
+      - series: 'up{job="harbor-public",instance="smtp"}'
+        values: '1+0x12'
+      - series: 'probe_success{job="harbor-public",instance="smtp"}'
+        values: '0+0x3 1+0x8'
+      - series: 'up{job="harbor-public",instance="exporter"}'
+        values: '0+0x3 1+0x8'
+      - series: 'probe_success{job="harbor-public",instance="exporter"}'
+        values: '0+0x3 1+0x8'
+      - series: 'up{job="harbor-public",instance="tls"}'
+        values: '1+0x12'
+      - series: 'probe_success{job="harbor-public",instance="tls"}'
+        values: '1+0x12'
+      - series: 'probe_ssl_earliest_cert_expiry{job="harbor-public",instance="tls"}'
+        values: '1728000+0x10 7776000+0x1'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: HarborPublicProbeScrapeFailed
+      - eval_time: 2m
+        alertname: HarborPublicEndpointUnavailable
+      - eval_time: 3m
+        alertname: HarborPublicProbeScrapeFailed
+        exp_alerts:
+          - exp_labels: {job: harbor-public, instance: exporter, severity: critical}
+            exp_annotations: {summary: 无法抓取 Harbor Mail 公网探测结果}
+      - eval_time: 3m
+        alertname: HarborPublicEndpointUnavailable
+        exp_alerts:
+          - exp_labels: {job: harbor-public, instance: smtp, severity: critical}
+            exp_annotations: {summary: Harbor Mail 公网端口或协议检查失败}
+      - eval_time: 4m
+        alertname: HarborPublicProbeScrapeFailed
+      - eval_time: 4m
+        alertname: HarborPublicEndpointUnavailable
+      - eval_time: 9m
+        alertname: HarborPublicCertificateExpiring
+      - eval_time: 10m
+        alertname: HarborPublicCertificateExpiring
+        exp_alerts:
+          - exp_labels: {job: harbor-public, instance: tls, severity: warning}
+            exp_annotations: {summary: Harbor Mail 公网 TLS 证书链中最早到期的证书距到期不足 21 天}
+      - eval_time: 11m
+        alertname: HarborPublicCertificateExpiring

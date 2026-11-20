@@ -125,9 +125,31 @@ MySQL Compose 部署同时启动 Redis，运行在 Harbor Mail 专用内部网�
 | 挂载可用空间低于 20% | 10 分钟。用 `df -h`、`df -i` 和数据库日志定位增长 |
 | 备份完成时间缺失或超过 26 小时 | 检查调度、空间、上传和最后可恢复的副本 |
 
-另从接入网络探测 SMTP 25、提交端口、IMAPS、POP3S 和公开 Web HTTPS。启用证书到期日告警，例如剩余 21 天。检查这些探针自身和告警接收方的心跳。项目例程使用 Docker `local` 日志轮转，MySQL binlog、外部代理日志和监控数据仍需各自限制保留期。
+项目例程使用 Docker `local` 日志轮转，MySQL binlog、外部代理日志和监控数据仍需各自限制保留期。
 
 在仓库根目录运行 `promtool test rules ops/prometheus-rules.test.yaml`，验证告警规则的触发和恢复。 [Prometheus 规则测试](https://prometheus.io/docs/prometheus/latest/configuration/unit_testing_rules/)
+
+### 公网入口与证书监控
+
+在能代表用户接入路径的监控主机运行 Blackbox Exporter。以下示例使用与 Prometheus 同主机的回环地址。探测接口接受目标地址参数，应仅对可信监控网络开放。 [Blackbox Exporter](https://github.com/prometheus/blackbox_exporter/tree/v0.29.1)
+
+```bash
+docker run -d --name harbor-blackbox --restart unless-stopped \
+  --read-only --cap-drop ALL -p 127.0.0.1:9115:9115 \
+  -v "$PWD/ops/blackbox.yaml:/etc/blackbox_exporter/config.yml:ro" \
+  prom/blackbox-exporter:v0.29.1 --config.file=/etc/blackbox_exporter/config.yml
+```
+
+将 `prometheus-mail-probes.example.yaml` 复制到 Prometheus 配置目录并命名为 `prometheus-mail-probes.yaml`。替换示例域名与端口，移除部署中未启用的入口。取消主配置示例中 `scrape_config_files` 的注释。若探测器不在 Prometheus 主机上，把抓取示例的 `replacement` 改为可信网络地址。
+
+| 入口 | 探测内容 |
+| --- | --- |
+| HTTPS | 从最终 HTTPS 地址请求 `/healthz`，验证成功响应、证书链及主机名 |
+| SMTP 25 | 检查 SMTP 服务问候语 |
+| SMTP 587 | 检查 STARTTLS、验证证书链及主机名，并在加密后再次执行 EHLO |
+| SMTP 465、IMAPS 993、POP3S 995 | 完成隐式 TLS 握手并校验证书 |
+
+探测失败或抓取失败持续三分钟触发严重告警。证书链中任一已呈现证书距到期不足 21 天且持续十分钟时触发警告。证书失效后，探测本身会失败。启用后在 Prometheus 核对 `probe_success`，并从 Alertmanager 确认测试通知可以送达。
 
 ## 备份
 

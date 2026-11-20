@@ -50,3 +50,24 @@ groups:
           severity: critical
         annotations:
           summary: Harbor Mail 最近 26 小时没有已记录的成功备份
+      - alert: HarborPublicProbeScrapeFailed
+        expr: up{job="harbor-public"} == 0
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: 无法抓取 Harbor Mail 公网探测结果
+      - alert: HarborPublicEndpointUnavailable
+        expr: (probe_success{job="harbor-public"} == 0) and (up{job="harbor-public"} == 1)
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: Harbor Mail 公网端口或协议检查失败
+      - alert: HarborPublicCertificateExpiring
+        expr: (probe_ssl_earliest_cert_expiry{job="harbor-public"} - time() < 1814400) and (probe_success{job="harbor-public"} == 1) and (up{job="harbor-public"} == 1)
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Harbor Mail 公网 TLS 证书链中最早到期的证书距到期不足 21 天

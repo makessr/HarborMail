@@ -5,6 +5,10 @@ global:
 rule_files:
   - prometheus-rules.yaml
 
+# Enable after copying the public probe configuration and setting real targets.
+# scrape_config_files:
+#   - prometheus-mail-probes.yaml
+
 scrape_configs:
   - job_name: harbor-mail
     static_configs:

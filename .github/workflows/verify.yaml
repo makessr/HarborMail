@@ -83,3 +83,8 @@ jobs:
             -f compose.relay-auth.yaml -f compose.domain-relays.yaml -f compose.relay-ca.yaml config --quiet
           docker run --rm --network none --volume "$PWD:/src:ro" --workdir /src \
             --entrypoint /bin/promtool prom/prometheus:v3.5.0 test rules ops/prometheus-rules.test.yaml
+          docker run --rm --network none --volume "$PWD:/src:ro" --workdir /src \
+            --entrypoint /bin/promtool prom/prometheus:v3.5.0 check config \
+            ops/prometheus.example.yaml ops/prometheus-mail-probes.example.yaml
+          docker run --rm --network none --volume "$PWD/ops:/etc/blackbox_exporter:ro" \
+            prom/blackbox-exporter:v0.29.1 --config.file=/etc/blackbox_exporter/blackbox.yaml --config.check
