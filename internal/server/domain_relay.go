@@ -3,10 +3,12 @@ package server
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 
@@ -19,11 +21,13 @@ type domainRelay struct {
 	TLS      string `json:"tls"`
 	User     string `json:"user"`
 	Password string `json:"password"`
+	CAFile   string `json:"caFile,omitempty"`
+	roots    *x509.CertPool
 }
 
 var errRelayAuthentication = errors.New("SMTP relay authentication failed")
 
-func (relay domainRelay) validate() error {
+func (relay *domainRelay) configure() error {
 	host, port, err := net.SplitHostPort(relay.Address)
 	number, portErr := strconv.Atoi(port)
 	if err != nil || host == "" || portErr != nil || number < 1 || number > 65535 {
@@ -34,6 +38,20 @@ func (relay domainRelay) validate() error {
 	}
 	if (relay.User == "") != (relay.Password == "") || strings.ContainsRune(relay.User+relay.Password, 0) {
 		return errors.New("relay user and password must be configured together and contain no NUL bytes")
+	}
+	if relay.CAFile != "" {
+		bundle, err := os.ReadFile(relay.CAFile)
+		if err != nil {
+			return fmt.Errorf("read relay CA file: %w", err)
+		}
+		roots, err := x509.SystemCertPool()
+		if err != nil {
+			return fmt.Errorf("load system CA certificates: %w", err)
+		}
+		if !roots.AppendCertsFromPEM(bundle) {
+			return fmt.Errorf("relay CA file %q contains no PEM certificates", relay.CAFile)
+		}
+		relay.roots = roots
 	}
 	return nil
 }
@@ -50,9 +68,10 @@ func parseDomainRelays(raw string) (map[string]domainRelay, error) {
 		if !validDNSName(domain) || strings.ToLower(domain) != domain {
 			return nil, errors.New("invalid per-domain relay sender domain")
 		}
-		if err := relay.validate(); err != nil {
+		if err := relay.configure(); err != nil {
 			return nil, fmt.Errorf("invalid relay for %s: %w", domain, err)
 		}
+		relays[domain] = relay
 	}
 	return relays, nil
 }
@@ -74,7 +93,7 @@ func (a *app) connectSenderRelay(ctx context.Context, owner string) (*smtp.Clien
 	if err != nil {
 		return nil, nil, errors.New("no external relay is configured for the sender")
 	}
-	cfg := &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}
+	cfg := &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12, RootCAs: relay.roots}
 	client, closeClient, err := dialRelay(ctx, relay.Address, relay.TLS == "implicit", cfg)
 	if err != nil {
 		return nil, nil, err

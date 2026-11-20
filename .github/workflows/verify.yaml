@@ -79,5 +79,7 @@ jobs:
           docker compose -f compose.yaml -f compose.mysql.yaml -f compose.registry.yaml \
             -f compose.ops.yaml -f compose.mysql.ops.yaml config --quiet
           docker compose -f compose.yaml -f compose.mysql.yaml -f compose.acme.yaml config --quiet
+          docker compose -f compose.yaml -f compose.mysql.yaml -f compose.registry.yaml \
+            -f compose.relay-auth.yaml -f compose.domain-relays.yaml -f compose.relay-ca.yaml config --quiet
           docker run --rm --network none --volume "$PWD:/src:ro" --workdir /src \
             --entrypoint /bin/promtool prom/prometheus:v3.5.0 test rules ops/prometheus-rules.test.yaml

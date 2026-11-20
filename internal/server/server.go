@@ -139,8 +139,9 @@ func Run() {
 			TLS:      env("HARBOR_RELAY_TLS", "starttls"),
 			User:     os.Getenv("HARBOR_RELAY_USER"),
 			Password: password,
+			CAFile:   os.Getenv("HARBOR_RELAY_CA_FILE"),
 		}
-		if err := a.relay.validate(); err != nil {
+		if err := a.relay.configure(); err != nil {
 			log.Fatal("invalid global SMTP relay configuration: ", err)
 		}
 	}

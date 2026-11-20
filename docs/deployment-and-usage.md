@@ -159,6 +159,8 @@ MySQL 密码文件用于首次初始化。已有数据卷的密码在 MySQL 内�
 | `compose.tls.yaml` | 启用邮件客户端端口 465、587、993、995，默认映射到回环地址 |
 | `compose.acme.yaml` | 使用 ACME 管理邮件 TLS 证书，并提供 HTTP-01 验证端点 |
 | `compose.relay-auth.yaml` | 从文件读取 SMTP 中继密码 |
+| `compose.domain-relays.yaml` | 从文件配置各发件域的专用中继 |
+| `compose.relay-ca.yaml` | 只读挂载 SMTP 中继的 CA 证书目录 |
 
 按需在 `-f compose.yaml` 后追加覆盖文件。查看日志、重启、升级和停止服务时沿用部署时的文件顺序与项目名。
 
@@ -168,6 +170,7 @@ MySQL 密码文件用于首次初始化。已有数据卷的密码在 MySQL 内�
 
 - **TLS** 证书放在 `tls/fullchain.pem` 和 `tls/privkey.pem`，可用 `HARBOR_TLS_DIR` 指定其他目录。证书须覆盖客户端使用的邮件主机名，挂载目录和证书文件须能被容器 UID `10001` 读取；私钥应通过受限的属主或组权限提供。证书更换后重新创建 Harbor 容器。
 - **中继认证** 在 `.env` 中填写 `HARBOR_RELAY` 和 `HARBOR_RELAY_USER`，把密码存入 `secrets/relay-password` 并加载对应 Compose 文件。默认使用 STARTTLS；465 模式通常设置 `HARBOR_RELAY_TLS=implicit`。
+- **中继私有 CA** 把 CA 的 PEM 证书放入 `relay-ca/`，确保容器 UID `10001` 可读。使用 `-f compose.relay-ca.yaml`，并在 `.env` 设置 `HARBOR_RELAY_CA_FILE=/run/harbor-relay-ca/company.pem`。可用 `HARBOR_RELAY_CA_DIR` 覆盖宿主机目录。按域配置时，在该域的 JSON 中填写容器内的证书路径。更新证书后重启 Harbor 服务。
 
 在 Linux 上请保护主机上的凭据目录，确认挂载到 Harbor 容器的文件可由 UID `10001` 读取。可用 `HARBOR_SECRETS_DIR` 指定主机上的私有目录。公开收信时按下方域名部署说明设置 MX，并配置 `HARBOR_SMTP_BIND=0.0.0.0`、`HARBOR_SMTP_PORT=25`。若要开放客户端 TLS 端口，设置 `HARBOR_TLS_BIND=0.0.0.0`。Web 容器端口提供 HTTP，由 HTTPS 反向代理接入时设置 `HARBOR_SECURE_COOKIE=true`。
 
@@ -218,6 +221,7 @@ MySQL 密码文件用于首次初始化。已有数据卷的密码在 MySQL 内�
 | `HARBOR_RELAY_TLS` | `starttls`（默认，强制 STARTTLS）或 `implicit`（隐式 TLS，通常为 465） |
 | `HARBOR_RELAY_USER` / `HARBOR_RELAY_PASSWORD` | 中继需要 SMTP AUTH PLAIN 时成对设置。配置缺项会导致启动失败 |
 | `HARBOR_RELAY_PASSWORD_FILE` | 从文件读取中继密码，与 `HARBOR_RELAY_PASSWORD` 二选一 |
+| `HARBOR_RELAY_CA_FILE` | 全局中继的附加 CA 证书 PEM 文件。单二进制部署使用服务可读的本机路径 |
 
 ## 管理后台
 
@@ -255,7 +259,19 @@ MySQL 密码文件用于首次初始化。已有数据卷的密码在 MySQL 内�
 
 `HARBOR_DOMAIN_DEFAULT_QUOTAS`（或对应 `_FILE`）接收 JSON，例如 `{"team.example.com":2048}`。已启用硬配额时，新创建的该域邮箱继承此值，单位为 MiB。全站管理员仍可逐邮箱覆盖。更改默认值用于后续新建邮箱。
 
-`HARBOR_DOMAIN_RELAYS_FILE` 可配置每个发件域的专用中继。JSON 的域名键对应 `address`（主机和端口）、`tls`（`starttls` 或 `implicit`）、`user` 与 `password`。认证字段同时留空表示仅使用 TLS。未单独配置的域沿用全局中继。Docker 部署可加载 `compose.domain-relays.yaml`，将文件存为秘密目录下的 `domain-relays.json`。各发件域的 DKIM 仍由对应中继签名。
+`HARBOR_DOMAIN_RELAYS_FILE` 可配置每个发件域的专用中继。JSON 的域名键对应 `address`（主机和端口）、`tls`（`starttls` 或 `implicit`）、`user` 与 `password`。认证字段同时留空表示仅使用 TLS。可选字段 `caFile` 为该域的中继添加私有 CA。未单独配置中继的域沿用全局中继及其 CA。Docker 部署可加载 `compose.domain-relays.yaml`，将文件存为秘密目录下的 `domain-relays.json`。各发件域的 DKIM 仍由对应中继签名。
+
+```json
+{
+  "team.example.com": {
+    "address": "smtp.internal.example:587",
+    "tls": "starttls",
+    "caFile": "/run/harbor-relay-ca/team.pem"
+  }
+}
+```
+
+私有 CA 与系统 CA 一起使用。Harbor Mail 在启动时读取证书文件，文件无法读取或没有有效 PEM 证书时会报错。STARTTLS 和隐式 TLS 都验证证书链及中继地址中的主机名。
 
 选中域名后可手动检查 MX、SPF 和该域的 DMARC 记录。有 DKIM 选择器时，也可检查对应的公钥记录。填入中继提供的选择器或邮件 DKIM 签名中 `s=` 的值。结果以服务器 DNS 解析器看到的记录为准，实际投递和发信认证仍需联调。[DKIM 查询规则](https://www.rfc-editor.org/rfc/rfc6376.html#section-3.6.2.1) · [DMARC 标准](https://www.rfc-editor.org/info/rfc9989/)
 

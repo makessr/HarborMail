@@ -1,0 +1,11 @@
+services:
+  harbor:
+    environment:
+      HARBOR_RELAY_CA_FILE: "${HARBOR_RELAY_CA_FILE:-}"
+    volumes:
+      - type: bind
+        source: "${HARBOR_RELAY_CA_DIR:-./relay-ca}"
+        target: /run/harbor-relay-ca
+        read_only: true
+        bind:
+          create_host_path: false
