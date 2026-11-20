@@ -36,13 +36,19 @@ func (a *app) replySession(w http.ResponseWriter, owner string) {
 	} else if len(a.domainAdmins[owner]) > 0 {
 		role = "domain_admin"
 	}
+	providers := a.translator.providerIDs()
+	if a.recoveryMode {
+		providers = nil
+	}
 	reply(w, http.StatusOK, struct {
-		Email         string `json:"email"`
-		Role          string `json:"role"`
-		AttachmentMiB int    `json:"attachmentMiB"`
-		MessageMiB    int    `json:"messageMiB"`
-		RecoveryMode  bool   `json:"recoveryMode,omitempty"`
-	}{Email: owner, Role: role, AttachmentMiB: a.attachmentLimit() >> 20, MessageMiB: a.messageLimit() >> 20, RecoveryMode: a.recoveryMode})
+		Email                string   `json:"email"`
+		Role                 string   `json:"role"`
+		AttachmentMiB        int      `json:"attachmentMiB"`
+		MessageMiB           int      `json:"messageMiB"`
+		RecoveryMode         bool     `json:"recoveryMode,omitempty"`
+		CanTranslate         bool     `json:"canTranslate,omitempty"`
+		TranslationProviders []string `json:"translationProviders,omitempty"`
+	}{Email: owner, Role: role, AttachmentMiB: a.attachmentLimit() >> 20, MessageMiB: a.messageLimit() >> 20, RecoveryMode: a.recoveryMode, CanTranslate: len(providers) != 0, TranslationProviders: providers})
 }
 
 func (a *app) adminPage(w http.ResponseWriter, r *http.Request) {

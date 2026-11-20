@@ -3,17 +3,13 @@
 const defaultMailboxPreferences = Object.freeze({ revision: 0, theme: "light", density: "comfortable", readMode: "auto", undoSeconds: 0 });
 const preferencesDialog = document.getElementById("preferences-dialog");
 const preferencesForm = document.getElementById("preferences-form");
-const systemTheme = matchMedia("(prefers-color-scheme: dark)");
 let activeMailboxPreferences = defaultMailboxPreferences;
 let preferencesSession = 0;
 let preferencesRevision = 0;
 
 function displayMailboxPreferences(prefs) {
-  const dark = prefs.theme === "dark" || (prefs.theme === "system" && systemTheme.matches);
-  const root = document.documentElement;
-  root.dataset.theme = dark ? "dark" : "light";
-  root.dataset.density = prefs.density;
-  document.querySelector('meta[name="theme-color"]').content = getComputedStyle(root).backgroundColor;
+  applySiteTheme(prefs.theme);
+  document.documentElement.dataset.density = prefs.density;
 }
 
 function acceptMailboxPreferences(prefs) {

@@ -23,7 +23,7 @@ const state = {
   folder: "inbox", label: 0, savedSearch: null, current: null, next: 0, pages: 0, loading: false, query: "",
   request: 0, reading: 0, folderRequest: 0, htmlMode: false,
   filterValues: {}, batchMode: false, batchPending: false, batchRevision: 0, selected: new Set(),
-  conversationRequest: 0, recoveryMode: false,
+  conversationRequest: 0, conversationMessages: [], recoveryMode: false,
 };
 const folders = {
   inbox: "收件箱", snoozed: "稍后处理", all: "全部邮件", starred: "星标", drafts: "草稿箱", outbox: "发件箱", sent: "已发送", archive: "归档",
@@ -42,6 +42,7 @@ let attachmentSizeLimit = 6 * 1024 * 1024;
 let mailMessageMiB = 10;
 const attachmentLimitMessage = () => "每封邮件最多添加 10 个附件，合计不超过 " + attachmentSizeLimit / 1048576 + " MiB。";
 const customFolders = new Map();
+const mailMenu = installNavigationDrawer("mail", byId("mail-rail"));
 const folderDialog = byId("folder-dialog");
 const folderForm = byId("folder-form");
 const rulesDialog = byId("rules-dialog");
@@ -49,7 +50,7 @@ const addressesDialog = byId("addresses-dialog");
 const filterDialog = byId("filter-dialog");
 const filterForm = byId("filter-form");
 const batchLimit = 100;
-const conversation = byId("conversation");
+const conversationLists = [byId("conversation-before"), byId("conversation-after")];
 let replySource = 0;
 let composeRequest = 0;
 let toastTimeout;
@@ -57,8 +58,8 @@ let liveSource;
 let liveTimer;
 let addressRequest = 0;
 
-async function api(path, method = "GET", data, headers = {}) {
-  const options = { method, headers };
+async function api(path, method = "GET", data, headers = {}, signal) {
+  const options = { method, headers, signal };
   if (data !== undefined) {
     if (data instanceof FormData) {
       options.body = data;
@@ -86,6 +87,7 @@ function toast(message) {
 }
 
 function showLogin() {
+  mailMenu.close();
   liveSource?.close();
   liveSource = null;
   clearTimeout(liveTimer);
@@ -123,8 +125,9 @@ function showLogin() {
   byId("login").hidden = false;
 }
 
-async function openSession({ email, role, recoveryMode = false, attachmentMiB = 6, messageMiB = 10 }, keepMailbox = false) {
+async function openSession({ email, role, recoveryMode = false, attachmentMiB = 6, messageMiB = 10, canTranslate = false, translationProviders }, keepMailbox = false) {
   state.recoveryMode = recoveryMode;
+  state.canTranslate = configureLetterTranslation(translationProviders ?? (canTranslate ? ["microsoft"] : []), !recoveryMode);
   attachmentSizeLimit = attachmentMiB * 1048576;
   mailMessageMiB = messageMiB;
   byId("attachment-limits").textContent = attachmentLimitMessage();
@@ -209,6 +212,8 @@ function startMailboxEvents() {
 }
 
 function clearReading() {
+  resetSenderDetails();
+  clearLetterTranslation();
   closeLabelPicker();
   closeForward();
   closeSnooze();
@@ -225,6 +230,7 @@ function clearReading() {
 }
 
 function selectFolder(folder, label = 0, saved = null, query = "") {
+  mailMenu.close();
   state.folder = folder;
   state.label = label;
   state.savedSearch = saved;
@@ -571,11 +577,18 @@ async function applyBatch() {
 function renderLetter(item) {
   renderLetterLabels(item);
   if (state.current?.id !== item.id || Boolean(state.current?.delivery) !== Boolean(item.delivery)) {
+    resetSenderDetails();
+    byId("emoji-reply").open = false;
+    clearLetterTranslation();
     state.htmlMode = Boolean(item.hasHTML && !item.hasText);
     byId("letter-actions").open = false;
   }
   state.current = item;
-  byId("subject").textContent = item.subject || "（无主题）";
+  byId("translate-letter").hidden = !state.canTranslate || Boolean(item.delivery) || item.folder === "drafts";
+  const folderLabel = byId("letter-folder");
+  folderLabel.textContent = mailFolderName(item.folder);
+  folderLabel.hidden = !item.folder;
+  renderSenderSummary(item);
   byId("sender").textContent = item.from || "退信";
   byId("add-sender").hidden = !item.senderAddress || ["sent", "drafts", "junk"].includes(item.folder);
   byId("recipient").textContent = item.to;
@@ -585,12 +598,18 @@ function renderLetter(item) {
     cell.textContent = value;
     cell.hidden = byId("letter-" + field + "-label").hidden = !value;
   }
-  byId("letter-date-label").textContent = "时间";
-  byId("date").textContent = fullDate.format(item.date * 1000);
+  const timestamp = new Date(item.date * 1000);
+  const time = byId("letter-time");
+  time.dateTime = timestamp.toISOString();
+  time.textContent = time.title = byId("date").textContent = fullDate.format(timestamp);
   byId("body").textContent = item.hasHTML && !item.hasText ? "此邮件没有纯文本正文。" : item.body;
   renderBodyFormat(item);
   const base = item.delivery ? "outbox" : "letters";
   byId("download").href = "/api/" + base + "/" + item.id + "/raw";
+  byId("view-original").href = byId("download").href + "?view=1";
+  byId("filter-sender").hidden = !item.senderAddress || Boolean(item.delivery);
+  byId("block-sender").hidden = !item.senderAddress || state.recoveryMode || Boolean(item.delivery) ||
+    ["sent", "drafts"].includes(item.folder) || item.senderAddress.toLowerCase() === byId("account").textContent.toLowerCase();
   const delivery = byId("delivery-status");
   const importedDraft = item.folder === "drafts" && !item.draftVersion;
   delivery.hidden = !item.delivery && !importedDraft;
@@ -613,20 +632,23 @@ function renderLetter(item) {
     links.append(row);
   }
   byId("received-files").hidden = !links.children.length;
-  byId("star-label").textContent = item.star ? "取消星标" : "加星";
+  byId("star").title = item.star ? "取消星标" : "加星";
+  byId("star").setAttribute("aria-pressed", String(Boolean(item.star)));
   byId("star").querySelector("use").setAttribute("href", item.star ? "/icons.svg#star-fill" : "/icons.svg#star-line");
-  byId("toggle-read").textContent = item.read ? "标为未读" : "标为已读";
-  byId("archive").textContent = item.folder === "archive" || item.folder === "trash" ? "恢复邮件" : "归档";
+  byId("toggle-read").querySelector("span").textContent = item.read ? "标为未读" : "标为已读";
+  byId("archive").querySelector("span").textContent = item.folder === "archive" || item.folder === "trash" ? "恢复邮件" : "归档";
   byId("star").hidden = Boolean(item.delivery);
   byId("toggle-read").hidden = Boolean(item.delivery);
   byId("archive").hidden = Boolean(item.delivery) || item.folder === "drafts" || item.folder === "junk";
   const junk = byId("mark-junk");
-  junk.textContent = item.folder === "junk" ? "非垃圾邮件，移回收件箱" : "标记为垃圾邮件";
+  junk.querySelector("span").textContent = item.folder === "junk" ? "非垃圾邮件，移回收件箱" : "标记为垃圾邮件";
   junk.hidden = Boolean(item.delivery) || ["drafts", "sent", "trash"].includes(item.folder);
+  byId("flag-phishing").hidden = junk.hidden || item.folder === "junk" || state.recoveryMode;
   byId("trash").hidden = Boolean(item.delivery) || item.folder === "trash";
   byId("purge-trash").hidden = Boolean(item.delivery) || item.folder !== "trash";
-  byId("reply").hidden = !item.replyAddress || ["sent", "drafts", "junk"].includes(item.folder);
-  byId("forward").hidden = !canForward(item);
+  const hideReply = !item.replyAddress || ["sent", "drafts", "junk"].includes(item.folder);
+  for (const id of ["reply", "menu-reply", "bottom-reply", "emoji-reply"]) byId(id).hidden = hideReply;
+  byId("bottom-forward").hidden = byId("forward").hidden = !canForward(item);
   renderSnooze(item);
   renderDeliveryTimeline(item.timeline);
   byId("edit-draft").hidden = !item.draftVersion;
@@ -643,11 +665,24 @@ function renderLetter(item) {
 
 function renderBodyFormat(item) {
   const html = Boolean(item.hasHTML && state.htmlMode);
-  byId("body").hidden = html;
-  byId("html-body").hidden = !html;
+  const translated = activeLetterTranslation();
+  byId("subject").textContent = translated?.subject || item.subject || "（无主题）";
+  byId("translation-body").hidden = !translated?.body;
+  byId("body").hidden = html || Boolean(translated?.body);
+  byId("html-body").hidden = !html || Boolean(translated?.body);
   const button = byId("toggle-format");
-  button.hidden = !item.hasHTML;
-  button.textContent = html ? "查看纯文本" : "查看 HTML 正文";
+  button.hidden = !item.hasHTML || Boolean(translated?.body);
+  button.querySelector("span").textContent = html ? "查看纯文本" : "查看 HTML 正文";
+  for (const id of ["letter-open", "letter-print", "menu-print"]) {
+    const link = byId(id);
+    link.hidden = Boolean(item.delivery);
+    if (link.hidden) {
+      link.removeAttribute("href");
+      continue;
+    }
+    const url = "/api/letters/" + item.id + "/print?format=" + (item.hasHTML && (html || !item.hasText) ? "html" : "text");
+    link.setAttribute("href", id === "letter-open" ? url : url + "&print=1");
+  }
   const frame = byId("html-frame");
   if (html) {
     const source = "/api/letters/" + item.id + "/html";
@@ -663,10 +698,10 @@ async function openLetter(id, focusSubject = false) {
     const item = await api((state.folder === "outbox" ? "outbox/" : "letters/") + id);
     if (request !== state.reading) return;
     trackOutboxUndo(item);
-    if (state.current?.id !== id && !byId("conversation-list").querySelector('[data-thread-id="' + id + '"]')) {
-      clearConversation();
-    }
+    const sameConversation = !item.delivery && state.conversationMessages.some(message => message.id === id);
+    if (!sameConversation) clearConversation();
     renderLetter(item);
+    if (sameConversation) renderConversation(state.conversationMessages, id);
     refreshOutboxUndoExpiry();
     if (focusSubject) byId("subject").focus();
     void loadConversation(item, true);
@@ -683,9 +718,11 @@ async function openLetter(id, focusSubject = false) {
 
 function clearConversation() {
   ++state.conversationRequest;
-  conversation.hidden = true;
-  conversation.open = false;
-  byId("conversation-list").replaceChildren();
+  state.conversationMessages = [];
+  for (const list of conversationLists) {
+    list.hidden = true;
+    list.replaceChildren();
+  }
 }
 
 async function loadConversation(item, opened = false) {
@@ -708,32 +745,42 @@ async function loadConversation(item, opened = false) {
 }
 
 function renderConversation(messages, selectedID) {
-  const list = byId("conversation-list");
-  const focusedID = list.contains(document.activeElement) ? document.activeElement.dataset.threadId : null;
-  list.replaceChildren(...messages.map(item => {
-    const row = document.createElement("li");
-    const button = document.createElement("button");
-    button.type = "button";
-    button.dataset.threadId = item.id;
-    if (item.id === selectedID) button.setAttribute("aria-current", "true");
-    const values = {
-      contact: item.folder === "sent" ? "发给 " + item.to : item.from,
-      date: mailFolderName(item.folder) + " / " + fullDate.format(item.date * 1000),
-      subject: item.subject || "（无主题）",
-    };
-    for (const [name, value] of Object.entries(values)) {
-      const span = document.createElement("span");
-      span.className = "conversation-" + name;
-      span.textContent = value;
-      button.append(span);
-    }
-    button.addEventListener("click", () => { if (state.current?.id !== item.id) void openLetter(item.id); });
-    row.append(button);
-    return row;
-  }));
-  byId("conversation-summary").textContent = "同一会话（" + messages.length + " 封）";
-  conversation.hidden = false;
-  if (focusedID) list.querySelector('[data-thread-id="' + focusedID + '"]')?.focus({ preventScroll: true });
+  const selectedIndex = messages.findIndex(message => message.id === selectedID);
+  if (selectedIndex < 0) {
+    clearConversation();
+    return;
+  }
+  state.conversationMessages = messages;
+  const focusedID = document.activeElement.closest(".conversation-list") ? document.activeElement.dataset.threadId : null;
+  const sides = [messages.slice(0, selectedIndex), messages.slice(selectedIndex + 1)];
+  conversationLists.forEach((list, index) => {
+    list.replaceChildren(...sides[index].map(item => {
+      const row = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.dataset.threadId = item.id;
+      const from = item.from?.trim() || "退信";
+      const name = from.includes("<") ? from.split("<")[0].trim().replace(/^"|"$/g, "") : from;
+      const fields = {
+        contact: item.folder === "sent" ? "发给 " + item.to : name || from,
+        date: fullDate.format(item.date * 1000),
+        preview: item.preview?.replace(/\s+/g, " ").trim() || item.subject || "（无主题）",
+      };
+      const avatar = document.querySelector(".sender-avatar").cloneNode(true);
+      button.append(avatar);
+      for (const [key, value] of Object.entries(fields)) {
+        const span = document.createElement("span");
+        span.className = "conversation-" + key;
+        span.textContent = value;
+        button.append(span);
+      }
+      button.addEventListener("click", () => void openLetter(item.id, true));
+      row.append(button);
+      return row;
+    }));
+    list.hidden = list.childElementCount === 0;
+    if (focusedID) list.querySelector('[data-thread-id="' + focusedID + '"]')?.focus({ preventScroll: true });
+  });
 }
 
 async function updateLetter(change, button) {
@@ -852,7 +899,7 @@ function renderSelectedFiles() {
       selectedFiles.splice(index, 1);
       renderSelectedFiles();
       markDraftEdited();
-      byId("attachments").focus();
+      byId("add-compose-attachment").focus();
     });
     row.append(name, remove);
     list.append(row);
@@ -923,6 +970,7 @@ byId("logout").addEventListener("click", async () => {
     toast(error.message);
   }
 });
+byId("mail-compose-mobile").addEventListener("click", () => byId("compose").click());
 byId("folder-nav").addEventListener("click", (event) => {
   const button = event.target.closest("[data-folder]");
   if (button) selectFolder(button.dataset.folder);
@@ -934,11 +982,15 @@ byId("search-form").addEventListener("submit", (event) => {
 byId("search").addEventListener("input", () => {
   if (!byId("search").value && state.query) applySearch();
 });
-byId("open-filters").addEventListener("click", () => {
+function showMailFilters(values = state.filterValues) {
   filterForm.reset();
-  for (const [name, value] of Object.entries(state.filterValues)) filterForm.elements[name].value = value;
+  for (const [name, value] of Object.entries(values)) filterForm.elements[name].value = value;
   byId("filter-error").textContent = "";
   filterDialog.showModal();
+}
+byId("open-filters").addEventListener("click", () => showMailFilters());
+byId("filter-sender").addEventListener("click", () => {
+  if (state.current?.senderAddress) showMailFilters({ sender: state.current.senderAddress });
 });
 byId("close-filters").addEventListener("click", () => filterDialog.close());
 byId("clear-filters").addEventListener("click", () => {
@@ -1101,7 +1153,7 @@ function setupMailRules() {
     controls.labelID.disabled = !needsLabel;
   }
 
-  function edit(rule = null) {
+  function edit(rule = null, sender = "") {
     editing = rule;
     form.reset();
     byId("rule-error").textContent = "";
@@ -1114,6 +1166,11 @@ function setupMailRules() {
       controls.enabled.checked = rule.enabled;
       if (rule.destination) controls.destination.value = rule.destination;
       if (rule.labelID) controls.labelID.value = rule.labelID;
+    } else if (sender) {
+      controls.field.value = "sender";
+      controls.value.value = sender;
+      controls.action.value = "move";
+      controls.destination.value = "junk";
     }
     remove.hidden = !rule;
     updateFields();
@@ -1149,7 +1206,7 @@ function setupMailRules() {
     byId("rules-status").textContent = rules.length === 0 ? "还没有邮件规则。" : "";
   }
 
-  async function loadRules() {
+  async function loadRules(sender = "") {
     const request = ++generation;
     editing = null;
     form.hidden = true;
@@ -1168,6 +1225,7 @@ function setupMailRules() {
       byId("rule-label-help").hidden = ruleLabels.size > 0;
       render(rules);
       create.disabled = false;
+      if (sender) edit(null, sender);
     } catch (error) {
       if (request === generation && rulesDialog.open) byId("rules-status").textContent = error.message;
     }
@@ -1191,6 +1249,11 @@ function setupMailRules() {
   byId("manage-rules").addEventListener("click", () => {
     rulesDialog.showModal();
     void loadRules();
+  });
+  byId("block-sender").addEventListener("click", () => {
+    if (!state.current?.senderAddress || state.recoveryMode) return;
+    rulesDialog.showModal();
+    void loadRules(state.current.senderAddress);
   });
   close.addEventListener("click", () => rulesDialog.close());
   rulesDialog.addEventListener("cancel", event => { if (close.disabled) event.preventDefault(); });
@@ -1218,6 +1281,12 @@ function setupMailRules() {
 }
 
 setupMailRules();
+byId("letter-actions").addEventListener("click", event => {
+  if (!event.target.closest(".letter-menu :is(button, a)")) return;
+  const menu = event.currentTarget;
+  if (menu.contains(document.activeElement)) menu.querySelector("summary").focus();
+  menu.open = false;
+});
 document.addEventListener("click", event => {
   if (event.target.closest("dialog")) return;
   for (const disclosure of document.querySelectorAll(".disclosure[open]")) {
@@ -1237,6 +1306,15 @@ byId("back").addEventListener("click", returnToMailList);
 byId("compose").addEventListener("click", () => void compose());
 byId("edit-draft").addEventListener("click", resumeDraft);
 byId("reply").addEventListener("click", () => void compose(state.current));
+for (const id of ["menu-reply", "bottom-reply"]) byId(id).addEventListener("click", () => byId("reply").click());
+byId("bottom-forward").addEventListener("click", () => byId("forward").click());
+byId("emoji-reply").addEventListener("click", event => {
+  const emoji = event.target.closest(".reply-emojis button");
+  if (!emoji) return;
+  event.currentTarget.open = false;
+  event.currentTarget.querySelector("summary").focus();
+  void compose(state.current, { body: emoji.textContent.trim() });
+});
 byId("star").addEventListener("click", (event) => updateLetter({ star: !state.current.star }, event.currentTarget));
 byId("toggle-read").addEventListener("click", (event) => updateLetter({ read: !state.current.read }, event.currentTarget));
 byId("toggle-format").addEventListener("click", () => {
@@ -1266,6 +1344,12 @@ byId("purge-trash").addEventListener("click", async event => {
 });
 byId("mark-junk").addEventListener("click", (event) => {
   void updateLetter({ folder: state.current.folder === "junk" ? "inbox" : "junk", spamFeedback: true }, event.currentTarget);
+});
+
+byId("flag-phishing").addEventListener("click", event => {
+  const item = state.current;
+  if (!item || event.currentTarget.hidden || !confirm("将这封疑似钓鱼邮件移到垃圾邮件？")) return;
+  void updateLetter({ folder: "junk", spamFeedback: true }, event.currentTarget);
 });
 
 api("session").then(session => openSession(session, new URLSearchParams(location.search).get("view") === "mail")).catch(showLogin);

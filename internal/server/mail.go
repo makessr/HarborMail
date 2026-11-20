@@ -49,6 +49,7 @@ type app struct {
 	pauseOutbox         bool
 	relay               domainRelay
 	directMX            *directMX
+	translator          *emailTranslation
 	auditDays           int
 	auditLogAt          atomic.Int64
 	webLogin            webLoginGuard

@@ -92,6 +92,7 @@ func (a *app) runLoginAudit(ctx context.Context) {
 		if err != nil && ctx.Err() == nil {
 			log.Print("Could not prune expired delivery timeline events")
 		}
+		a.maintainMailTranslations(ctx)
 		select {
 		case <-ctx.Done():
 			return

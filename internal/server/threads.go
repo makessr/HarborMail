@@ -15,7 +15,7 @@ const (
 	threadLimit   = 100
 	threadDepth   = 16
 	threadFolders = `l.folder NOT IN ('drafts','junk','trash')`
-	threadColumns = `l.id,l.sender,l.recipient,l.subject,l.stamp,l.folder,t.message_key,t.root_key,t.parent_key`
+	threadColumns = `l.id,l.sender,l.recipient,l.subject,l.stamp,l.folder,substr(l.body,1,200),t.message_key,t.root_key,t.parent_key`
 )
 
 func threadKey(id string) []byte {
@@ -134,6 +134,7 @@ type threadEntry struct {
 	Subject string `json:"subject"`
 	Date    int64  `json:"date"`
 	Folder  string `json:"folder"`
+	Preview string `json:"preview,omitempty"`
 	keys    [3][]byte
 }
 
@@ -141,7 +142,7 @@ type threadScanner interface{ Scan(...any) error }
 
 func scanThreadEntry(row threadScanner) (threadEntry, error) {
 	var item threadEntry
-	err := row.Scan(&item.ID, &item.From, &item.To, &item.Subject, &item.Date, &item.Folder,
+	err := row.Scan(&item.ID, &item.From, &item.To, &item.Subject, &item.Date, &item.Folder, &item.Preview,
 		&item.keys[0], &item.keys[1], &item.keys[2])
 	return item, err
 }

@@ -2,6 +2,15 @@
 
 function prepareComposeOptions(draft, reply, identities) {
   const { author, formatted } = editorForm.elements;
+  for (const button of editorForm.querySelectorAll("[data-recipient-field]")) {
+    const input = editorForm.elements[button.dataset.recipientField];
+    showComposeControl(button, Boolean(input.value.trim()));
+  }
+  showComposeControl(byId("toggle-compose-format"), false);
+  byId("compose-more").open = false;
+  editor.removeAttribute("data-expanded");
+  byId("expand-compose").setAttribute("aria-pressed", "false");
+  byId("expand-compose").textContent = "展开";
   const { primary, aliases } = identities || { primary: byId("account").textContent, aliases: [] };
   author.replaceChildren(new Option(primary, ""), ...aliases.map(alias => new Option(alias, alias)));
   const selected = draft?.from || aliases.find(alias => alias === reply?.to) || "";
@@ -16,7 +25,41 @@ function prepareComposeOptions(draft, reply, identities) {
   byId("compose-preview").removeAttribute("srcdoc");
 }
 
+function showComposeControl(button, visible) {
+  byId(button.getAttribute("aria-controls")).hidden = !visible;
+  button.setAttribute("aria-expanded", String(visible));
+}
+
 {
+  const more = byId("compose-more");
+  const expand = byId("expand-compose");
+  const formatToggle = byId("toggle-compose-format");
+  for (const button of editorForm.querySelectorAll("[data-recipient-field]")) {
+    button.addEventListener("click", () => {
+      const input = editorForm.elements[button.dataset.recipientField];
+      const visible = button.getAttribute("aria-expanded") !== "true" || Boolean(input.value.trim());
+      showComposeControl(button, visible);
+      if (visible) input.focus();
+    });
+  }
+  expand.addEventListener("click", () => {
+    const expanded = editor.toggleAttribute("data-expanded");
+    expand.setAttribute("aria-pressed", String(expanded));
+    expand.textContent = expanded ? "还原" : "展开";
+  });
+  editor.addEventListener("click", event => {
+    if (!more.contains(event.target)) more.open = false;
+  });
+  byId("templates-dialog").addEventListener("close", () => {
+    if (!more.open) return;
+    if (more.contains(document.activeElement)) more.querySelector("summary").focus();
+    more.open = false;
+  });
+  byId("add-compose-attachment").addEventListener("click", () => byId("attachments").click());
+  formatToggle.addEventListener("click", () => {
+    showComposeControl(formatToggle, byId("compose-format-panel").hidden);
+  });
+
   const { formatted, body } = editorForm.elements;
   const tools = byId("compose-format-tools");
   const preview = byId("compose-preview");

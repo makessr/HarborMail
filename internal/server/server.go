@@ -177,6 +177,10 @@ func Run() {
 	if err := a.loadDirectMX(); err != nil {
 		log.Fatal(err)
 	}
+	a.translator, err = loadEmailTranslation()
+	if err != nil {
+		log.Fatal(err)
+	}
 	if err := a.loadRelays(); err != nil {
 		log.Fatal(err)
 	}
@@ -690,11 +694,16 @@ func (a *app) routes() http.Handler {
 	mux.HandleFunc("POST /api/mail-export", a.auth(a.exportMail))
 	mux.HandleFunc("PATCH /api/letters", a.auth(a.updateBatch))
 	mux.HandleFunc("GET /api/letters/{id}", a.auth(a.read))
+	mux.HandleFunc("POST /api/letters/{id}/translate", a.auth(a.translateLetter))
+	mux.HandleFunc("GET /api/letters/{id}/translate-local", a.auth(a.browserTranslateLetter))
+	mux.HandleFunc("POST /api/letters/{id}/translate-local", a.auth(a.browserTranslateLetter))
+	mux.HandleFunc("GET /api/letters/{id}/sender-details", a.auth(a.readLetterSenderDetails))
 	mux.HandleFunc("GET /api/letters/{id}/thread", a.auth(a.getThread))
 	mux.HandleFunc("PATCH /api/letters/{id}", a.auth(a.update))
 	mux.HandleFunc("DELETE /api/letters/{id}", a.auth(a.deleteTrashedMail))
 	mux.HandleFunc("PUT /api/letters/{id}/snooze", a.auth(a.setSnooze))
 	mux.HandleFunc("GET /api/letters/{id}/raw", a.auth(a.download))
+	mux.HandleFunc("GET /api/letters/{id}/print", a.auth(a.printLetter))
 	mux.HandleFunc("GET /api/letters/{id}/html", a.auth(a.htmlLetter))
 	mux.HandleFunc("GET /api/letters/{id}/attachments/{part}", a.auth(a.downloadAttachment))
 	mux.HandleFunc("POST /api/letters", a.auth(a.send))
@@ -925,6 +934,15 @@ func (a *app) download(w http.ResponseWriter, r *http.Request, owner string) {
 	id := letterID(r)
 	raw, err := a.rawLetter(owner, id)
 	if letterError(w, err) {
+		return
+	}
+	serveRawMail(w, r, id, raw)
+}
+
+func serveRawMail(w http.ResponseWriter, r *http.Request, id int64, raw []byte) {
+	if r.URL.Query().Get("view") == "1" {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = w.Write(raw)
 		return
 	}
 	downloadEML(w, id, raw)

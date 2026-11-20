@@ -248,6 +248,9 @@ func (a *app) renameManagedMailbox(ctx context.Context, tx *sql.Tx, owner, desti
 	if _, err := tx.ExecContext(ctx, `INSERT INTO account_access(owner,suspended) VALUES(?,?)`, destination, suspended); err != nil {
 		return err
 	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM mail_translations WHERE letter_id IN (SELECT id FROM letters WHERE owner=?)`, owner); err != nil {
+		return err
+	}
 	for _, table := range append(append([]string{}, mailboxOwnedSettings...), "letters", "managed_aliases") {
 		if _, err := tx.ExecContext(ctx, "UPDATE "+table+" SET owner=? WHERE owner=?", destination, owner); err != nil {
 			return err

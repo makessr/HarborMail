@@ -109,6 +109,6 @@ func (a *app) downloadOutbox(w http.ResponseWriter, r *http.Request, owner strin
 	var raw []byte
 	err := a.db.QueryRowContext(r.Context(), `SELECT raw FROM outbox WHERE sender=? AND id=?`, owner, id).Scan(&raw)
 	if !letterError(w, err) {
-		downloadEML(w, id, raw)
+		serveRawMail(w, r, id, raw)
 	}
 }

@@ -41,6 +41,14 @@ var sqliteSchema = []string{
 		seen INTEGER NOT NULL DEFAULT 0, star INTEGER NOT NULL DEFAULT 0, raw BLOB NOT NULL, detail_meta BLOB, delivery_job_id INTEGER
 	)`,
 	`CREATE INDEX IF NOT EXISTS mailbox_order ON letters(owner, folder, id DESC)`,
+	`CREATE TABLE IF NOT EXISTS mail_translations (
+		letter_id INTEGER NOT NULL, cache_key BLOB NOT NULL,
+		subject TEXT NOT NULL, body TEXT NOT NULL, expires_at INTEGER NOT NULL,
+		PRIMARY KEY(letter_id,cache_key)
+	)`,
+	`CREATE INDEX IF NOT EXISTS mail_translation_expiry ON mail_translations(expires_at,letter_id,cache_key)`,
+	`CREATE TRIGGER IF NOT EXISTS mail_translation_delete AFTER DELETE ON letters
+	BEGIN DELETE FROM mail_translations WHERE letter_id=OLD.id; END`,
 	`CREATE TABLE IF NOT EXISTS spam_feedback (
 		letter_id INTEGER PRIMARY KEY, owner TEXT NOT NULL, sample_class TEXT NOT NULL, revision INTEGER NOT NULL,
 		state TEXT NOT NULL, due INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
@@ -228,6 +236,13 @@ var mysqlSchema = []string{
 		detail_meta LONGBLOB,
 		delivery_job_id BIGINT,
 		KEY mailbox_order (owner, folder, id)
+	) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin`,
+	`CREATE TABLE IF NOT EXISTS mail_translations (
+		letter_id BIGINT NOT NULL, cache_key BINARY(32) NOT NULL,
+		subject MEDIUMTEXT NOT NULL, body MEDIUMTEXT NOT NULL, expires_at BIGINT NOT NULL,
+		PRIMARY KEY(letter_id,cache_key),
+		KEY mail_translation_expiry (expires_at,letter_id,cache_key),
+		FOREIGN KEY(letter_id) REFERENCES letters(id) ON DELETE CASCADE
 	) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin`,
 	`CREATE TABLE IF NOT EXISTS spam_feedback (
 		letter_id BIGINT NOT NULL PRIMARY KEY,

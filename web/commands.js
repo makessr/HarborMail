@@ -207,7 +207,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!event.altKey && !event.shiftKey && event.ctrlKey !== event.metaKey && event.key.toLowerCase() === "k") {
       event.preventDefault();
       openCommands();
-    } else if (event.key === "Escape" && state.current && document.activeElement.closest("#letter")) {
+    } else if (event.key === "Escape" && state.current &&
+      document.activeElement.closest("#letter") && !document.activeElement.closest(".disclosure[open]")) {
       event.preventDefault();
       returnToMailList();
     }

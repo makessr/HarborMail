@@ -576,7 +576,9 @@ IMAP 客户端支持 `CREATE`、`RENAME`、`DELETE`、`SUBSCRIBE`、`UNSUBSCRIBE
 
 ## 邮件会话与回复
 
-阅读邮件时可以展开「同一会话」，打开当前账号在收件箱、已发送、归档和自定义文件夹中的关联邮件。会话根据 `Message-ID`、`References` 和 `In-Reply-To` 关联，最多显示 100 封。已有邮件会在服务启动后补建索引，历史数据量较大时可稍后重新打开会话。
+点击发件人下方的收件人信息可展开邮件头详情。主题旁的打印按钮会打开独立打印页，可直接打印或存为 PDF。右上角的「更多邮件操作」可按发件人筛选、创建垃圾邮件规则、下载或显示原始邮件。
+
+打开一封邮件时，同一会话中的其他邮件以摘要折叠显示。点击摘要即可阅读对应邮件。正文下方可以回复、转发或用表情写一封回复。会话根据 `Message-ID`、`References` 和 `In-Reply-To` 关联，最多显示 100 封。已有邮件会在服务启动后补建索引，历史数据量较大时可稍后重新打开会话。
 
 网页回复优先使用原邮件的 `Reply-To`，并生成 `In-Reply-To` 和 `References` 供邮件客户端识别会话。回复的引用关系会随草稿保存，支持继续编辑和带附件发送。[邮件标识字段说明](https://www.rfc-editor.org/rfc/rfc5322.html#section-3.6.4)
 
@@ -682,3 +684,24 @@ docker compose exec -T harbor harbormail import-imap --host imap.example.com:993
 不可变邮件入库时保存附件清单和正文格式等元数据。升级前的邮件首次打开时按需补建。查看 HTML、下载附件和导出仍使用原始 MIME。共享 MySQL 部署应先停止旧实例，再统一升级。
 
 生产部署的磁盘上限、监控告警、SQLite 和 MySQL 备份及恢复步骤见 [生产运行手册](../ops/README.md)。
+
+## 邮件翻译
+
+按需启用以下服务。Docker 用户在本地 `.env` 中添加配置并运行 `docker compose up -d harbor`。单二进制支持用 `_FILE` 后缀从文件读取任一密钥。
+
+| 服务 | 配置 |
+| --- | --- |
+| 微软 Azure Translator F0 | `HARBOR_TRANSLATOR_KEY` 和 `HARBOR_TRANSLATOR_REGION`。Azure 全局资源可留空区域。 |
+| DeepL API Free（已有订阅） | `HARBOR_DEEPL_FREE_KEY`。使用以 `:fx` 结尾的 Free 密钥。 |
+| Google Cloud Translation Basic | `HARBOR_GOOGLE_TRANSLATE_KEY`。需启用 Cloud Translation API 和结算。每月前 50 万字符抵扣，超量按 Google 定价结算。 |
+| 自托管 LibreTranslate | `HARBOR_LIBRETRANSLATE_URL`，例如 `http://libretranslate:5000`。启用密钥的实例还需 `HARBOR_LIBRETRANSLATE_KEY`。Docker 中该服务须从 Harbor Mail 容器可达，语言须由实例安装对应模型。使用受信任的服务，跨公网时使用 HTTPS。 |
+
+在网页邮箱打开邮件，点「翻译」，选择翻译服务和目标语言后提交。兼容的 Edge 或 Chrome 在 HTTPS 下可使用「浏览器本地翻译」，无需 API 密钥。选择原文语言后点击翻译，首次使用可能下载语言模型。主题和正文在浏览器内处理，译文回存 Harbor Mail。
+
+翻译完成后，译文直接显示在原阅读区。使用正文上方的按钮切换原文和译文。译文使用纯文本，原邮件的 HTML 格式可在切回原文后查看。
+
+选择服务器端翻译服务时，缓存未命中才向所选服务发送主题和正文文本，失败后可手动切换服务。收发件人字段、附件和 HTML 标记不发送。单封上限为 20,000 字符。
+
+成功译文写入当前使用的 SQLite 或 MySQL，默认保留 30 天。缓存按邮箱、邮件内容、服务和目标语言区分，浏览器本地翻译还区分原文语言。译文可跨设备及重启复用。每次读取先验证邮件归属。永久删除邮件、清除邮箱或迁移邮箱地址时会清除关联译文。到期译文停止返回，由后台每小时清理。超过 128 KiB 的单条译文直接显示。数据库备份包含译文。浏览器本地翻译不可用且服务器未配置任何翻译服务时，隐藏翻译入口。
+
+[微软 F0 定价](https://azure.microsoft.com/en-us/pricing/details/translator/) · [DeepL 计划说明](https://support.deepl.com/hc/en-us/articles/360021200939-DeepL-API-plans) · [Google Cloud 定价](https://cloud.google.com/products/translate/pricing) · [LibreTranslate 自托管](https://docs.libretranslate.com/guides/installation/)
