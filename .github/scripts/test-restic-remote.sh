@@ -115,4 +115,29 @@ snapshot_ids | jq -e --arg expired "${expired:0:8}" --arg retained "${retained:0
     length == 4 and contains([$oldest, $retained, $foreign, $current]) and (index($expired) == null)
   ' >/dev/null
 bash ops/backup.sh verify "$snapshot"
+[[ $(restic dump "$snapshot" /harbor-schema) == dkim-v1 ]]
+
+mkdir -m 0700 -- "$work/legacy"
+cp -- "$work/recovered/harbor.db" "$work/legacy/harbor.db"
+sqlite3 "$work/legacy/harbor.db" 'DROP TRIGGER delete_outbox_dkim_signature;
+  DROP TABLE outbox_dkim_signatures; DROP TABLE domain_dkim_keys;'
+legacy_snapshot() (
+  cd "$work/legacy"
+  sha256sum -- harbor.db > SHA256SUMS
+  restic backup --host "$1" --tag "harbor-mail-$1" --json harbor.db SHA256SUMS "${@:2}" |
+    jq -er 'select(.message_type == "summary") | .snapshot_id'
+)
+legacy=$(legacy_snapshot legacy-ci)
+HARBOR_BACKUP_INSTANCE=legacy-ci bash ops/backup.sh verify "$legacy"
+HARBOR_BACKUP_INSTANCE=legacy-ci bash ops/backup.sh export "$legacy" "$work/legacy-export"
+(cd "$work/legacy-export"; sha256sum -c SHA256SUMS)
+printf '%s\n' dkim-v1 > "$work/legacy/harbor-schema"
+incomplete=$(legacy_snapshot incomplete-ci harbor-schema)
+if output=$(HARBOR_BACKUP_INSTANCE=incomplete-ci bash ops/backup.sh export "$incomplete" "$work/incomplete-export" 2>&1); then
+  printf 'Export accepted a new-schema snapshot missing DKIM tables.\n' >&2
+  exit 1
+fi
+[[ $output == *'missing required Harbor Mail tables: domain_dkim_keys outbox_dkim_signatures'* ]]
+[[ ! -e "$work/incomplete-export" ]]
+printf 'Legacy snapshots remain recoverable, and marked snapshots require DKIM tables.\n'
 printf 'Authenticated HTTPS backup, restore and instance-scoped retention passed.\n'

@@ -26,6 +26,7 @@ command -v restic >/dev/null || fail 'restic is required'
 command -v flock >/dev/null || fail 'flock is required'
 
 tag="harbor-mail-$HARBOR_BACKUP_INSTANCE"
+current_schema=dkim-v1
 exec 9>"$HARBOR_BACKUP_WORK/$tag.lock"
 flock -n 9 || fail 'Another backup or verification is running'
 
@@ -58,19 +59,19 @@ verify_sqlite() {
   command -v sqlite3 >/dev/null || fail 'sqlite3 is required'
   [[ $(sqlite3 -batch -bail -readonly "$1" 'PRAGMA integrity_check;') == ok ]] ||
     fail 'SQLite integrity check failed'
-  verify_sqlite_tables "$1" 'SQLite snapshot'
+  verify_sqlite_tables "$1" 'SQLite snapshot' "$2"
 }
 
 verify_sqlite_tables() {
   local available
   available=$(sqlite3 -batch -bail -readonly "$1" '.timeout 10000' "SELECT name FROM sqlite_master WHERE type='table';") ||
     fail "Could not read $2 tables"
-  verify_required_tables "$2" "$available"
+  verify_required_tables "$2" "$available" "$3"
 }
 
 verify_required_tables() {
-  local artifact=$1 available=$2 table
-  shift 2
+  local artifact=$1 available=$2 schema=$3 table
+  shift 3
   # Required tables from the first public schema. Keep the list compatible
   # with existing complete snapshots as newer releases add tables.
   local -a required=(
@@ -83,6 +84,9 @@ verify_required_tables() {
     outbox outbox_recipient_progress outbox_schedule saved_searches sessions signature_settings
     spam_feedback web_drafts web_letter_recipients web_outbox_envelopes web_session_details
   )
+  if [[ $schema == "$current_schema" ]] || grep -Eq '^(domain_dkim_keys|outbox_dkim_signatures)$' <<< "$available"; then
+    required+=(domain_dkim_keys outbox_dkim_signatures)
+  fi
   local -a missing=()
   for table in "${required[@]}" "$@"; do
     if ! grep -Fxq -- "$table" <<< "$available"; then
@@ -100,14 +104,25 @@ verify_mysql_dump() {
   # mysqldump can exit successfully while omitting tables invisible to its account.
   available=$(sed -nE 's/^CREATE TABLE (IF NOT EXISTS )?`([a-z_]+)`[[:space:]]*\(.*/\2/p' "$dump") ||
     fail 'Could not read MySQL dump tables'
-  verify_required_tables 'MySQL dump' "$available" mailbox_revisions
+  verify_required_tables 'MySQL dump' "$available" "$2" mailbox_revisions
+}
+
+snapshot_schema() {
+  local marker="$1/harbor-schema"
+  if [[ ! -e $marker && ! -L $marker ]]; then
+    printf 'legacy\n'
+    return
+  fi
+  [[ -f $marker && ! -L $marker ]] && printf '%s\n' "$current_schema" | cmp -s -- - "$marker" ||
+    fail 'Snapshot has an unsupported or invalid schema marker'
+  printf '%s\n' "$current_schema"
 }
 
 read_back() (
   local snapshot=$1 destination=$2
   local artifact checksum
   restic restore "$snapshot" --target "$destination" --verify \
-    --include /harbor.db --include /harbor.sql --include /SHA256SUMS >&2 ||
+    --include /harbor.db --include /harbor.sql --include /SHA256SUMS --include /harbor-schema >&2 ||
     fail 'Could not read back the snapshot'
   cd "$destination" || fail 'Could not open the restored snapshot directory'
   if [[ -f harbor.db && ! -L harbor.db && ! -e harbor.sql && ! -L harbor.sql ]]; then
@@ -146,10 +161,11 @@ if [[ $mode == verify || $mode == export ]]; then
     restored="$restore_stage/snapshot"
   fi
   artifact=$(read_back "$snapshot" "$restored")
+  schema=$(snapshot_schema "$restored")
   if [[ $artifact == harbor.db ]]; then
-    verify_sqlite "$restored/harbor.db"
+    verify_sqlite "$restored/harbor.db" "$schema"
   else
-    verify_mysql_dump "$restored/harbor.sql"
+    verify_mysql_dump "$restored/harbor.sql" "$schema"
   fi
   if [[ $mode == export ]]; then
     publish="$restore_stage/publish"
@@ -189,10 +205,10 @@ case "${HARBOR_BACKUP_DRIVER:-}" in
     [[ $HARBOR_BACKUP_SQLITE == /* && -s $HARBOR_BACKUP_SQLITE ]] || fail 'SQLite source is missing or empty'
     command -v sqlite3 >/dev/null || fail 'sqlite3 is required'
     if [[ $mode == check ]]; then
-      verify_sqlite_tables "$HARBOR_BACKUP_SQLITE" 'SQLite source'
+      verify_sqlite_tables "$HARBOR_BACKUP_SQLITE" 'SQLite source' "$current_schema"
     else
       (cd "$scratch/export"; sqlite3 -batch -bail -readonly "$HARBOR_BACKUP_SQLITE" '.timeout 10000' '.backup harbor.db')
-      verify_sqlite "$scratch/export/harbor.db"
+      verify_sqlite "$scratch/export/harbor.db" "$current_schema"
       artifact=harbor.db
     fi
     ;;
@@ -206,7 +222,7 @@ case "${HARBOR_BACKUP_DRIVER:-}" in
     if [[ $mode == check ]]; then schema_only=(--no-data --skip-lock-tables); fi
     mysqldump "--defaults-extra-file=$HARBOR_BACKUP_MYSQL_CNF" --single-transaction --quick --no-tablespaces --skip-triggers \
       --set-gtid-purged=OFF --hex-blob --max-allowed-packet=64M "${schema_only[@]}" "$HARBOR_BACKUP_MYSQL_DB" > "$scratch/export/harbor.sql"
-    verify_mysql_dump "$scratch/export/harbor.sql"
+    verify_mysql_dump "$scratch/export/harbor.sql" "$current_schema"
     artifact=harbor.sql
     ;;
   *) fail 'Set HARBOR_BACKUP_DRIVER to sqlite or mysql' ;;
@@ -226,13 +242,16 @@ fi
 (
   cd "$scratch/export"
   sha256sum -- "$artifact" > SHA256SUMS
-  restic backup --host "$HARBOR_BACKUP_INSTANCE" --tag "$tag" --json "$artifact" SHA256SUMS > "$scratch/restic.jsonl"
+  printf '%s\n' "$current_schema" > harbor-schema
+  restic backup --host "$HARBOR_BACKUP_INSTANCE" --tag "$tag" --json "$artifact" SHA256SUMS harbor-schema > "$scratch/restic.jsonl"
 )
 snapshot=$(jq -er 'select(.message_type == "summary") | .snapshot_id' "$scratch/restic.jsonl")
 [[ $snapshot =~ ^[0-9a-f]{8,64}$ ]] || fail 'Restic returned no snapshot ID'
 restored_artifact=$(read_back "$snapshot" "$scratch/restored")
 [[ $restored_artifact == "$artifact" ]] ||
   fail 'Read-back artifact does not match the database backup'
+read_schema=$(snapshot_schema "$scratch/restored")
+[[ $read_schema == "$current_schema" ]] || fail 'Read-back snapshot is missing the schema marker'
 if [[ -n ${HARBOR_BACKUP_METRIC_DIR:-} ]]; then
   [[ $HARBOR_BACKUP_METRIC_DIR == /* && -d $HARBOR_BACKUP_METRIC_DIR ]] || fail 'Invalid metrics directory'
   marker_tmp=$(mktemp -- "$HARBOR_BACKUP_METRIC_DIR/.harbor-backup.XXXXXXXX")

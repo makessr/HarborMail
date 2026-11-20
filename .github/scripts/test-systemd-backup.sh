@@ -124,12 +124,16 @@ exercise_timer() {
   sudo bash -c 'cd "$1"; sha256sum -c SHA256SUMS' sha256sum "$destination"
   if [[ $driver == sqlite ]]; then
     [[ $(sudo sqlite3 -readonly "$destination/harbor.db" "SELECT COUNT(*) FROM letters WHERE subject='$subject'") == 1 ]]
+    [[ $(sudo sqlite3 -readonly "$destination/harbor.db" "SELECT hex(sealed_key) FROM domain_dkim_keys WHERE domain='backup-key.test'") == 0123456789ABCDEF ]]
   else
     sudo cat "$destination/harbor.sql" | docker exec -i -e MYSQL_PWD="$MYSQL_ROOT_PASSWORD" \
       "$HARBOR_TEST_BACKUP_MYSQL_CONTAINER" mysql --user=root harbor_verify_backup
     [[ $(docker exec -e MYSQL_PWD="$MYSQL_ROOT_PASSWORD" "$HARBOR_TEST_BACKUP_MYSQL_CONTAINER" \
       mysql --user=root --batch --skip-column-names harbor_verify_backup \
       -e "SELECT COUNT(*) FROM letters WHERE subject='$subject'") == 1 ]]
+    [[ $(docker exec -e MYSQL_PWD="$MYSQL_ROOT_PASSWORD" "$HARBOR_TEST_BACKUP_MYSQL_CONTAINER" \
+      mysql --user=root --batch --skip-column-names harbor_verify_backup \
+      -e "SELECT hex(sealed_key) FROM domain_dkim_keys WHERE domain='backup-key.test'") == 0123456789ABCDEF ]]
   fi
   printf '%s backup timer passed scheduling, locking, permissions, and recovery checks.\n' "$driver"
 }
@@ -137,5 +141,39 @@ exercise_timer() {
 printf '[client]\nuser=harbor_backup\npassword=%s\nhost=127.0.0.1\nport=%s\nprotocol=tcp\n' \
   "$HARBOR_TEST_BACKUP_MYSQL_PASSWORD" "$HARBOR_TEST_BACKUP_MYSQL_PORT" > "$work/mysql-backup.cnf"
 sudo install -m 0600 "$work/mysql-backup.cnf" "$config/"
+key_fixture="INSERT INTO domain_dkim_keys(domain,slot,selector,public_key,sealed_key)
+  VALUES('backup-key.test','active','fixture','fixture-public',X'0123456789ABCDEF');"
+sudo -u harbormail sqlite3 -batch -bail /var/lib/harbormail/harbor.db "$key_fixture"
+docker exec -e MYSQL_PWD="$MYSQL_ROOT_PASSWORD" "$HARBOR_TEST_BACKUP_MYSQL_CONTAINER" \
+  mysql --user=root harbor_test -e "$key_fixture"
 exercise_timer sqlite harbormail "SQLite native service"
 exercise_timer mysql harbor-backup "MySQL native service"
+
+# A table-scoped backup account can get a successful but incomplete mysqldump.
+mysql_root=(docker exec -i -e MYSQL_PWD="$MYSQL_ROOT_PASSWORD" "$HARBOR_TEST_BACKUP_MYSQL_CONTAINER"
+  mysql --user=root --batch --skip-column-names)
+limited_password=$(openssl rand -hex 24)
+printf '::add-mask::%s\n' "$limited_password"
+"${mysql_root[@]}" -e "CREATE USER 'harbor_without_dkim'@'%' IDENTIFIED BY '$limited_password'"
+"${mysql_root[@]}" -e "SELECT CONCAT('GRANT SELECT, SHOW VIEW ON harbor_test.',table_name,
+  ' TO ',QUOTE('harbor_without_dkim'),'@',QUOTE('%'),';') FROM information_schema.tables
+  WHERE table_schema='harbor_test' AND table_name REGEXP '^[a-z_]+$'
+  AND table_name NOT IN ('domain_dkim_keys','outbox_dkim_signatures');" | "${mysql_root[@]}"
+printf '[client]\nuser=harbor_without_dkim\npassword=%s\nhost=127.0.0.1\nport=%s\nprotocol=tcp\n' \
+  "$limited_password" "$HARBOR_TEST_BACKUP_MYSQL_PORT" > "$work/mysql-limited.cnf"
+sudo install -m 0600 "$work/mysql-limited.cnf" "$config/"
+for action in check backup; do
+  if output=$(sudo systemd-run --quiet --wait --pipe --collect -p User=harbor-backup \
+    -p "Environment=HARBOR_BACKUP_WORK=$state" -p "EnvironmentFile=$config/backup.env" \
+    -p "LoadCredential=restic-password:$config/restic-password" \
+    -p "LoadCredential=mysql-backup.cnf:$config/mysql-limited.cnf" \
+    /usr/bin/bash -c 'RESTIC_PASSWORD_FILE="$CREDENTIALS_DIRECTORY/restic-password" HARBOR_BACKUP_MYSQL_CNF="$CREDENTIALS_DIRECTORY/mysql-backup.cnf" exec bash "$1" "$2"' \
+    bash "$program" "$action" 2>&1); then
+    printf 'MySQL %s accepted a dump without DKIM tables.\n' "$action" >&2
+    exit 1
+  fi
+  [[ $output == *'missing required Harbor Mail tables: domain_dkim_keys outbox_dkim_signatures'* ]]
+done
+sudo restic -r "$state/mysql-repo" --password-file "$config/restic-password" --no-lock snapshots --json |
+  jq -e 'length == 1' >/dev/null
+printf 'MySQL check and backup rejected a restricted account missing both DKIM tables.\n'
