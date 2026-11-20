@@ -57,7 +57,15 @@ Harbor Mail 是面向 Linux 部署的自建域名邮箱，提供中文 Web 邮�
 
 ## Linux 单二进制启动
 
-从 [GitHub Releases](https://github.com/makessr/HarborMail/releases/latest) 下载 `harbormail-linux-amd64` 或 `harbormail-linux-arm64`。同一版本附带 `SHA256SUMS`。以 amd64 为例，在二进制所在目录运行：
+| 安装方案 | 包含组件 |
+| --- | --- |
+| [全量版](ops/README.md#单二进制全量版) | Harbor Mail、MySQL、Redis、Rspamd、ClamAV |
+| [标准版](ops/README.md#单二进制标准版) | Harbor Mail、MySQL、Redis |
+| [极简版](ops/README.md#单二进制极简版) | Harbor Mail、内置 SQLite |
+
+三个方案共用同架构的 `harbormail` 和 systemd 服务模板。MySQL、Redis 与扫描组件由 Linux 主机或已有服务提供。
+
+从 [GitHub Releases](https://github.com/makessr/HarborMail/releases/latest) 下载 `harbormail-linux-amd64` 或 `harbormail-linux-arm64`。同一版本附带 `SHA256SUMS` 和 `harbormail-systemd.tar.gz`。以 amd64 为例，在二进制所在目录运行：
 
 ```bash
 sha256sum --ignore-missing -c SHA256SUMS
@@ -72,7 +80,7 @@ cd HarborMail
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o harbormail ./cmd/harbormail
 ```
 
-ARM64 源码构建把 `GOARCH=amd64` 改为 `GOARCH=arm64`。准备好二进制后，按[原生启动说明](docs/deployment-and-usage.md#linux-单二进制)创建首个账号，然后运行 `./harbormail`。默认使用 SQLite，运行服务器只需要二进制、账号配置和可写的数据目录。Go 仅用于构建。
+ARM64 源码构建把 `GOARCH=amd64` 改为 `GOARCH=arm64`。Go 仅用于构建。准备好二进制后，[创建首个账号](docs/deployment-and-usage.md#创建首个-linux-邮箱)，再按上表配置所选方案。
 
 长期运行请安装 `harbormail.service`，再用 `sudo systemctl enable --now harbormail.service` 启动并开启开机自启。[systemd 安装](ops/README.md#linux-单二进制-systemd-部署) · [状态、启动、重启、停止和日志](ops/README.md#日常服务命令)
 

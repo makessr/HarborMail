@@ -4,7 +4,11 @@
 
 ## Linux 单二进制 systemd 部署
 
-使用 systemd 251 或更新版本。从项目目录准备目标架构的 `harbormail` 和 `secrets/accounts.json`，生成方式见[单二进制启动说明](../docs/deployment-and-usage.md#linux-单二进制)。也可在单文件的构建产物中下载并解压 `harbormail-systemd.tar.gz`，取得相同的 `ops/` 模板。首次安装时创建专用系统账号和配置目录。已有部署沿用原账号、凭据和数据路径。
+使用 systemd 251 或更新版本。先安装公共文件，再选择全量、标准或极简中的一种，最后启动服务。
+
+### 安装公共文件
+
+准备 `harbormail` 和 `secrets/accounts.json`。从同一发布版本下载并解压 `harbormail-systemd.tar.gz`，取得下列命令使用的 `ops/` 文件。下方安装命令适用于首次部署。已有实例沿用原有账号与配置。 [下载与校验](../README.md#linux-单二进制启动) · [生成账号文件](../docs/deployment-and-usage.md#创建首个-linux-邮箱)
 
 ```bash
 getent passwd harbormail >/dev/null ||
@@ -13,13 +17,68 @@ sudo install -d -m 0700 /etc/harbormail
 sudo install -m 0755 ./harbormail /usr/local/bin/harbormail
 sudo install -m 0600 secrets/accounts.json /etc/harbormail/accounts.json
 sudo install -m 0600 ops/harbormail.env.example /etc/harbormail/harbormail.env
-sudoedit /etc/harbormail/harbormail.env
 sudo install -m 0644 ops/harbormail.service /etc/systemd/system/harbormail.service
 sudo systemctl daemon-reload
-sudo systemctl enable --now harbormail.service
+sudoedit /etc/harbormail/harbormail.env
 ```
 
-模板默认使用本机回环端口 Web 8080 和 SMTP 2525，SQLite 数据库位于 `/var/lib/harbormail/harbor.db`。把示例域名改为实际值。systemd 创建可写的数据目录，并通过 `LoadCredential=` 让专用服务账号读取账号文件。启动后按实际监听地址检查 `/healthz`，默认可运行 `curl -fsS http://127.0.0.1:8080/healthz`。查看日志用 `sudo journalctl -u harbormail.service`。 [systemd 凭据与状态目录](https://www.freedesktop.org/software/systemd/man/252/systemd.exec.html)
+使用示例邮箱时，在环境文件中添加 `HARBOR_ADMINS=hello@harbor.test`。默认 Web 8080 和 SMTP 2525 绑定本机回环，端口冲突时先修改 `HARBOR_WEB` 或 `HARBOR_SMTP`。systemd 会创建可写的数据目录，并把凭据交给服务账号。 [systemd 凭据与状态目录](https://www.freedesktop.org/software/systemd/man/252/systemd.exec.html)
+
+### 单二进制全量版
+
+按[标准版](#单二进制标准版)设置 MySQL、Redis 和凭据，接着按[原生扫描部署](../docs/spam-and-antivirus.md#linux-原生扫描部署)启动 Rspamd 与 ClamAV。将扫描指南中的四项 `HARBOR_` 设置写入 `/etc/harbormail/harbormail.env`，再执行[启动与验收](#启动与验收)。
+
+默认隔离命中病毒的来信，扫描服务故障时返回 SMTP 451，发件服务器可稍后重试。现有标准版可直接添加扫描配置，再重启 Harbor Mail。
+
+### 单二进制标准版
+
+1. 准备 MySQL 8.4 和 Redis。为 Harbor Mail 创建专用数据库和账号，授权范围见 [MySQL 配置](../docs/deployment-and-usage.md#使用-mysql)。尚未安装依赖时可按发行版准备。 [安装 MySQL](https://dev.mysql.com/doc/refman/8.4/en/linux-installation.html) · [安装 Redis](https://redis.io/docs/latest/operate/oss_and_stack/install/install-stack/)
+
+   已有 SQLite 邮件按[迁移流程](../docs/deployment-and-usage.md#从-sqlite-迁移到-mysql)导入。
+2. 在 `/etc/harbormail/harbormail.env` 设置 `HARBOR_DB_DRIVER=mysql` 和专用 `HARBOR_REDIS_NAMESPACE`，例如 `harbor-mail`。
+3. 创建凭据文件，分别填写一行实际的 MySQL DSN 和 Redis URL。例子见 [MySQL DSN](../docs/deployment-and-usage.md#使用-mysql)与 [Redis URL](../docs/deployment-and-usage.md#可选-redis-缓存)。
+
+```bash
+sudo touch /etc/harbormail/mysql-dsn /etc/harbormail/redis-url
+sudo chmod 0600 /etc/harbormail/mysql-dsn /etc/harbormail/redis-url
+sudoedit /etc/harbormail/mysql-dsn /etc/harbormail/redis-url
+```
+
+执行 `sudo systemctl edit harbormail.service`，在保留原有设置的基础上添加以下配置。
+
+```ini
+[Service]
+LoadCredential=mysql-dsn:/etc/harbormail/mysql-dsn
+LoadCredential=redis-url:/etc/harbormail/redis-url
+Environment=HARBOR_MYSQL_DSN_FILE=%d/mysql-dsn
+Environment=HARBOR_REDIS_URL_FILE=%d/redis-url
+```
+
+启动前可检查 MySQL 连接，然后执行[启动与验收](#启动与验收)。
+
+```bash
+sudo env HARBOR_MYSQL_DSN_FILE=/etc/harbormail/mysql-dsn /usr/local/bin/harbormail mysql-check
+```
+
+### 单二进制极简版
+
+在 `/etc/harbormail/harbormail.env` 使用下列模板设置，然后执行[启动与验收](#启动与验收)。
+
+```dotenv
+HARBOR_DB_DRIVER=sqlite
+HARBOR_DB=/var/lib/harbormail/harbor.db
+```
+
+### 启动与验收
+
+```bash
+sudo systemctl daemon-reload &&
+  sudo systemctl enable --now harbormail.service &&
+  sudo systemctl status harbormail.service --no-pager
+curl -fsS http://127.0.0.1:8080/healthz
+```
+
+修改 Web 端口后，按实际监听地址检查。用已创建的邮箱登录并确认收信。全量版可在隔离环境用 EICAR 标准测试附件核对后台隔离结果。 [公网访问与邮件客户端](../docs/deployment-and-usage.md#接入真实域名)
 
 ### 日常服务命令
 
@@ -39,17 +98,7 @@ sudo systemctl enable --now harbormail.service
 
 只修改 `/etc/harbormail/harbormail.env` 时，重启服务即可。修改了服务单元或 drop-in 时，先运行 `sudo systemctl daemon-reload`，再重启。临时停止服务会保留原有自启设置。[systemctl 手册](https://www.freedesktop.org/software/systemd/man/latest/systemctl.html)
 
-### MySQL、Redis 与 TLS
-
-使用 MySQL 时在 `harbormail.env` 里将 `HARBOR_DB_DRIVER` 设为 `mysql`。将 DSN 写入仅 root 可读的 `/etc/harbormail/mysql-dsn`，用 `sudo systemctl edit harbormail.service` 加入配置。
-
-```ini
-[Service]
-LoadCredential=mysql-dsn:/etc/harbormail/mysql-dsn
-Environment=HARBOR_MYSQL_DSN_FILE=%d/mysql-dsn
-```
-
-启用 Redis 时，在环境文件中设置专用 `HARBOR_REDIS_NAMESPACE`。将连接地址写入仅 root 可读的 `/etc/harbormail/redis-url`，在同一个 drop-in 的 `[Service]` 下添加 `LoadCredential=redis-url:/etc/harbormail/redis-url` 和 `Environment=HARBOR_REDIS_URL_FILE=%d/redis-url`。 [Redis 配置](../docs/deployment-and-usage.md#可选-redis-缓存)
+### TLS 与版本升级
 
 需要直接绑定 TCP 25、465 等低端口时，在 drop-in 的 `[Service]` 添加 `CapabilityBoundingSet=CAP_NET_BIND_SERVICE` 和 `AmbientCapabilities=CAP_NET_BIND_SERVICE`，再配置对应的监听地址。使用 `LoadCredential=` 时，将 `HARBOR_CERT`、`HARBOR_KEY` 指向相应的 `%d/` 路径，更新后重启服务以刷新 systemd 凭据快照。需要热更新时，把两项指向服务账号可读的常规文件，例如 `/etc/harbormail/tls/` 下由受限组权限保护的证书和私钥。用 ACME 时将 `HARBOR_ACME_CACHE` 指向状态目录下的可写路径，如 `/var/lib/harbormail/acme`。公网接入时核对实际端口、DNS、反向代理及 TLS。 [轮换 PEM 证书](../docs/deployment-and-usage.md#轮换-pem-证书)
 
@@ -57,7 +106,7 @@ Environment=HARBOR_MYSQL_DSN_FILE=%d/mysql-dsn
 
 ## 首次启动与上线验收
 
-首次部署按[Docker 安装方案](../docs/deployment-and-usage.md#docker-compose-部署)生成凭据、启动并验证登录。已有实例沿用原有凭据和数据卷。
+首次部署可按 [Docker 安装方案](../docs/deployment-and-usage.md#docker-compose-部署)或[单二进制方案](#linux-单二进制-systemd-部署)生成凭据、启动并验证登录。已有实例沿用原有凭据和数据卷。
 
 配置好生产挂载和备份账号后，从外部网络核对 MX 与 TCP 25 连通性、HTTPS 与邮件客户端证书、实际收发和备份恢复。Web 反向代理应允许 `/api/events` 的 SSE 长连接通过。 [域名、DNS 与 TLS 配置](../docs/deployment-and-usage.md#接入真实域名)
 

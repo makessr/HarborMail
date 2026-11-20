@@ -2,11 +2,21 @@
 
 <img src="../web/harbor-mail-logo.png" alt="" width="72" height="72">
 
-首次安装从[Docker 安装方案](#docker-compose-部署)开始。已有部署可直接查看[配置项](#配置)、[邮件客户端](#接入邮件客户端)或[生产运行手册](../ops/README.md)。
+首次安装可选择 [Docker Compose](#docker-compose-部署) 或 [Linux 单二进制](#linux-单二进制)。已有部署可直接查看[配置项](#配置)、[邮件客户端](#接入邮件客户端)或[生产运行手册](../ops/README.md)。
 
 ## 本地启动
 
 ### Linux 单二进制
+
+| 安装方案 | 组件 |
+| --- | --- |
+| [全量版](../ops/README.md#单二进制全量版) | Harbor Mail、MySQL、Redis、Rspamd、ClamAV |
+| [标准版](../ops/README.md#单二进制标准版) | Harbor Mail、MySQL、Redis |
+| [极简版](../ops/README.md#单二进制极简版) | Harbor Mail、内置 SQLite |
+
+三个方案共用同一架构的发布版二进制。使用 systemd 部署时，同时下载同版本的 `harbormail-systemd.tar.gz`。
+
+#### 创建首个 Linux 邮箱
 
 从 [GitHub Releases](https://github.com/makessr/HarborMail/releases/latest) 下载目标架构的二进制，或按[项目首页](../README.md#linux-单二进制启动)从源码构建。将可执行文件命名为 `harbormail`，放在 Linux 服务账号可运行的目录。以下 Bash 示例用于首次生成账号配置，已有配置可直接复用。
 
@@ -15,16 +25,22 @@
   set -e
   umask 077
   mkdir -p secrets
+  set -o noclobber
   read -rsp '输入邮箱密码（12–72 字节）: ' mailbox_password
   printf '\n'
   hash=$(printf '%s\n' "$mailbox_password" | ./harbormail hash-password)
   unset mailbox_password
   printf '{"hello@harbor.test":"%s"}\n' "$hash" > secrets/accounts.json
 )
-HARBOR_ACCOUNTS_FILE="$PWD/secrets/accounts.json" ./harbormail
 ```
 
-默认监听 `127.0.0.1:8080`（Web）和 `127.0.0.1:2525`（SMTP），SQLite 会在工作目录下创建 `data/harbor.db`。可以用 `HARBOR_DB` 指定持久数据路径，以服务账号运行并保证其可写。使用 MySQL 时按[数据库配置](#使用-mysql)设置环境变量。远程部署时按[接入真实域名](#接入真实域名)配置 Web 反向代理和 SMTP。
+#### 极简版前台试运行
+
+```bash
+HARBOR_ACCOUNTS_FILE="$PWD/secrets/accounts.json" HARBOR_ADMINS=hello@harbor.test ./harbormail
+```
+
+默认监听 `127.0.0.1:8080`（Web）和 `127.0.0.1:2525`（SMTP），SQLite 会在工作目录下创建 `data/harbor.db`。可以用 `HARBOR_DB` 指定持久数据路径，以服务账号运行并保证其可写。标准版和全量版可从上表直接进入对应的 systemd 安装步骤。远程部署时按[接入真实域名](#接入真实域名)配置 Web 反向代理和 SMTP。
 
 以上前台启动用于首次试运行。切换到 systemd 前，用 Ctrl+C 停止前台进程，释放监听端口。systemd 模板默认读取 `/var/lib/harbormail/harbor.db`。试运行已有邮件时，先备份并将其恢复到服务的数据目录。安装 `harbormail.service` 后可用 `sudo systemctl enable --now harbormail.service` 启动并开启自启。[systemd 安装](../ops/README.md#linux-单二进制-systemd-部署) · [日常服务命令](../ops/README.md#日常服务命令)
 

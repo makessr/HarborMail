@@ -10,6 +10,45 @@ Harbor Mail 对接 Rspamd 扫描公网 SMTP 来信，并可提交用户分类反
 
 默认启用病毒隔离和扫描故障临时拒收。进入后台「隔离邮件」可查看信封发件人、收件人、邮件时间和大小。核实误报后可释放到原收件人的「垃圾邮件」，也可永久删除。两项操作都需要全站管理员重新验证密码，并记入操作审计。隔离区最多 1,000 封、合计 256 MiB，达到上限后需从后台清理，新增隔离邮件会收到 SMTP 451。
 
+## Linux 原生扫描部署
+
+适用于[单二进制全量版](../ops/README.md#单二进制全量版)。以下示例将 Rspamd 和 ClamAV 安装在 Harbor Mail 同一台主机上。使用发行版对应的安装步骤，启动病毒库更新服务，确认 `clamd` 已加载病毒库。 [安装 Rspamd](https://docs.rspamd.com/getting-started/installation/) · [配置 ClamAV](https://docs.clamav.net/manual/Usage/Configuration.html)
+
+1. 在 `clamd.conf` 设置 `TCPSocket 3310` 和 `TCPAddr 127.0.0.1`，然后重启 ClamAV 守护进程。保留 Rspamd normal worker 的回环监听地址 `127.0.0.1:11333`。 [ClamAV 配置示例](https://github.com/Cisco-Talos/clamav/blob/main/etc/clamd.conf.sample) · [Rspamd worker 配置](https://docs.rspamd.com/workers/)
+2. 在 `/etc/rspamd/local.d/redis.conf` 设置扫描服务使用的 Redis 地址。例如同机 Redis 可配置 `servers = "127.0.0.1:6379";` 和 `db = "1";`，Harbor Mail 后台缓存使用库 0。使用 ACL 时为 Rspamd 配置自己的 Redis 账号。 [Rspamd Redis 配置](https://docs.rspamd.com/configuration/redis/)
+3. 在 `/etc/rspamd/local.d/antivirus.conf` 添加下列配置。
+
+```ucl
+clamav {
+  type = "clamav";
+  servers = "127.0.0.1:3310";
+  symbol = "CLAM_VIRUS";
+  action = "reject";
+  scan_mime_parts = false;
+  no_cache = true;
+  timeout = 8;
+  retransmits = 0;
+}
+```
+
+4. 在 Rspamd 的 `local.d/options.inc` 设置 `task_timeout = 12s;`。验证配置并重启 Rspamd。使用一封普通的 EML 测试邮件检查 HTTP 扫描能返回 JSON 结果。
+
+```bash
+sudo rspamadm configtest && sudo systemctl restart rspamd
+curl -fsS --max-time 15 --data-binary @sample.eml http://127.0.0.1:11333/checkv2
+```
+
+5. 把下面四行写入 `/etc/harbormail/harbormail.env`。首次安装返回[启动步骤](../ops/README.md#启动与验收)。已有标准版执行 `sudo systemctl restart harbormail.service`。
+
+```dotenv
+HARBOR_RSPAMD_URL=http://127.0.0.1:11333/checkv2
+HARBOR_RSPAMD_TIMEOUT_SECONDS=15
+HARBOR_VIRUS_ACTION=quarantine
+HARBOR_SCAN_FAILURE=defer
+```
+
+在隔离环境通过 SMTP 投递 EICAR 测试邮件，后台「隔离邮件」应出现记录。 [EICAR 测试文件](https://www.eicar.org/download-anti-malware-testfile/)
+
 ## 对接自管 Rspamd
 
 1. 按上游安装说明部署 Rspamd，启用 Harbor Mail 能访问的私有 normal worker。Docker 可将两个服务加入同一可信网络。Linux 原生部署可使用本机回环监听。[Rspamd 安装指南](https://docs.rspamd.com/getting-started/installation/)
