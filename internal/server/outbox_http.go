@@ -22,6 +22,12 @@ func scanOutbox(row outboxScanner) (letter, error) {
 	}
 	if envelope != nil {
 		m.showWebRecipients(envelope.Recipients)
+		if envelope.Author != "" {
+			m.From = envelope.Author
+		}
+		if envelope.Formatted {
+			m.Body, _ = renderRichCompose(m.Body)
+		}
 	}
 	return m, nil
 }
@@ -88,6 +94,10 @@ func (a *app) readOutbox(w http.ResponseWriter, r *http.Request, owner string) {
 		return
 	}
 	m.Delivery.Recipients, err = readRecipientProgress(r.Context(), a.db, owner, m.ID)
+	if letterError(w, err) {
+		return
+	}
+	m.Timeline, err = readDeliveryTimeline(r.Context(), a.db, owner, m.ID)
 	if !letterError(w, err) {
 		updateOutboxUndoStatus(m.Delivery)
 		reply(w, http.StatusOK, m)

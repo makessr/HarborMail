@@ -623,6 +623,7 @@ function renderLetter(item) {
   byId("reply").hidden = !item.replyAddress || ["sent", "drafts", "junk"].includes(item.folder);
   byId("forward").hidden = !canForward(item);
   renderSnooze(item);
+  renderDeliveryTimeline(item.timeline);
   byId("edit-draft").hidden = !item.draftVersion;
   renderMoveOptions(item);
   byId("no-selection").hidden = true;
@@ -751,12 +752,14 @@ async function updateLetter(change, button) {
 async function compose(reply, { mode = reply ? "reply" : "compose", body = "", quote = false,
   source = reply, subject = "", files = [], draft = null, to = "" } = {}) {
   const request = ++composeRequest;
+  const identitiesPromise = api("sender-identities").catch(() => null);
   let signatures, signatureError;
   try {
     signatures = await api("signatures");
   } catch (error) {
     signatureError = error.message;
   }
+  const identities = await identitiesPromise;
   if (request !== composeRequest || byId("mailbox").hidden || editor.open || forwardDialog.open ||
       (source && state.current?.id !== source.id)) return false;
   editorForm.reset();
@@ -775,6 +778,7 @@ async function compose(reply, { mode = reply ? "reply" : "compose", body = "", q
     editorForm.elements.subject.value = draft?.subject ?? subject;
   }
   editorForm.elements.body.value = draft?.body ?? body;
+  prepareComposeOptions(draft, reply, identities);
   prepareComposeSignature(signatures, mode, quote);
   beginDraftTracking(draft);
   editor.showModal();
@@ -817,8 +821,9 @@ async function loadLetterAttachments(item, signal) {
 
 function composePayload() {
   if (!selectedFiles.length) {
-    const { to, cc, bcc, subject, body } = editorForm.elements;
-    const data = { to: to.value, cc: cc.value, bcc: bcc.value, subject: subject.value, body: body.value };
+    const { to, cc, bcc, subject, body, author, formatted } = editorForm.elements;
+    const data = { to: to.value, cc: cc.value, bcc: bcc.value, subject: subject.value, body: body.value,
+      author: author.value, formatted: formatted.checked };
     return replySource ? { ...data, replyToId: replySource } : data;
   }
   const form = new FormData(editorForm);

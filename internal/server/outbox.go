@@ -43,6 +43,20 @@ type outboxJob struct {
 	dkimPrepared bool
 	dkimHeader   string
 	dkimErr      error
+	smtpCode     int
+}
+
+func (job *outboxJob) singleRecipient() string {
+	if job.tracked {
+		return ""
+	}
+	if job.envelope == nil {
+		return job.message.To
+	}
+	if targets := job.envelope.externalAddresses(); len(targets) == 1 {
+		return targets[0]
+	}
+	return ""
 }
 
 func (a *app) enqueue(m letter, raw []byte) (int64, error) {
@@ -70,7 +84,11 @@ func insertOutbox(writer outboxWriter, m letter, raw []byte, state string, due i
 	if err != nil {
 		return 0, err
 	}
-	return result.LastInsertId()
+	id, err := result.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	return id, recordDeliveryEvent(writer, m.From, id, "", "enqueued", 0, due)
 }
 
 func (a *app) runOutbox(ctx context.Context, connectRelay func(context.Context, string) (*smtp.Client, func(), error)) {
@@ -96,7 +114,7 @@ func (a *app) runOutbox(ctx context.Context, connectRelay func(context.Context, 
 					break
 				}
 				connect := func(ctx context.Context) (*smtp.Client, func(), error) {
-					return connectRelay(ctx, job.message.From)
+					return connectRelay(ctx, job.message.wireFrom())
 				}
 				if err := a.processOutbox(job, connect); err != nil {
 					log.Print("outbox delivery state: ", err)
@@ -167,8 +185,9 @@ func (a *app) claimOutbox() (*outboxJob, error) {
 		// A sender without a relay may still have completed or expired deliveries to close.
 		expiredBefore := now.Add(-outboxMaxAge).Unix()
 		args = append(args, expiredBefore, expiredBefore)
+		author := a.outboxAuthorSQL()
 		for domain := range a.domainRelays {
-			query += " OR sender LIKE ? OR sender LIKE ?"
+			query += " OR " + author + " LIKE ? OR " + author + " LIKE ?"
 			args = append(args, "%@"+domain, "%@"+domain+".")
 		}
 		query += ")"
@@ -217,6 +236,7 @@ func (a *app) claimOutbox() (*outboxJob, error) {
 	}
 	if job.envelope != nil {
 		m.recipients = &job.envelope.Recipients
+		m.author, m.formatted = job.envelope.Author, job.envelope.Formatted
 	}
 	return job, nil
 }
@@ -228,6 +248,13 @@ func (job *outboxJob) expires() time.Time {
 }
 
 func (a *app) processOutbox(job *outboxJob, connect relayConnector) error {
+	ctx, cancel := context.WithTimeout(context.Background(), outboxTimeout)
+	defer cancel()
+	if err := a.requireSenderIdentity(ctx, a.db, job.message.From, job.message.author); errors.Is(err, errSendAs) {
+		return a.finishOutbox(job, "failed", "此别名的发信权限已撤销。", 0)
+	} else if err != nil {
+		return err
+	}
 	multiExternal := job.envelope != nil && len(job.envelope.externalAddresses()) > 1
 	if !multiExternal && !time.Now().Before(job.expires()) {
 		return a.finishOutbox(job, "failed", "已超过 5 天投递期限。", 0)
@@ -241,8 +268,6 @@ func (a *app) processOutbox(job *outboxJob, connect relayConnector) error {
 			return err
 		}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), outboxTimeout)
-	defer cancel()
 	recipients := []string{job.message.To}
 	if job.envelope != nil {
 		recipients = job.envelope.externalAddresses()
@@ -255,6 +280,9 @@ func (a *app) processOutbox(job *outboxJob, connect relayConnector) error {
 		hasLocal := !job.localDone && len(recipients) < len(job.envelope.Targets)
 		if hasLocal {
 			proceed, err := a.processWebLocals(job, len(recipients) != 0)
+			if errors.Is(err, errSendAs) {
+				return a.finishOutbox(job, "failed", "此别名的发信权限已撤销。", 0)
+			}
 			if errors.Is(err, errDestinationChanged) {
 				return a.finishOutbox(job, "failed", "收件地址的投递配置已变更。", 0)
 			}
@@ -284,7 +312,7 @@ func (a *app) processOutbox(job *outboxJob, connect relayConnector) error {
 		return a.resolveOutboxError(job, err, false)
 	}
 	defer closeClient()
-	if err := client.Mail(job.message.From, nil); err != nil {
+	if err := client.Mail(job.message.wireFrom(), nil); err != nil {
 		return a.resolveOutboxError(job, err, false)
 	}
 	for _, recipient := range recipients {
@@ -309,6 +337,7 @@ func (a *app) processOutbox(job *outboxJob, connect relayConnector) error {
 	if err := data.Close(); err != nil {
 		return a.resolveOutboxError(job, err, true)
 	}
+	job.smtpCode = 250
 	return a.finishOutbox(job, "sent", "", 0)
 }
 
@@ -325,11 +354,17 @@ func (a *app) markOutboxSending(ctx context.Context, job *outboxJob) error {
 	if err := requireAffectedRow(result, err); err != nil {
 		return err
 	}
+	if err := recordDeliveryEvent(tx, job.message.From, job.message.ID, job.singleRecipient(), "sending", 0, 0); err != nil {
+		return err
+	}
 	return a.commitMailbox(tx, job.message.From)
 }
 
 func (a *app) resolveOutboxError(job *outboxJob, cause error, submitted bool) error {
 	var response *smtp.SMTPError
+	if errors.As(cause, &response) {
+		job.smtpCode = response.Code
+	}
 	reason := "无法连接 SMTP 中继或投递暂时受阻。"
 	if errors.Is(cause, errDKIMAuthor) {
 		return a.finishOutbox(job, "failed", "DKIM 要求邮件 From 与发件地址一致。", 0)
@@ -337,7 +372,7 @@ func (a *app) resolveOutboxError(job *outboxJob, cause error, submitted bool) er
 		reason = "DKIM 签名暂不可用，请检查签名密钥和数据库。"
 	} else if errors.Is(cause, errRelayAuthentication) {
 		reason = "SMTP 中继认证失败，请检查中继凭据。"
-	} else if errors.As(cause, &response) {
+	} else if response != nil {
 		if response.Code >= 500 && response.Code <= 599 {
 			return a.finishOutbox(job, "failed", fmt.Sprintf("SMTP 中继拒绝了邮件（%d）。", response.Code), 0)
 		}
@@ -384,6 +419,9 @@ func (a *app) finishOutbox(job *outboxJob, state, reason string, due int64) erro
 	}
 	count, err := result.RowsAffected()
 	if err != nil || count != 1 {
+		return err
+	}
+	if err := recordDeliveryEvent(tx, m.From, m.ID, job.singleRecipient(), state, job.smtpCode, due); err != nil {
 		return err
 	}
 	switch state {

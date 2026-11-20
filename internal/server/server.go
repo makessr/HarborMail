@@ -222,6 +222,10 @@ func Run() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	a.sendAliases, err = parseSendAliases(os.Getenv("HARBOR_SEND_AS_ALIASES"))
+	if err != nil {
+		log.Fatal(err)
+	}
 	driver := env("HARBOR_DB_DRIVER", "sqlite")
 	a.dbDriver = driver
 	a.sharedMailboxEvents = driver == "mysql"
@@ -564,6 +568,7 @@ func (a *app) routes() http.Handler {
 	mux.HandleFunc("POST /api/admin/accounts/{email}/password", a.adminOnly(a.adminResetPassword))
 	mux.HandleFunc("POST /api/admin/accounts/{email}/lifecycle", a.adminOnly(a.adminMailboxLifecycle))
 	mux.HandleFunc("GET /api/admin/domains/{domain}/dns", a.domainAdminOnly(a.adminDomainDNS))
+	mux.HandleFunc("POST /api/admin/domains/{domain}/verify", a.adminOnly(a.adminVerifyDomainMail))
 	mux.HandleFunc("POST /api/admin/domains", a.adminOnly(a.adminChangeDomain))
 	mux.HandleFunc("GET /api/admin/domains/{domain}/dkim", a.adminOnly(a.adminDKIMStatus))
 	mux.HandleFunc("POST /api/admin/domains/{domain}/dkim", a.adminOnly(a.adminChangeDKIM))
@@ -586,6 +591,9 @@ func (a *app) routes() http.Handler {
 	mux.HandleFunc("DELETE /api/web-sessions", a.auth(a.revokeOtherBrowserSessions))
 	mux.HandleFunc("DELETE /api/web-sessions/{id}", a.auth(a.revokeBrowserSession))
 	mux.HandleFunc("GET /api/app-passwords", a.auth(a.listAppPasswords))
+	mux.HandleFunc("GET /api/client-settings", a.auth(a.clientSettings))
+	mux.HandleFunc("GET /api/sender-identities", a.auth(a.senderIdentities))
+	mux.HandleFunc("POST /api/compose-preview", a.auth(a.previewCompose))
 	mux.HandleFunc("POST /api/app-passwords", a.auth(a.createAppPassword))
 	mux.HandleFunc("DELETE /api/app-passwords/{id}", a.auth(a.revokeAppPassword))
 	mux.HandleFunc("GET /api/addresses", a.auth(a.addressesHTTP))
@@ -759,15 +767,16 @@ func (a *app) read(w http.ResponseWriter, r *http.Request, owner string) {
 	var m letter
 	var raw, metadata []byte
 	var to sql.NullString
+	var deliveryJob sql.NullInt64
 	err := a.db.QueryRowContext(r.Context(), `SELECT l.id,l.sender,l.recipient,l.subject,l.body,l.stamp,l.folder,l.seen,l.star,
 		CASE WHEN l.detail_meta IS NULL OR l.folder='drafts' THEN l.raw END,
 		CASE WHEN l.folder<>'drafts' THEN l.detail_meta END,
 		CASE WHEN l.folder='drafts' THEN coalesce(d.revision,0) ELSE 0 END,coalesce(s.resume_at,0),
-		e.to_list,coalesce(e.cc_list,''),coalesce(e.bcc_list,'')
+		e.to_list,coalesce(e.cc_list,''),coalesce(e.bcc_list,''),l.delivery_job_id
 		FROM letters l LEFT JOIN web_drafts d ON d.letter_id=l.id
 		LEFT JOIN mail_snoozes s ON s.letter_id=l.id LEFT JOIN web_letter_recipients e ON e.letter_id=l.id
 		WHERE l.owner=? AND l.id=?`, owner, letterID(r)).Scan(&m.ID, &m.From, &m.To, &m.Subject, &m.Body, &m.Date,
-		&m.Folder, &m.Read, &m.Star, &raw, &metadata, &m.DraftVersion, &m.SnoozeUntil, &to, &m.Cc, &m.Bcc)
+		&m.Folder, &m.Read, &m.Star, &raw, &metadata, &m.DraftVersion, &m.SnoozeUntil, &to, &m.Cc, &m.Bcc, &deliveryJob)
 	if letterError(w, err) {
 		return
 	}
@@ -789,6 +798,10 @@ func (a *app) read(w http.ResponseWriter, r *http.Request, owner string) {
 		detail = inspectMailDetail(fallback)
 	}
 	recipients := detail.Recipients
+	if m.Folder == "drafts" {
+		header := letterHeader(raw)
+		m.Formatted = header.Get("X-Harbor-Format") == "rich"
+	}
 	if to.Valid {
 		m.To = to.String
 	} else {
@@ -797,6 +810,12 @@ func (a *app) read(w http.ResponseWriter, r *http.Request, owner string) {
 	m.Labels, err = a.mailLabels(r.Context(), owner, m.ID)
 	if labelHTTPError(w, err) {
 		return
+	}
+	if deliveryJob.Valid {
+		m.Timeline, err = readDeliveryTimeline(r.Context(), a.db, owner, deliveryJob.Int64)
+		if letterError(w, err) {
+			return
+		}
 	}
 	m.Attachments, m.HasHTML, m.HasText = detail.Attachments, detail.HasHTML, detail.HasText
 	m.ReplyAddress = detail.Reply
@@ -864,12 +883,16 @@ func (a *app) send(w http.ResponseWriter, r *http.Request, owner string) {
 		fail(w, 400, "请检查主题和正文")
 		return
 	}
-	envelope, valid := a.webDeliveryEnvelope(w, r.Context(), a.db, owner, input.recipientFields())
+	author := strings.ToLower(strings.TrimSpace(input.Author))
+	if !a.validateSenderIdentity(w, r.Context(), a.db, owner, author) {
+		return
+	}
+	m := letter{From: owner, Subject: strings.TrimSpace(input.Subject), Body: input.Body, Date: time.Now().Unix(), author: author, formatted: input.Formatted}
+	envelope, valid := a.webDeliveryEnvelope(w, r.Context(), a.db, m.wireFrom(), input.recipientFields())
 	if !valid {
 		return
 	}
-	m := letter{From: owner, To: envelope.Recipients.indexedAddress(), Subject: strings.TrimSpace(input.Subject),
-		Body: input.Body, Date: time.Now().Unix(), recipients: &envelope.Recipients}
+	m.To, m.recipients = envelope.Recipients.indexedAddress(), &envelope.Recipients
 	headers, err := prepareReply(r.Context(), a.db, owner, input.ReplyToID)
 	if letterError(w, err) {
 		return

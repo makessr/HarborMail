@@ -115,7 +115,7 @@ snapshot_ids | jq -e --arg expired "${expired:0:8}" --arg retained "${retained:0
     length == 4 and contains([$oldest, $retained, $foreign, $current]) and (index($expired) == null)
   ' >/dev/null
 bash ops/backup.sh verify "$snapshot"
-[[ $(restic dump "$snapshot" /harbor-schema) == login-audit-v1 ]]
+[[ $(restic dump "$snapshot" /harbor-schema) == delivery-timeline-v1 ]]
 
 mkdir -m 0700 -- "$work/legacy"
 cp -- "$work/recovered/harbor.db" "$work/legacy/harbor.db"
@@ -150,5 +150,16 @@ if output=$(HARBOR_BACKUP_INSTANCE=missing-audit-ci bash ops/backup.sh verify "$
   exit 1
 fi
 [[ $output == *'missing required Harbor Mail tables: login_audit_events'* ]]
-printf 'Legacy snapshots remain recoverable, and marked snapshots require DKIM tables.\n'
+cp -- "$work/recovered/harbor.db" "$work/legacy/harbor.db"
+sqlite3 "$work/legacy/harbor.db" 'DROP TABLE delivery_events;'
+login_only=$(legacy_snapshot login-only-ci harbor-schema)
+HARBOR_BACKUP_INSTANCE=login-only-ci bash ops/backup.sh verify "$login_only"
+printf '%s\n' delivery-timeline-v1 > "$work/legacy/harbor-schema"
+missing_timeline=$(legacy_snapshot missing-timeline-ci harbor-schema)
+if output=$(HARBOR_BACKUP_INSTANCE=missing-timeline-ci bash ops/backup.sh verify "$missing_timeline" 2>&1); then
+  printf 'Verification accepted a new snapshot without delivery events.\n' >&2
+  exit 1
+fi
+[[ $output == *'missing required Harbor Mail tables: delivery_events'* ]]
+printf 'Snapshot verification checks the tables required by each schema marker.\n'
 printf 'Authenticated HTTPS backup, restore and instance-scoped retention passed.\n'

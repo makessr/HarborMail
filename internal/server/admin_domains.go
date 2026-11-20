@@ -174,36 +174,44 @@ func (a *app) domainHasAddresses(ctx context.Context, tx folderQueryer, domain s
 	return inUse, err
 }
 
-func (a *app) adminDomainDNS(w http.ResponseWriter, r *http.Request, actor string) {
-	domain := strings.ToLower(r.PathValue("domain"))
+func (a *app) checkAdminDNSDomain(w http.ResponseWriter, ctx context.Context, actor, domain string) bool {
 	if !a.canManageDomain(actor, domain) {
 		fail(w, http.StatusForbidden, "当前账号无权管理此域名")
-		return
+		return false
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
 	names, err := a.allAccountNames(ctx)
 	if letterError(w, err) {
-		return
+		return false
 	}
 	aliases, err := a.effectiveAliases(ctx, names)
 	if letterError(w, err) {
-		return
+		return false
 	}
 	domains, err := a.adminDomains(ctx, names, aliases)
 	if letterError(w, err) {
-		return
+		return false
 	}
 	if !slices.ContainsFunc(a.scopedDomains(actor, domains), func(item adminDomain) bool { return item.Name == domain }) {
 		fail(w, http.StatusNotFound, "未配置这个邮件域名")
-		return
+		return false
 	}
 	if !validDNSName(domain) || len("_dmarc."+domain) > 253 {
 		fail(w, http.StatusBadRequest, "该邮箱域无法作为 DNS 名称查询")
+		return false
+	}
+	return true
+}
+
+func (a *app) adminDomainDNS(w http.ResponseWriter, r *http.Request, actor string) {
+	domain := strings.ToLower(r.PathValue("domain"))
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	defer cancel()
+	if !a.checkAdminDNSDomain(w, ctx, actor, domain) {
 		return
 	}
 	selector := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("selector")))
 	if selector == "" {
+		var err error
 		selector, err = activeDKIMSelector(ctx, a.db, domain)
 		if letterError(w, err) {
 			return
@@ -222,5 +230,9 @@ func (a *app) adminDomainDNS(w http.ResponseWriter, r *http.Request, actor strin
 		return
 	}
 
+	if r.URL.Query().Get("readiness") == "1" && a.admins[actor] {
+		reply(w, http.StatusOK, a.checkDomainReadiness(ctx, domain, selector))
+		return
+	}
 	reply(w, http.StatusOK, lookupDomainDNS(ctx, net.DefaultResolver, domain, selector))
 }

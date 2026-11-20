@@ -85,6 +85,21 @@ const recipientProgressLabels = {
   queued: "等待重试", sending: "投递中", accepted: "中继已接收", failed: "失败", uncertain: "结果待确认"
 };
 
+function renderDeliveryTimeline(events) {
+  const details = byId("delivery-timeline");
+  details.hidden = !events?.length;
+  const labels = { ...recipientProgressLabels, enqueued: "加入发件箱", local_delivered: "站内投递完成",
+    sent: "外部投递完成", retry_requested: "管理员安排重试" };
+  byId("delivery-timeline-items").replaceChildren(...(events || []).map(({state, address, at, due, code}) => {
+    const row = document.createElement("li");
+    const fields = [fullDate.format(at * 1000), labels[state] || state, address];
+    if (code) fields.push("SMTP " + code);
+    if (due && state !== "enqueued") fields.push("下次尝试 " + fullDate.format(due * 1000));
+    row.textContent = fields.filter(Boolean).join(" · ");
+    return row;
+  }));
+}
+
 function renderOutboxRecipients(delivery) {
   const details = byId("delivery-recipients");
   const items = delivery?.recipients || [];
@@ -115,10 +130,11 @@ async function refreshOutboxRecipients(id) {
   const delivery = state.current?.delivery;
   if (!delivery || !delivery.attempts) return;
   try {
-    const recipients = await api("outbox/" + id + "/recipients");
+    const item = await api("outbox/" + id);
     if (request !== recipientProgressRequest || state.current?.id !== id || !state.current.delivery) return;
-    state.current.delivery.recipients = recipients;
+    state.current.delivery.recipients = item.delivery.recipients;
     renderOutboxRecipients(state.current.delivery);
+    renderDeliveryTimeline(item.timeline);
   } catch (error) {
     if (error.status !== 404 && request === recipientProgressRequest && state.current?.id === id) toast(error.message);
   }

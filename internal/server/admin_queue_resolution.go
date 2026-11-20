@@ -72,7 +72,7 @@ func (a *app) adminResolveDelivery(w http.ResponseWriter, r *http.Request, actor
 }
 
 func (a *app) confirmUncertainRelayDelivery(ctx context.Context, tx *sql.Tx, id int64) error {
-	var m letter
+	m := letter{ID: id}
 	var raw []byte
 	var encoded string
 	var localDone bool
@@ -81,6 +81,9 @@ func (a *app) confirmUncertainRelayDelivery(ctx context.Context, tx *sql.Tx, id 
 		FROM outbox o LEFT JOIN web_outbox_envelopes e ON e.outbox_id=o.id WHERE o.id=?`, id).
 		Scan(&m.From, &m.To, &m.Subject, &m.Body, &m.Date, &raw, &encoded, &localDone)
 	if err != nil {
+		return err
+	}
+	if err := recordDeliveryEvent(tx, m.From, id, "", "sent", 0, 0); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM outbox WHERE id=?`, id); err != nil {
@@ -101,6 +104,7 @@ func (a *app) confirmUncertainRelayDelivery(ctx context.Context, tx *sql.Tx, id 
 	}
 	if envelope != nil {
 		m.recipients = &envelope.Recipients
+		m.author, m.formatted = envelope.Author, envelope.Formatted
 	}
 	return a.insertQueuedSent(ctx, tx, m, raw)
 }

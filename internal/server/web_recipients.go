@@ -26,6 +26,8 @@ type webTarget struct {
 type webEnvelope struct {
 	Recipients webRecipients
 	Targets    []webTarget
+	Author     string `json:",omitempty"`
+	Formatted  bool   `json:",omitempty"`
 }
 
 var errInvalidWebRecipients = errors.New("invalid web recipients")

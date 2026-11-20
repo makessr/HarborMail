@@ -86,6 +86,12 @@ func (a *app) runLoginAudit(ctx context.Context) {
 		if err != nil && ctx.Err() == nil {
 			log.Print("Could not prune expired login audit events")
 		}
+		sweep, cancel = context.WithTimeout(ctx, 15*time.Second)
+		err = a.pruneDeliveryTimeline(sweep)
+		cancel()
+		if err != nil && ctx.Err() == nil {
+			log.Print("Could not prune expired delivery timeline events")
+		}
 		select {
 		case <-ctx.Done():
 			return

@@ -162,6 +162,9 @@ func (a *app) deliverScheduledLocal(job *outboxJob) error {
 	if err := a.insertQueuedSent(ctx, tx, m, job.raw); err != nil {
 		return err
 	}
+	if err := recordDeliveryEvent(tx, m.From, m.ID, "", "local_delivered", 0, 0); err != nil {
+		return err
+	}
 	if err := insertIncoming(ctx, tx, job.localOwner, m.From, "inbox", m, job.raw); err != nil {
 		return err
 	}
@@ -216,6 +219,7 @@ func (a *app) restoreScheduled(ctx context.Context, owner string, id int64) (int
 	}
 	if envelope != nil {
 		m.recipients = &envelope.Recipients
+		m.author, m.formatted = envelope.Author, envelope.Formatted
 		if err := deleteWebEnvelope(ctx, tx, id); err != nil {
 			return 0, err
 		}

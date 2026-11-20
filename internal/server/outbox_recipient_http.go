@@ -58,6 +58,9 @@ func (a *app) resolveOutboxRecipient(w http.ResponseWriter, r *http.Request, own
 	} else if letterError(w, err) {
 		return
 	}
+	if letterError(w, recordDeliveryEvent(tx, owner, id, recipient, input.Outcome, 0, 0)) {
+		return
+	}
 	items, err := readRecipientProgress(ctx, tx, owner, id)
 	if letterError(w, err) {
 		return

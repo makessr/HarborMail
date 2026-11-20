@@ -220,7 +220,12 @@ func (a *app) adminSetHardQuota(w http.ResponseWriter, r *http.Request, actor st
 
 func (a *app) insertQueuedSent(ctx context.Context, tx *sql.Tx, m letter, raw []byte) error {
 	return a.saveQueuedCopy(ctx, tx, m.From, func() error {
-		return insert(tx, m.From, m, "sent", raw)
+		id, err := insertLetter(tx, m.From, m, "sent", "sent", raw)
+		if err != nil {
+			return err
+		}
+		_, err = tx.ExecContext(ctx, `UPDATE letters SET delivery_job_id=? WHERE id=? AND owner=?`, m.ID, id, m.From)
+		return err
 	})
 }
 

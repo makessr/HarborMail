@@ -542,6 +542,17 @@ function describeDNS(check) {
   }[check.state];
 }
 
+function readinessDNS(name, check, next) {
+  return [name, [describeDNS(check), check.state !== "present" ? next : ""].filter(Boolean).join(" · ")];
+}
+
+dnsDomain.addEventListener("change", () => {
+  dnsResults.hidden = true;
+  adminElement("admin-domain-verify").hidden = true;
+  adminElement("admin-domain-verify-status").textContent = "";
+  dnsStatus.textContent = "";
+});
+
 adminElement("admin-dns-form").addEventListener("submit", async event => {
   event.preventDefault();
   if (dnsDomain.disabled || !dnsDomain.value) return;
@@ -551,7 +562,7 @@ adminElement("admin-dns-form").addEventListener("submit", async event => {
   dnsResults.hidden = true;
   dnsStatus.textContent = "正在检查 " + domain + " …";
   try {
-    const endpoint = "/api/admin/domains/" + encodeURIComponent(domain) + "/dns?" + new URLSearchParams({ selector });
+    const endpoint = "/api/admin/domains/" + encodeURIComponent(domain) + "/dns?" + new URLSearchParams({ selector, readiness: "1" });
     const response = await fetch(endpoint);
     if (response.status === 401 || response.status === 403) {
       location.replace("/");
@@ -562,15 +573,55 @@ adminElement("admin-dns-form").addEventListener("submit", async event => {
     const mx = data.mx.state === "present"
       ? data.hosts.map(({ Host, Pref }) => Pref + " " + Host.replace(/\.$/, "")).join("、")
       : describeDNS(data.mx);
-    renderDetails("admin-dns-results", [
-      ["MX", mx], ["SPF", describeDNS(data.spf)], ["DMARC", describeDNS(data.dmarc)], ["DKIM", describeDNS(data.dkim)]
-    ]);
+    const results = [data.mx.state === "present" ? ["MX", mx] : readinessDNS("MX", data.mx, "核对收信主机的 MX"),
+      readinessDNS("SPF", data.spf, "核对外发中继提供的 SPF"),
+      readinessDNS("DMARC", data.dmarc, "核对 _dmarc TXT"),
+      readinessDNS("DKIM", data.dkim, "核对选择器和 DNS 公钥")];
+    if (data.key) {
+      results.push(["内置 DKIM", data.key.keyState === "match" && data.key.dnsState === "match"
+        ? "私钥与 DNS 公钥匹配" : "核对私钥文件和选择器 " + data.key.selector]);
+    }
+    if (data.tls) results.push(["公网 HTTPS", data.tls.state === "pass"
+      ? "证书有效至 " + new Date(data.tls.until * 1000).toLocaleDateString("zh-CN") : data.tls.next]);
+    if (data.relay) results.push(["SMTP 中继", data.relay.state === "pass" ? "连接、TLS 及已配置认证通过" : data.relay.next]);
+    renderDetails("admin-dns-results", results);
+    adminElement("admin-domain-verify").hidden = !data.tls;
     dnsResults.hidden = false;
     dnsStatus.textContent = "检查结果 · " + domain + (data.dkimSelector ? " · DKIM " + data.dkimSelector : "");
   } catch (error) {
     dnsStatus.textContent = error.message;
   } finally {
     dnsDomain.disabled = dnsSelector.disabled = dnsCheck.disabled = false;
+  }
+});
+
+adminElement("admin-domain-verify").addEventListener("submit", async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const file = form.elements.namedItem("message").files[0];
+  const status = adminElement("admin-domain-verify-status");
+  const button = form.querySelector("button");
+  if (!file || !dnsDomain.value) return;
+  if (file.size > 32 * 1024 * 1024) {
+    status.textContent = "请选择 32 MiB 以内的 EML 原件。";
+    return;
+  }
+  button.disabled = true;
+  status.textContent = "正在验证签名…";
+  try {
+    const domain = dnsDomain.value;
+    const query = new URLSearchParams({ selector: dnsSelector.value.trim() });
+    const response = await fetch("/api/admin/domains/" + encodeURIComponent(domain) + "/verify?" + query,
+      { method: "POST", headers: { "Content-Type": "message/rfc822" }, body: file });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error);
+    const messages = { pass: "签名验证通过", fail: "签名验证失败，请核对中继是否改写正文", no_signature: "未找到该域的签名",
+      temporary_error: "DNS 暂时不可用，请稍后重试", invalid_message: "无法读取邮件原件", too_many_signatures: "邮件签名过多" };
+    status.textContent = domain + " · " + (messages[result.status] || "无法确认签名");
+  } catch (error) {
+    status.textContent = error.message || "无法验证实信。";
+  } finally {
+    button.disabled = false;
   }
 });
 

@@ -417,11 +417,18 @@ type relayFixture struct {
 	conn      *smtp.Conn
 	replyCode int
 	afterData func()
+	onMail    func(string)
+	onData    func([]byte)
 }
 
-func (r relayFixture) Reset()                                   {}
-func (r relayFixture) Logout() error                            { return nil }
-func (r relayFixture) Mail(_ string, _ *smtp.MailOptions) error { return nil }
+func (r relayFixture) Reset()        {}
+func (r relayFixture) Logout() error { return nil }
+func (r relayFixture) Mail(sender string, _ *smtp.MailOptions) error {
+	if r.onMail != nil {
+		r.onMail(sender)
+	}
+	return nil
+}
 func (r relayFixture) Rcpt(_ string, _ *smtp.RcptOptions) error { return nil }
 func (r relayFixture) Data(body io.Reader) error {
 	raw, err := io.ReadAll(body)
@@ -433,6 +440,9 @@ func (r relayFixture) Data(body io.Reader) error {
 	}
 	if r.afterData != nil {
 		r.afterData()
+	}
+	if r.onData != nil {
+		r.onData(raw)
 	}
 	switch r.replyCode {
 	case 0:

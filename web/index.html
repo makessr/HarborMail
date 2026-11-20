@@ -19,8 +19,10 @@
   <script src="/commands.js" defer></script>
   <script src="/draft-autosave.js" defer></script>
   <script src="/app.js" defer></script>
+  <script src="/compose-options.js" defer></script>
   <script src="/contacts.js" defer></script>
   <script src="/app-passwords.js" defer></script>
+  <script src="/client-settings.js" defer></script>
   <script src="/web-sessions.js" defer></script>
   <script src="/mail-transfer.js" defer></script>
 </head>
@@ -74,6 +76,7 @@
           <button id="show-addresses">收信地址</button>
           <button id="show-contacts">联系人</button>
           <button id="show-app-passwords">应用密码</button>
+          <button id="show-client-settings" type="button" aria-haspopup="dialog">邮件客户端</button>
           <button id="show-web-sessions">登录设备</button>
           <button id="show-signatures">邮件签名</button>
           <a href="https://github.com/makessr/HarborMail" target="_blank" rel="noopener noreferrer" aria-label="Harbor Mail 的 GitHub 仓库（在新标签页打开）"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#github-fill"></use></svg> GitHub</a>
@@ -175,6 +178,10 @@
           <summary>按地址查看外部投递</summary>
           <ul id="delivery-recipient-items"></ul>
         </details>
+        <details id="delivery-timeline" hidden>
+          <summary>投递时间线</summary>
+          <ol id="delivery-timeline-items"></ol>
+        </details>
         <p id="snooze-status" class="snooze-status" hidden><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#time-line"></use></svg> <span id="snooze-status-text"></span></p>
         <div id="body" class="letter-body"></div>
         <div id="html-body" class="html-body" hidden>
@@ -222,6 +229,7 @@
       <label>密送<input name="bcc" type="text" inputmode="email" autocomplete="off" spellcheck="false" maxlength="5120"
         aria-describedby="compose-recipient-help"></label>
       <p id="compose-recipient-help" class="rule-help">用逗号或分号分隔地址，合计最多 20 位收件人。</p>
+      <label id="compose-author-row" hidden>发件地址<select name="author"></select></label>
       <label>主题<input name="subject"></label>
       <div class="compose-body">
         <div class="compose-body-toolbar">
@@ -229,6 +237,17 @@
           <button id="show-templates" class="secondary" type="button" aria-haspopup="dialog"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#draft-line"></use></svg> 邮件模板</button>
         </div>
         <textarea id="compose-body" name="body" rows="9" required></textarea>
+        <div class="compose-format-actions">
+          <label><input type="checkbox" name="formatted" value="true">富文本</label>
+          <div id="compose-format-tools" hidden>
+            <button type="button" data-format="bold">加粗</button>
+            <button type="button" data-format="link">链接</button>
+            <button type="button" data-format="list">列表</button>
+            <button type="button" data-format="quote">引用</button>
+            <button type="button" id="preview-compose">预览</button>
+          </div>
+        </div>
+        <iframe id="compose-preview" title="富文本预览" sandbox="" hidden></iframe>
         <div id="draft-save-status" class="draft-save-status" hidden>
           <svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#draft-line"></use></svg>
           <p id="draft-save-message" role="status"></p>
@@ -596,6 +615,19 @@
         </footer>
       </form>
     </section>
+  </dialog>
+  <dialog id="client-settings-dialog" aria-labelledby="client-settings-title">
+    <div class="editor">
+      <header class="heading"><h2 id="client-settings-title">邮件客户端</h2>
+        <button id="close-client-settings" class="icon" type="button" aria-label="关闭"><svg class="glyph" aria-hidden="true"><use href="/icons.svg#close-line"></use></svg></button>
+      </header>
+      <p id="client-settings-status" role="status"></p>
+      <dl id="client-settings-values"></dl>
+      <footer>
+        <button id="copy-client-settings" class="secondary" type="button" disabled>复制配置</button>
+        <button id="client-app-passwords" class="primary" type="button">管理应用密码</button>
+      </footer>
+    </div>
   </dialog>
   <dialog id="app-passwords-dialog" aria-labelledby="app-passwords-title">
     <section class="editor">

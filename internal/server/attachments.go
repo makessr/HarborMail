@@ -37,6 +37,8 @@ type uploadedAttachment struct {
 type outgoingLetter struct {
 	To, Cc, Bcc   string
 	Subject, Body string
+	Author        string
+	Formatted     bool
 	ReplyToID     int64 `json:"replyToId"`
 	files         []uploadedAttachment
 }
@@ -82,6 +84,8 @@ func decodeOutgoing(w http.ResponseWriter, r *http.Request, input *outgoingLette
 	input.Bcc = r.PostForm.Get("bcc")
 	input.Subject = r.PostForm.Get("subject")
 	input.Body = r.PostForm.Get("body")
+	input.Author = r.PostForm.Get("author")
+	input.Formatted = r.PostForm.Get("formatted") == "true"
 	if value := r.PostForm.Get("replyToId"); value != "" {
 		id, err := strconv.ParseInt(value, 10, 64)
 		if err != nil || id < 1 {

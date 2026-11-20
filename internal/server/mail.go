@@ -40,6 +40,7 @@ type app struct {
 	accounts            map[string][]byte
 	admins              map[string]bool
 	aliases             map[string]string
+	sendAliases         map[string]bool
 	domain              string
 	secure              bool
 	recoveryMode        bool
@@ -75,6 +76,8 @@ type letter struct {
 	HasHTML       bool             `json:"hasHTML,omitempty"`
 	HasText       bool             `json:"hasText,omitempty"`
 	Delivery      *deliveryStatus  `json:"delivery,omitempty"`
+	Timeline      []deliveryEvent  `json:"timeline,omitempty"`
+	Formatted     bool             `json:"formatted,omitempty"`
 	DraftVersion  int64            `json:"draftVersion,omitempty"`
 	ReplyAddress  string           `json:"replyAddress,omitempty"`
 	SenderAddress string           `json:"senderAddress,omitempty"`
@@ -82,6 +85,8 @@ type letter struct {
 	Labels        []mailLabel      `json:"labels,omitempty"`
 	reply         replyHeaders
 	recipients    *webRecipients
+	author        string
+	formatted     bool
 }
 
 func token() string {
@@ -101,9 +106,12 @@ func insertLetter(tx *sql.Tx, owner string, m letter, folder, origin string, raw
 	var detail []byte
 	if folder != "drafts" {
 		detail = encodeMailDetail(raw)
+		if m.formatted {
+			m.Body, _ = renderRichCompose(m.Body)
+		}
 	}
 	result, err := tx.Exec(`INSERT INTO letters(owner,sender,recipient,subject,body,stamp,folder,origin,seen,star,raw,detail_meta)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, owner, strings.ToValidUTF8(m.From, "\uFFFD"), m.To,
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, owner, strings.ToValidUTF8(m.wireFrom(), "\uFFFD"), m.To,
 		strings.ToValidUTF8(m.Subject, "\uFFFD"), strings.ToValidUTF8(m.Body, "\uFFFD"),
 		m.Date, folder, origin, m.Read || folder == "sent", m.Star, raw, detail)
 	if err != nil {
@@ -305,7 +313,13 @@ func senderContact(from string) (email, name string) {
 func encodeLetter(m letter, domain string, files []uploadedAttachment) ([]byte, error) {
 	var raw bytes.Buffer
 	var header message.Header
-	header.SetAddressList("From", []*mail.Address{{Address: m.From}})
+	header.SetAddressList("From", []*mail.Address{{Address: m.wireFrom()}})
+	if m.author != "" && m.author != m.From {
+		header.Set("X-Harbor-Send-As", m.author)
+	}
+	if m.formatted {
+		header.Set("X-Harbor-Format", "rich")
+	}
 	if m.recipients != nil {
 		setVisibleRecipients(&header, *m.recipients)
 	} else if m.To != "" {
@@ -322,6 +336,14 @@ func encodeLetter(m letter, domain string, files []uploadedAttachment) ([]byte, 
 	}
 	header.Set("Content-Type", "text/plain; charset=UTF-8")
 	if len(files) == 0 {
+		if m.formatted {
+			inline, err := message.CreateInlineWriter(&raw, header)
+			if err != nil {
+				return nil, err
+			}
+			err = writeRichCompose(inline, m.Body)
+			return raw.Bytes(), err
+		}
 		part, err := message.CreateSingleInlineWriter(&raw, header)
 		if err != nil {
 			return nil, err
@@ -333,14 +355,24 @@ func encodeLetter(m letter, domain string, files []uploadedAttachment) ([]byte, 
 	if err != nil {
 		return nil, err
 	}
-	var text message.InlineHeader
-	text.Set("Content-Type", "text/plain; charset=UTF-8")
-	part, err := writer.CreateSingleInline(text)
-	if err != nil {
-		return nil, err
-	}
-	if err := writeMIMEPart(part, []byte(m.Body)); err != nil {
-		return nil, err
+	if m.formatted {
+		inline, err := writer.CreateInline()
+		if err != nil {
+			return nil, err
+		}
+		if err := writeRichCompose(inline, m.Body); err != nil {
+			return nil, err
+		}
+	} else {
+		var text message.InlineHeader
+		text.Set("Content-Type", "text/plain; charset=UTF-8")
+		part, err := writer.CreateSingleInline(text)
+		if err != nil {
+			return nil, err
+		}
+		if err := writeMIMEPart(part, []byte(m.Body)); err != nil {
+			return nil, err
+		}
 	}
 	for _, file := range files {
 		var header message.AttachmentHeader

@@ -35,20 +35,27 @@ func encodeMailDetail(raw []byte) []byte {
 }
 
 func ensureMailDetailColumn(ctx context.Context, db *sql.DB, driver string) error {
-	check := "SELECT COUNT(*) FROM pragma_table_info('letters') WHERE name='detail_meta'"
-	column := "BLOB"
+	if err := ensureLetterColumn(ctx, db, driver, "detail_meta", "BLOB", "LONGBLOB"); err != nil {
+		return err
+	}
+	return ensureLetterColumn(ctx, db, driver, "delivery_job_id", "INTEGER", "BIGINT")
+}
+
+func ensureLetterColumn(ctx context.Context, db *sql.DB, driver, name, sqliteType, mysqlType string) error {
+	check := "SELECT COUNT(*) FROM pragma_table_info('letters') WHERE name=?"
+	column := sqliteType
 	if driver == "mysql" {
-		check = "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='letters' AND column_name='detail_meta'"
-		column = "LONGBLOB"
+		check = "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='letters' AND column_name=?"
+		column = mysqlType
 	}
 	var count int
-	if err := db.QueryRowContext(ctx, check).Scan(&count); err != nil {
+	if err := db.QueryRowContext(ctx, check, name).Scan(&count); err != nil {
 		return err
 	}
 	if count != 0 {
 		return nil
 	}
-	_, err := db.ExecContext(ctx, "ALTER TABLE letters ADD COLUMN detail_meta "+column)
+	_, err := db.ExecContext(ctx, "ALTER TABLE letters ADD COLUMN "+name+" "+column)
 	var duplicate *mysql.MySQLError
 	if errors.As(err, &duplicate) && duplicate.Number == 1060 {
 		return nil // Another MySQL instance upgraded the shared schema first.

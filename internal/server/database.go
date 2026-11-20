@@ -27,7 +27,7 @@ var sqliteSchema = []string{
 		id INTEGER PRIMARY KEY, owner TEXT NOT NULL, sender TEXT NOT NULL,
 		recipient TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL,
 		stamp INTEGER NOT NULL, folder TEXT NOT NULL, origin TEXT NOT NULL, previous TEXT NOT NULL DEFAULT '',
-		seen INTEGER NOT NULL DEFAULT 0, star INTEGER NOT NULL DEFAULT 0, raw BLOB NOT NULL, detail_meta BLOB
+		seen INTEGER NOT NULL DEFAULT 0, star INTEGER NOT NULL DEFAULT 0, raw BLOB NOT NULL, detail_meta BLOB, delivery_job_id INTEGER
 	)`,
 	`CREATE INDEX IF NOT EXISTS mailbox_order ON letters(owner, folder, id DESC)`,
 	`CREATE TABLE IF NOT EXISTS spam_feedback (
@@ -204,6 +204,7 @@ var mysqlSchema = []string{
 		star BOOLEAN NOT NULL DEFAULT FALSE,
 		raw LONGBLOB NOT NULL,
 		detail_meta LONGBLOB,
+		delivery_job_id BIGINT,
 		KEY mailbox_order (owner, folder, id)
 	) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin`,
 	`CREATE TABLE IF NOT EXISTS spam_feedback (
@@ -434,6 +435,10 @@ func openDB(driver, source string) (*sql.DB, error) {
 	if err := ensureMailDetailColumn(ctx, db, driver); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("initialize %s letter details: %w", driver, err)
+	}
+	if err := initDeliveryTimeline(ctx, db, driver); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("initialize %s delivery timeline: %w", driver, err)
 	}
 	if err := initIMAPSchema(ctx, db, driver); err != nil {
 		db.Close()

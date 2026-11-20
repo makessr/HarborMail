@@ -155,7 +155,7 @@ func (a *app) prepareDKIM(ctx context.Context, job *outboxJob) error {
 }
 
 func (a *app) outboundDKIMHeader(ctx context.Context, job *outboxJob) (string, error) {
-	domain := emailDomain(job.message.From)
+	domain := emailDomain(job.message.wireFrom())
 	var selector string
 	var sealed []byte
 	var cached sql.NullString
@@ -175,7 +175,7 @@ func (a *app) outboundDKIMHeader(ctx context.Context, job *outboxJob) (string, e
 	if err != nil {
 		return "", err
 	}
-	header, err := signDKIMHeader(job.raw, job.message.From, domain, selector, key)
+	header, err := signDKIMHeader(job.raw, job.message.wireFrom(), domain, selector, key)
 	if err != nil {
 		return "", err
 	}

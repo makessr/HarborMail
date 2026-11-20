@@ -46,7 +46,8 @@ func (a *app) saveWebDraft(w http.ResponseWriter, r *http.Request, owner string,
 		fields = envelope.Recipients
 	}
 	m := letter{From: owner, To: fields.indexedAddress(), Subject: input.Subject,
-		Body: input.Body, Date: time.Now().Unix(), Read: true, recipients: &fields}
+		Body: input.Body, Date: time.Now().Unix(), Read: true, recipients: &fields,
+		author: strings.ToLower(strings.TrimSpace(input.Author)), formatted: input.Formatted}
 	wire := m
 	ctx := r.Context()
 	id, expected := letterID(r), draftRevision(r)
@@ -60,6 +61,9 @@ func (a *app) saveWebDraft(w http.ResponseWriter, r *http.Request, owner string,
 	}
 	defer tx.Rollback()
 	if letterError(w, lockIMAPUIDs(ctx, tx)) || letterError(w, a.requireActiveAccount(ctx, tx, owner)) {
+		return
+	}
+	if !a.validateSenderIdentity(w, ctx, tx, owner, m.author) {
 		return
 	}
 	if key != "" {
@@ -104,8 +108,8 @@ func (a *app) saveWebDraft(w http.ResponseWriter, r *http.Request, owner string,
 		return
 	}
 	if existing {
-		if _, err := tx.ExecContext(ctx, `UPDATE letters SET recipient=?,subject=?,body=?,stamp=?,raw=?,detail_meta=NULL
-			WHERE id=? AND owner=? AND folder='drafts'`, m.To, m.Subject, m.Body, m.Date, raw, id, owner); letterError(w, err) {
+		if _, err := tx.ExecContext(ctx, `UPDATE letters SET sender=?,recipient=?,subject=?,body=?,stamp=?,raw=?,detail_meta=NULL
+			WHERE id=? AND owner=? AND folder='drafts'`, m.wireFrom(), m.To, m.Subject, m.Body, m.Date, raw, id, owner); letterError(w, err) {
 			return
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM web_letter_recipients WHERE letter_id=?`, id); letterError(w, err) {
@@ -216,7 +220,13 @@ func (a *app) sendDraft(w http.ResponseWriter, r *http.Request, owner string) {
 		fail(w, 400, "请填写邮件正文")
 		return
 	}
-	envelope, valid := a.webDeliveryEnvelope(w, ctx, tx, owner, fields)
+	header := letterHeader(raw)
+	m.author = header.Get("X-Harbor-Send-As")
+	m.formatted = header.Get("X-Harbor-Format") == "rich"
+	if !a.validateSenderIdentity(w, ctx, tx, owner, m.author) {
+		return
+	}
+	envelope, valid := a.webDeliveryEnvelope(w, ctx, tx, m.wireFrom(), fields)
 	if !valid {
 		return
 	}
@@ -225,7 +235,7 @@ func (a *app) sendDraft(w http.ResponseWriter, r *http.Request, owner string) {
 	if plan.at != 0 {
 		m.Date = plan.at
 	}
-	raw, err = rewriteOutgoingHeaders(raw, m.Date, m.From, m.recipients)
+	raw, err = rewriteOutgoingHeaders(raw, m.Date, m.wireFrom(), m.recipients)
 	if letterError(w, err) {
 		return
 	}

@@ -63,6 +63,10 @@ func (a *app) submitWebMail(w http.ResponseWriter, ctx context.Context, tx *sql.
 		}
 		return
 	}
+	if !a.validateSenderIdentity(w, ctx, tx, m.From, m.author) {
+		return
+	}
+	envelope.Author, envelope.Formatted = m.author, m.formatted
 	for _, target := range envelope.Targets {
 		if err := a.checkDestination(ctx, tx, target.Address, target.Owner); err != nil {
 			if errors.Is(err, errDestinationChanged) {
@@ -113,7 +117,7 @@ func (a *app) deliverWebLocals(ctx context.Context, tx *sql.Tx, m letter, raw []
 		incoming := m
 		incoming.To, incoming.recipients = target.Address, nil
 		incoming.Cc, incoming.Bcc = "", ""
-		if err := insertIncoming(ctx, tx, target.Owner, m.From, "inbox", incoming, raw); err != nil {
+		if err := insertIncoming(ctx, tx, target.Owner, m.wireFrom(), "inbox", incoming, raw); err != nil {
 			return nil, err
 		}
 		owners = append(owners, target.Owner)
@@ -133,6 +137,9 @@ func (a *app) processWebLocals(job *outboxJob, hasExternal bool) (bool, error) {
 	if err := lockIMAPUIDs(ctx, tx); err != nil {
 		return false, err
 	}
+	if err := a.requireSenderIdentity(ctx, tx, job.message.From, job.message.author); err != nil {
+		return false, err
+	}
 	for _, target := range job.envelope.Targets {
 		if err := a.checkDestination(ctx, tx, target.Address, target.Owner); err != nil {
 			return false, err
@@ -140,7 +147,7 @@ func (a *app) processWebLocals(job *outboxJob, hasExternal bool) (bool, error) {
 	}
 	id := job.message.ID
 	guard := ` WHERE id=? AND claim=? AND state='preparing' AND lease>?`
-	continueToRelay := hasExternal && a.hasRelayFor(job.message.From)
+	continueToRelay := hasExternal && a.hasRelayFor(job.message.wireFrom())
 	statement := `DELETE FROM outbox`
 	if hasExternal {
 		statement = `UPDATE outbox SET lease=lease`
@@ -176,6 +183,9 @@ func (a *app) processWebLocals(job *outboxJob, hasExternal bool) (bool, error) {
 	}
 	owners, err := a.deliverWebLocals(ctx, tx, job.message, job.raw, job.envelope.Targets, true)
 	if err != nil {
+		return false, err
+	}
+	if err := recordDeliveryEvent(tx, job.message.From, id, "", "local_delivered", 0, 0); err != nil {
 		return false, err
 	}
 	if err := a.commitMailbox(tx, owners...); err != nil {

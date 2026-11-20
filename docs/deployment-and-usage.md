@@ -26,7 +26,7 @@ HARBOR_ACCOUNTS_FILE="$PWD/secrets/accounts.json" ./harbormail
 
 默认监听 `127.0.0.1:8080`（Web）和 `127.0.0.1:2525`（SMTP），SQLite 会在工作目录下创建 `data/harbor.db`。可以用 `HARBOR_DB` 指定持久数据路径，以服务账号运行并保证其可写。使用 MySQL 时按[数据库配置](#使用-mysql)设置环境变量。远程部署时按[接入真实域名](#接入真实域名)配置 Web 反向代理和 SMTP。
 
-长期部署见 [Linux 单二进制 systemd 部署](../ops/README.md#linux-单二进制-systemd-部署)。
+以上前台启动用于首次试运行。切换到 systemd 前，用 Ctrl+C 停止前台进程，释放监听端口。systemd 模板默认读取 `/var/lib/harbormail/harbor.db`。试运行已有邮件时，先备份并将其恢复到服务的数据目录。安装 `harbormail.service` 后可用 `sudo systemctl enable --now harbormail.service` 启动并开启自启。[systemd 安装](../ops/README.md#linux-单二进制-systemd-部署) · [日常服务命令](../ops/README.md#日常服务命令)
 
 ### Windows 开发
 
@@ -301,7 +301,7 @@ docker run --rm -it --log-driver=none ghcr.io/makessr/harbormail:latest generate
 
 后台重置绑定到当时的服务器账号哈希。以新的 `HARBOR_ACCOUNTS` 哈希替换账号配置时，以新配置为准。恢复旧配置和数据库备份前须核对密码变更及撤销状态。
 
-「别名」位于 `/admin/aliases`。管理员可选择目标主邮箱，重新输入自己的主邮箱密码后添加或移除后台别名。变更保存在 SQLite 或 MySQL，并在后续投递时生效。账号页、域名页和个人邮箱「收信地址」都会读取生效的别名。新域需要配置其 MX。别名仅用于收信，登录和发信仍使用主邮箱。
+「别名」位于 `/admin/aliases`。管理员可选择目标主邮箱，重新输入自己的主邮箱密码后添加或移除后台别名。变更保存在 SQLite 或 MySQL，并在后续投递时生效。账号页、域名页和个人邮箱「收信地址」都会读取生效的别名。新域需要配置其 MX。登录使用主邮箱。别名默认用于收信，管理员可按需授权网页发信。
 
 服务器配置中的别名继续在后台显示，由原配置维护。主邮箱和服务器配置优先于同名后台别名。已入队的邮件保留原路由。开始投递前发现路由变化时，发件箱显示投递失败。共享 MySQL 的实例应同步升级并使用一致的账号和服务器别名配置。
 
@@ -335,6 +335,8 @@ Docker 的 MySQL 模式已包含 Redis。如果使用已有 Redis，将 `compose
 4. 先以隔离监听地址和 `HARBOR_PAUSE_OUTBOX=true` 启动目标，验证邮箱、附件、文件夹和队列，按中继记录核对待确认的投递。确认切换后再恢复投递。保留 SQLite 和既有配置供回退。目标处理新邮件后，回退前须协调新邮件和队列的去向。 [恢复与回滚](../ops/README.md#切换与回滚)
 
 ## 接入邮件客户端
+
+管理员设置 `HARBOR_CLIENT_HOST` 为客户端可访问且与证书匹配的主机名后，用户可在账号菜单打开「邮件客户端」，复制服务器、登录用户名和端口，也可跳转到应用密码。Docker 读取 Compose 公布的客户端端口。原生部署默认显示实际监听端口，通过 TCP 转发时可分别设置 `HARBOR_IMAPS_PORT`、`HARBOR_POP3S_PORT`、`HARBOR_SUBMISSION_PORT` 和 `HARBOR_SMTPS_PORT` 为对外端口。配置卡只显示启用的协议。
 
 配置 TLS（PEM 文件或下述 ACME 模式），并启用一个或两个客户端发信端口。端口 587 选择 **STARTTLS**，端口 465 选择 **SSL/TLS**。服务器填写证书匹配的主机名，用户名填写完整邮箱地址，使用登录 Web 邮箱的密码和客户端的「普通密码」认证（SMTP AUTH PLAIN，始终在 TLS 内）。
 
@@ -372,6 +374,8 @@ Docker 的 MySQL 模式已包含 Redis。如果使用已有 Redis，将 `compose
 2. 给 Web 界面配 HTTPS。使用反向代理时保持 Web 监听在内部地址，代理端配置登录接口限流，后端开启 Secure Cookie。
 3. 配置支持发件域名的 SMTP 中继，按中继要求配置 SPF、DKIM 和 DMARC。外部邮件先入发件箱，再由中继投递。
 4. 备份 SQLite 文件时使用 SQLite 在线备份工具，或停服后备份整个数据库目录。证书与账号配置另行备份。
+
+全站管理员可在「管理后台 → 域名 → 域名上线检查」核对 DNS、内置 DKIM 和中继连接。HTTPS 探测使用管理员配置的 `HARBOR_PUBLIC_HTTPS_HOST`（默认使用 `HARBOR_CLIENT_HOST`）及 `HARBOR_PUBLIC_HTTPS_PORT`（默认 443），从 Harbor Mail 所在网络检查证书。上传收件方导出的 EML 可核验 DKIM，文件仅用于当前请求。公网 TCP 25、实际收发和 SPF/DMARC 对齐仍需在外部收件方验收。[上线验收](../ops/README.md#首次启动与上线验收)
 
 ## 轮换 PEM 证书
 
@@ -458,6 +462,8 @@ IMAP 客户端支持 `CREATE`、`RENAME`、`DELETE`、`SUBSCRIBE`、`UNSUBSCRIBE
 
 ## 邮箱别名
 
+网页发信可使用管理员明确授权且当前属于该邮箱的别名。将允许发信的完整别名用逗号分隔后写入 `HARBOR_SEND_AS_ALIASES`，然后重启各实例，例如 `HARBOR_SEND_AS_ALIASES=support@example.com,billing@example.com`。写信和回复时可选择发件地址，SMTP 中继与 DKIM 依所选地址的域配置。别名权限在队列投递前重新核对。SMTP Submission 客户端仍使用主邮箱发件。
+
 部署者可为同一个主邮箱分配多个收信地址。例如，设置 `HARBOR_ALIASES` 为 `{"orders@harbor.test":"hello@harbor.test","support@harbor.test":"hello@harbor.test"}`，并在 `HARBOR_ACCOUNTS` 配置 `hello@harbor.test`。Compose 部署可通过同名环境变量传入 JSON。服务启动时读取配置，地址须使用小写，目标必须是已配置的主邮箱。若使用其他域名的别名，该域名的来信也需要指向此服务。
 
 网页账号区的「收信地址」会显示你自己的主邮箱和别名。SMTP 来信、站内网页投递、草稿发送和客户端 SMTP 提交都支持向别名发送。邮件存到主邮箱，保留信封收件地址以便搜索和设置规则。同一封来信发给多个不同地址时，每个地址分别投递，即使它们属于同一主邮箱。登录、SMTP 认证和发件都使用主邮箱。
@@ -508,6 +514,8 @@ IMAP 客户端支持 `CREATE`、`RENAME`、`DELETE`、`SUBSCRIBE`、`UNSUBSCRIBE
 要整理已有邮件，选择「批量整理」并勾选邮件，从操作菜单选择添加或移除某个标签。每批最多 100 封，全部变更在同一事务内提交。要自动整理新来信，在「邮件规则」选择「添加标签」并指定目标标签。规则按现有优先级执行，仍以首条匹配的启用规则为准。
 
 ## 垃圾邮件
+
+如需安装 Rspamd 或通过它接入 ClamAV，见[反垃圾邮件与杀毒部署](spam-and-antivirus.md)。
 
 网页可在阅读工具栏标记垃圾邮件，也可以在「垃圾邮件」中选择「非垃圾邮件，移回收件箱」。IMAP 将系统目录公布为带 `\Junk` 属性的 `Junk`，客户端可用 MOVE 在文件夹之间移动。垃圾邮件保留原文和标记，从收件箱和星标列表中隔离。升级时，如已有同名自定义目录，Harbor Mail 会给旧目录名称加上「自定义」后缀，保留其中邮件、规则引用及 IMAP UID。
 
@@ -581,6 +589,8 @@ IMAP 的 **Drafts** 文件夹支持 `APPEND`，原始 MIME 和附件会完整保
 
 ## 追踪外部邮件投递
 
+发件详情中的「投递时间线」展示入队、中继接收、重试、失败和待确认。多收件人邮件会附上受影响地址与可用的 SMTP 状态码。队列邮件归档后可在已发送邮件中查看时间线。每封最多展示最近 200 个事件，事件保留 90 天。升级后由新的投递操作开始记录。
+
 Web 邮箱或 SMTP 客户端提交的外部邮件会先保存到数据库。网页显示「已加入发件箱」表示保管成功，待中继明确接收后才会出现在「已发送」。
 
 - 网络故障或中继返回临时错误时，发件箱显示下次尝试时间。重试间隔从 30 分钟逐步延长至最多 6 小时，最长保留 5 天的重试窗口。
@@ -604,7 +614,7 @@ Web 邮箱或 SMTP 客户端提交的外部邮件会先保存到数据库。网�
 
 ## 当前范围
 
-网页提供附件与原始邮件下载。网页发信支持纯文本正文及最多 10 个附件，附件合计不超过 6 MiB，编码后的整封邮件和 SMTP 来信上限均为 10 MiB。通过反向代理部署时，请确认其请求体限额至少为 7 MiB。
+网页提供附件与原始邮件下载。写信默认使用纯文本。勾选「富文本」后可以插入加粗、链接、列表和引用，并在邮件内预览。发信同时生成纯文本和 HTML 两个版本。每封最多 10 个附件，附件合计不超过 6 MiB，编码后的整封邮件和 SMTP 来信上限均为 10 MiB。通过反向代理部署时，请确认其发信请求体限额至少为 7 MiB。使用后台 EML 验签时，按所需文件大小配置代理的上传限制。
 
 不可变邮件入库时保存附件清单和正文格式等元数据。升级前的邮件首次打开时按需补建。查看 HTML、下载附件和导出仍使用原始 MIME。共享 MySQL 部署应先停止旧实例，再统一升级。
 

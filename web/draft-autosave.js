@@ -14,7 +14,7 @@ function beginDraftTracking(existing) {
     saved: existing ? { id: existing.id, draftVersion: existing.draftVersion } : null,
     creationKey: Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, "0")).join(""),
     edit: 0, savedEdit: 0, timer: 0, pending: null, firstSnapshot: null, error: null, busy: false, composing: false,
-    initial: [editorForm.elements.to.value, editorForm.elements.subject.value, editorForm.elements.body.value, ...selectedFiles],
+    initial: draftEditableValues(),
   };
   renderDraftTracking();
 }
@@ -33,9 +33,13 @@ function draftFailureText(failure) {
 function hasDraftEdits(draft) {
   if (draft.edit === draft.savedEdit) return false;
   if (draft.saved || draft.firstSnapshot) return true;
-  const { to, subject, body } = editorForm.elements;
-  const current = [to.value, subject.value, body.value, ...selectedFiles];
+  const current = draftEditableValues();
   return current.length !== draft.initial.length || current.some((value, index) => value !== draft.initial[index]);
+}
+
+function draftEditableValues() {
+  const { to, cc, bcc, subject, body, author, formatted } = editorForm.elements;
+  return [to.value, cc.value, bcc.value, subject.value, body.value, author.value, formatted.checked, ...selectedFiles];
 }
 
 function renderDraftTracking() {
@@ -162,7 +166,7 @@ async function finishCompose(action) {
 
 document.addEventListener("DOMContentLoaded", () => {
   editorForm.addEventListener("input", event => {
-    if (["to", "cc", "bcc", "subject", "body"].includes(event.target.name)) markDraftEdited();
+    if (["to", "cc", "bcc", "subject", "body", "author", "formatted"].includes(event.target.name)) markDraftEdited();
   });
   editorForm.addEventListener("compositionstart", () => {
     if (!composeDraft) return;

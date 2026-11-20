@@ -21,6 +21,24 @@ sudo systemctl enable --now harbormail.service
 
 模板默认使用本机回环端口 Web 8080 和 SMTP 2525，SQLite 数据库位于 `/var/lib/harbormail/harbor.db`。把示例域名改为实际值。systemd 创建可写的数据目录，并通过 `LoadCredential=` 让专用服务账号读取账号文件。启动后按实际监听地址检查 `/healthz`，默认可运行 `curl -fsS http://127.0.0.1:8080/healthz`。查看日志用 `sudo journalctl -u harbormail.service`。 [systemd 凭据与状态目录](https://www.freedesktop.org/software/systemd/man/252/systemd.exec.html)
 
+### 日常服务命令
+
+安装完成后，systemd 在后台运行 Harbor Mail，退出 SSH 后服务继续运行。模板会在进程异常退出后自动重启。以下命令按需执行。
+
+| 操作 | 命令 |
+| --- | --- |
+| 立即启动并开启开机自启 | `sudo systemctl enable --now harbormail.service` |
+| 查询运行状态 | `sudo systemctl status harbormail.service --no-pager` |
+| 查询开机自启 | `systemctl is-enabled harbormail.service` |
+| 启动 | `sudo systemctl start harbormail.service` |
+| 重启 | `sudo systemctl restart harbormail.service` |
+| 停止 | `sudo systemctl stop harbormail.service` |
+| 停止并关闭开机自启 | `sudo systemctl disable --now harbormail.service` |
+| 查看最近 100 行日志 | `sudo journalctl -u harbormail.service -n 100 --no-pager` |
+| 实时查看日志 | `sudo journalctl -u harbormail.service -f` |
+
+只修改 `/etc/harbormail/harbormail.env` 时，重启服务即可。修改了服务单元或 drop-in 时，先运行 `sudo systemctl daemon-reload`，再重启。临时停止服务会保留原有自启设置。[systemctl 手册](https://www.freedesktop.org/software/systemd/man/latest/systemctl.html)
+
 ### MySQL、Redis 与 TLS
 
 使用 MySQL 时在 `harbormail.env` 里将 `HARBOR_DB_DRIVER` 设为 `mysql`。将 DSN 写入仅 root 可读的 `/etc/harbormail/mysql-dsn`，用 `sudo systemctl edit harbormail.service` 加入配置。
@@ -281,7 +299,7 @@ CI 使用带身份验证的独立 HTTPS Restic 仓库验证上传、恢复和保
 
 SQLite 和 MySQL 都会在上传、验证和导出时检查首个公开版本的必备表，覆盖账号、别名、文件夹与 IMAP UID、邮件和投递队列。检查失败时会列出缺失的表。SQLite 还会运行数据库完整性检查。早于首个公开版本的 SQLite 快照可能缺少这些表，应在隔离副本上升级后再生成新快照。
 
-新版备份脚本要求源库包含 `login_audit_events`、`domain_dkim_keys` 和 `outbox_dkim_signatures`，即使尚未启用内置 DKIM。升级前用原有脚本备份，先启动新版 Harbor Mail 完成建表，再替换备份脚本并运行 `backup.sh check`。新快照会记录表结构版本，验证和导出时按快照版本核对相应表；旧快照仍可验证和导出。若旧快照缺少 DKIM 表，请在恢复后核对签名配置。用于解密私钥的 `dkim-key` 文件仍应单独离线保存。
+新版备份脚本要求源库包含 `delivery_events`、`login_audit_events`、`domain_dkim_keys` 和 `outbox_dkim_signatures`。升级前用原有脚本备份，先启动新版 Harbor Mail 完成建表，再替换备份脚本并运行 `backup.sh check`。快照记录表结构版本，验证和导出时按版本核对相应表。旧快照仍可验证和导出。若旧快照缺少 DKIM 表，请在恢复后核对签名配置。用于解密私钥的 `dkim-key` 文件仍应单独离线保存。
 
 MySQL 备份账户需读取整个 Harbor 数据库，以涵盖后续版本增加的表。验证导入需在隔离服务器预建空的 `harbor_verify_*` 数据库，设置 `HARBOR_BACKUP_VERIFY_DB` 和 `HARBOR_BACKUP_VERIFY_CNF`，验证账户只应有该库权限。脚本导入后读取邮件和队列计数，保留验证库供复查。自动转储会跳过 MySQL 触发器，Harbor 首次从恢复库启动时会按已启用的配额设置重建触发器和用量，避免恢复时依赖原服务器的触发器属主。自建触发器、部署配置及配套密钥按下文独立备份。 [Restic 恢复选项](https://restic.readthedocs.io/en/stable/050_restore.html)
 

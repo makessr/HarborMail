@@ -103,6 +103,11 @@ func (a *app) processRecipientDelivery(ctx context.Context, job *outboxJob, addr
 }
 
 func (a *app) sendToOneRecipient(ctx context.Context, job *outboxJob, item recipientProgress, connect relayConnector) error {
+	if err := a.requireSenderIdentity(ctx, a.db, job.message.From, job.message.author); errors.Is(err, errSendAs) {
+		return a.recordRecipientAttempt(job, item, "preparing", "failed", 0, 0)
+	} else if err != nil {
+		return err
+	}
 	if !time.Now().Before(job.expires()) {
 		return a.recordRecipientAttempt(job, item, "preparing", "failed", 0, 0)
 	}
@@ -121,7 +126,7 @@ func (a *app) sendToOneRecipient(ctx context.Context, job *outboxJob, item recip
 		return a.recordRecipientResult(job, item, err, false)
 	}
 	defer closeClient()
-	if err := client.Mail(job.message.From, nil); err != nil {
+	if err := client.Mail(job.message.wireFrom(), nil); err != nil {
 		return a.recordRecipientResult(job, item, err, false)
 	}
 	if err := client.Rcpt(item.Address, nil); err != nil {
@@ -191,6 +196,9 @@ func (a *app) recordRecipientAttempt(job *outboxJob, item recipientProgress, pha
 	if err := requireAffectedRow(result, err); err != nil {
 		return err
 	}
+	if err := recordDeliveryEvent(tx, job.message.From, job.message.ID, item.Address, state, code, due); err != nil {
+		return err
+	}
 	return a.commitMailbox(tx, job.message.From)
 }
 
@@ -250,6 +258,11 @@ func (a *app) recoverOutboxJob(job *outboxJob) error {
 	} else if err != nil {
 		return err
 	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO delivery_events(outbox_id,owner,recipient,state,stamp,due,smtp_code)
+		SELECT outbox_id,sender,recipient,'uncertain',?,0,0 FROM outbox_recipient_progress
+		WHERE outbox_id=? AND sender=? AND state='sending'`, time.Now().Unix(), m.ID, m.From); err != nil {
+		return err
+	}
 	result, err = tx.ExecContext(ctx, `UPDATE outbox_recipient_progress SET state='uncertain',due=0
 		WHERE outbox_id=? AND sender=? AND state='sending'`, m.ID, m.From)
 	if err != nil {
@@ -260,6 +273,11 @@ func (a *app) recoverOutboxJob(job *outboxJob) error {
 		return err
 	}
 	state, reason, due := "uncertain", "服务在等待中继确认时中断，请核对中继记录。", int64(0)
+	if changed == 0 {
+		if err := recordDeliveryEvent(tx, m.From, m.ID, "", "uncertain", 0, 0); err != nil {
+			return err
+		}
+	}
 	if changed > 0 {
 		recipients, err := readRecipientProgress(ctx, tx, m.From, m.ID)
 		if err != nil {

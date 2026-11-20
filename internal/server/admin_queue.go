@@ -16,6 +16,7 @@ type adminQueueItem struct {
 	Tracked  bool   `json:"tracked"`
 	ID       int64  `json:"id,string"`
 	Sender   string `json:"sender"`
+	From     string `json:"from,omitempty"`
 	Stamp    int64  `json:"stamp"`
 	State    string `json:"state"`
 	Attempts int    `json:"attempts"`
@@ -101,7 +102,7 @@ func (a *app) adminQueue(w http.ResponseWriter, r *http.Request, owner string) {
 }
 
 func (a *app) readAdminQueue(ctx context.Context, filters string, args []any, limit int) ([]adminQueueItem, error) {
-	rows, err := a.db.QueryContext(ctx, `SELECT id,sender,stamp,state,attempts,due,reason,
+	rows, err := a.db.QueryContext(ctx, `SELECT id,sender,`+a.outboxAuthorSQL()+`,stamp,state,attempts,due,reason,
 		EXISTS(SELECT 1 FROM outbox_recipient_progress p WHERE p.outbox_id=outbox.id) FROM outbox WHERE 1=1`+
 		filters+` ORDER BY id DESC LIMIT ?`, append(args, limit)...)
 	if err != nil {
@@ -112,7 +113,7 @@ func (a *app) readAdminQueue(ctx context.Context, filters string, args []any, li
 	now := time.Now().Unix()
 	for rows.Next() {
 		var item adminQueueItem
-		if err := rows.Scan(&item.ID, &item.Sender, &item.Stamp, &item.State, &item.Attempts, &item.Due, &item.Reason, &item.Tracked); err != nil {
+		if err := rows.Scan(&item.ID, &item.Sender, &item.From, &item.Stamp, &item.State, &item.Attempts, &item.Due, &item.Reason, &item.Tracked); err != nil {
 			return nil, err
 		}
 		item.CanRetry = a.canRetryDelivery(item, now)
@@ -122,7 +123,11 @@ func (a *app) readAdminQueue(ctx context.Context, filters string, args []any, li
 }
 
 func (a *app) canRetryDelivery(item adminQueueItem, now int64) bool {
-	return a.hasRelayFor(item.Sender) && item.State == "queued" && item.Attempts > 0 && item.Reason != "" && item.Due > now
+	from := item.From
+	if from == "" {
+		from = item.Sender
+	}
+	return a.hasRelayFor(from) && item.State == "queued" && item.Attempts > 0 && item.Reason != "" && item.Due > now
 }
 
 func (a *app) readAdminRetryRecords(ctx context.Context) ([]adminRetryRecord, error) {
@@ -162,14 +167,14 @@ func (a *app) adminRetryDelivery(w http.ResponseWriter, r *http.Request, actor s
 		return
 	}
 	defer tx.Rollback()
-	var sender string
-	if err := tx.QueryRowContext(ctx, `SELECT sender FROM outbox WHERE id=?`, id).Scan(&sender); errors.Is(err, sql.ErrNoRows) {
+	var sender, author string
+	if err := tx.QueryRowContext(ctx, `SELECT sender,`+a.outboxAuthorSQL()+` FROM outbox WHERE id=?`, id).Scan(&sender, &author); errors.Is(err, sql.ErrNoRows) {
 		fail(w, 409, "任务已变化或已到期，请刷新队列")
 		return
 	} else if letterError(w, err) {
 		return
 	}
-	if !a.hasRelayFor(sender) {
+	if !a.hasRelayFor(author) {
 		fail(w, 409, "发件域尚未配置外发中继")
 		return
 	}
@@ -191,6 +196,9 @@ func (a *app) adminRetryDelivery(w http.ResponseWriter, r *http.Request, actor s
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO admin_delivery_retries(job_id,actor,sender,previous_due,stamp)
 		VALUES(?,?,?,?,?)`, id, actor, sender, expected.Due, now); letterError(w, err) {
+		return
+	}
+	if letterError(w, recordDeliveryEvent(tx, sender, id, "", "retry_requested", 0, now)) {
 		return
 	}
 	if !letterError(w, a.commitOutbox(tx, sender)) {

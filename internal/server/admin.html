@@ -167,14 +167,19 @@
         <p id="admin-domain-status" role="status"></p>
       </section>
       <section class="admin-panel admin-directory" aria-labelledby="admin-dns-title">
-        <h2 id="admin-dns-title">DNS 检查</h2>
+        <h2 id="admin-dns-title">域名上线检查</h2>
         <form class="admin-dns-form" id="admin-dns-form">
           <label>邮件域名<select id="admin-dns-domain" required></select></label>
           <label>DKIM 选择器（可选）<input id="admin-dns-selector" type="text" maxlength="253" autocomplete="off" spellcheck="false"></label>
-          <button class="secondary" id="admin-dns-check" type="submit">检查 DNS</button>
+          <button class="secondary" id="admin-dns-check" type="submit">运行检查</button>
         </form>
         <p id="admin-dns-status" role="status"></p>
         <dl id="admin-dns-results" hidden></dl>
+        <form class="admin-dns-form" id="admin-domain-verify" hidden>
+          <label>收件方导出的 EML 原件<input name="message" type="file" accept=".eml,message/rfc822" required></label>
+          <button class="secondary" type="submit">验证实信 DKIM</button>
+        </form>
+        <p id="admin-domain-verify-status" role="status"></p>
       </section>
     </div>
     <div id="admin-delivery" hidden>
