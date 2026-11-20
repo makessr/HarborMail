@@ -28,7 +28,7 @@ Harbor Mail 是面向 Linux 部署的自建域名邮箱，提供中文 Web 邮�
 
 ## 优势
 
-- **部署方式灵活。** Linux 单二进制内嵌前端，单实例可用 SQLite。Docker Compose 方案默认搭配 MySQL 和 Redis，发布镜像同时支持 amd64 和 arm64。
+- **部署方式灵活。** Linux 单二进制内嵌前端，单实例可用 SQLite。Docker Compose 提供极简、标准和全量三个方案，发布镜像支持 Linux amd64 和 arm64。
 - **网页与邮件客户端共用邮箱。** 网页支持定时与撤销发送、邮件规则和标签。桌面和移动客户端可通过 SMTP Submission、IMAP 或 POP3 访问同一邮箱。
 - **集中管理多个域名。** 后台可按域委派管理权限，处理邮箱、别名、配额和投递队列，查看登录审计。管理员可启用 TOTP 和恢复码。
 - **提供上线和恢复工具。** 支持 Cloudflare DNS-01 签发和续签、内置 DKIM、SQLite 至 MySQL 迁移，以及备份校验和隔离恢复。
@@ -43,7 +43,13 @@ Harbor Mail 是面向 Linux 部署的自建域名邮箱，提供中文 Web 邮�
 
 ## Docker 快速部署
 
-Linux amd64 和 arm64 均可使用同一个发布镜像标签，由 Docker 选择对应架构。按指南创建首个管理员，启动默认的 MySQL + Redis，再打开网页邮箱。 [三步部署](docs/deployment-and-usage.md#docker-compose-部署)
+| 安装方案 | 包含组件 |
+| --- | --- |
+| [全量版](docs/deployment-and-usage.md#全量版) | Harbor Mail、MySQL、Redis、Rspamd、ClamAV |
+| [标准版（默认）](docs/deployment-and-usage.md#标准版默认) | Harbor Mail、MySQL、Redis |
+| [极简版](docs/deployment-and-usage.md#极简版) | Harbor Mail、内置 SQLite |
+
+先[下载部署文件](docs/deployment-and-usage.md#准备部署文件)，再任选一个方案创建管理员并启动。
 
 需要公网 HTTPS 时，可用 Cloudflare DNS-01 自动签发证书，Web 端口可自行选择。 [Cloudflare 自动证书](docs/deployment-and-usage.md#cloudflare-dns-01)
 

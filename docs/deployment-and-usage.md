@@ -2,7 +2,7 @@
 
 <img src="../web/harbor-mail-logo.png" alt="" width="72" height="72">
 
-首次安装从[三步 Docker 部署](#docker-compose-部署)开始。已有部署可直接查看[配置项](#配置)、[邮件客户端](#接入邮件客户端)或[生产运行手册](../ops/README.md)。
+首次安装从[Docker 安装方案](#docker-compose-部署)开始。已有部署可直接查看[配置项](#配置)、[邮件客户端](#接入邮件客户端)或[生产运行手册](../ops/README.md)。
 
 ## 本地启动
 
@@ -46,75 +46,70 @@ $env:HARBOR_ACCOUNTS = @{ 'hello@harbor.test' = $accountHash } | ConvertTo-Json 
 
 ## Docker Compose 部署
 
-适用于首次在 Linux amd64 或 arm64 服务器部署。需要 Docker Engine、Compose 插件、Git、OpenSSL 和 Bash。以下命令在服务器的 root 终端运行。使用 sudo 登录的用户可先执行 `sudo -i`。 [安装 Docker Engine](https://docs.docker.com/engine/install/) · [安装 Compose 插件](https://docs.docker.com/compose/install/linux/)
+在 Linux amd64 或 arm64 服务器上任选一个方案。三个方案均使用发布镜像。在服务器 root 终端运行以下命令，使用 sudo 的用户可先执行 `sudo -i`。 [安装 Docker Engine](https://docs.docker.com/engine/install/) · [安装 Compose 插件](https://docs.docker.com/compose/install/linux/)
 
-### 创建首个邮箱
+| 安装方案 | 包含组件 | 适用场景 |
+| --- | --- | --- |
+| [全量版](#全量版) | Harbor Mail、MySQL、Redis、Rspamd、ClamAV | 需要自动垃圾邮件检测和来信杀毒 |
+| [标准版](#标准版默认) | Harbor Mail、MySQL、Redis | 常规部署，或已有独立邮件网关 |
+| [极简版](#极简版) | Harbor Mail、内置 SQLite | 单实例、小型邮箱或试用 |
 
-下载部署文件。
+### 准备部署文件
+
+需要 Git 和 Bash。标准版及全量版还需要 OpenSSL 生成数据库密码。下载文件后，任选下面一个方案执行。
 
 ```bash
 git clone --depth 1 https://github.com/makessr/HarborMail.git
 cd HarborMail
 ```
 
-复制下方整个代码块，输入一个至少 12 字节、最多 72 字节的邮箱密码。登录账号是 `hello@harbor.test`，自带管理员权限。数据库密码由命令随机生成。此步骤只在首次安装时运行。
+初始化时输入 12–72 字节的邮箱密码。脚本会创建 `.env` 和凭据文件，管理员账号是 `hello@harbor.test`。Web 默认使用 8080，SMTP 收信默认使用 2525，两个端口均绑定本机回环。端口被占用时，先改 `.env` 再启动。
+
+### 全量版
 
 ```bash
-(
-  set -Eeuo pipefail
-  umask 077
-  for file in .env secrets/{accounts.json,mysql-password,mysql-root-password,mysql-dsn}; do
-    if [[ -e "$file" || -L "$file" ]]; then
-      printf '已有部署文件 %s，请保留现有配置。\n' "$file" >&2
-      exit 1
-    fi
-  done
-  set -o noclobber
-  docker pull ghcr.io/makessr/harbormail:latest
-  read -rsp '输入邮箱密码（12–72 字节）: ' mailbox_password
-  printf '\n'
-  hash=$(printf '%s\n' "$mailbox_password" | docker run --rm -i ghcr.io/makessr/harbormail:latest hash-password)
-  unset mailbox_password
-  mysql_password=$(openssl rand -hex 24)
-  mysql_root_password=$(openssl rand -hex 24)
-  install -d -m 0700 secrets
-  printf '{"hello@harbor.test":"%s"}\n' "$hash" > secrets/accounts.json
-  printf '%s' "$mysql_password" > secrets/mysql-password
-  printf '%s' "$mysql_root_password" > secrets/mysql-root-password
-  printf 'harbor:%s@tcp(mysql:3306)/harbor_mail' "$mysql_password" > secrets/mysql-dsn
-  chgrp 10001 secrets/accounts.json secrets/mysql-dsn
-  chmod 0640 secrets/accounts.json secrets/mysql-dsn
-  cat > .env <<'EOF'
-COMPOSE_FILE=compose.yaml:compose.mysql.yaml:compose.registry.yaml
-HARBOR_ADMINS=hello@harbor.test
-HARBOR_WEB_PORT=8080
-HARBOR_SMTP_PORT=2525
-EOF
-)
+bash ops/init-docker.sh full &&
+  docker compose config --quiet &&
+  docker compose up -d --no-build --wait --wait-timeout 900
 ```
 
-### 启动 MySQL 与 Redis
+`COMPOSE_FILE=compose.yaml:compose.mysql.yaml:compose.registry.yaml:compose.mail-scan.yaml`。首次启动需加载 ClamAV 病毒库，可能需要数分钟。Compose 也会启动独立的 `rspamd-redis`，供扫描组件使用。默认隔离病毒邮件，扫描暂时不可用时让发件服务器重试。 [扫描、隔离和自管组件](spam-and-antivirus.md)
 
-在同一目录启动。Compose 从 `.env` 读取部署文件和端口。 [Compose 环境变量](https://docs.docker.com/compose/how-tos/environment-variables/envvars/#compose_file)
+### 标准版（默认）
 
 ```bash
-docker compose config --quiet && docker compose up -d --no-build --wait
-docker compose ps
+bash ops/init-docker.sh standard &&
+  docker compose config --quiet &&
+  docker compose up -d --no-build --wait
 ```
+
+`COMPOSE_FILE=compose.yaml:compose.mysql.yaml:compose.registry.yaml`。MySQL 保存邮件数据，Redis 用于后台缓存。
+
+### 极简版
+
+```bash
+bash ops/init-docker.sh minimal &&
+  docker compose config --quiet &&
+  docker compose up -d --no-build --wait
+```
+
+`COMPOSE_FILE=compose.yaml:compose.registry.yaml`。只有 `harbor` 容器，SQLite 保存在 `harbor_data` 数据卷。
 
 ### 启动后验收
 
-- `harbor`、`mysql` 和 `redis` 均为 `healthy`。
-- 在服务器上打开 [网页邮箱](http://127.0.0.1:8080/) 或 [管理后台](http://127.0.0.1:8080/admin)，用 `hello@harbor.test` 和刚输入的密码登录。给自己发一封邮件，在收件箱确认收到。
-- 如果只有远程服务器，在**自己电脑的终端**执行 `ssh -N -L 8080:127.0.0.1:8080 用户名@服务器地址`，保持该终端开启，再打开上面的链接。若改了服务器 Web 端口，SSH 命令中第二个 `8080` 也要改。
+1. 执行 `docker compose ps`。极简版应看到 `harbor`，标准版应另外看到 `mysql` 和 `redis`，全量版还应看到 `rspamd`、`clamav` 和 `rspamd-redis`。各服务应显示 `healthy`。
+2. 打开 [网页邮箱](http://127.0.0.1:8080/) 或 [管理后台](http://127.0.0.1:8080/admin)，用 `hello@harbor.test` 和刚输入的密码登录。给自己发一封邮件，在收件箱确认收到。
+3. 远程部署时，在**自己电脑的终端**执行 `ssh -N -L 8080:127.0.0.1:8080 用户名@服务器地址`，保持该终端开启，再打开上面的链接。若改了服务器 Web 端口，SSH 命令中第二个 `8080` 也要改。
 
-开通公网访问见 [Cloudflare 自动证书](#cloudflare-dns-01)和 [公网邮件收发](#接入真实域名)。
+开通公网访问见 [Cloudflare 自动证书](#cloudflare-dns-01)和 [公网邮件收发](#接入真实域名)。更换 MySQL 地址或账号前，先运行 [MySQL 预检](../ops/README.md#mysql-预检)。
 
-更换 MySQL 地址或账号前，先运行 [MySQL 预检](../ops/README.md#mysql-预检)。
+### 已有安装添加邮件扫描
+
+已有标准版时，保留凭据，在 `.env` 的 `COMPOSE_FILE` 末尾追加 `:compose.mail-scan.yaml`。执行 `docker compose up -d --no-build --wait --wait-timeout 900` 即可启用。已有 SQLite 邮件数据需要切换到 MySQL 时，先按[迁移文档](#从-sqlite-迁移到-mysql)操作。
 
 ### 配置宿主机端口
 
-端口被占用时，修改 `.env` 中已有的端口值，再运行 `docker compose up -d --no-build --wait`。浏览器和客户端也改用新端口。部署失败可先看 `docker compose logs --tail=80 harbor mysql redis`。
+端口被占用时，修改 `.env` 中已有的端口值，再运行 `docker compose up -d --no-build --wait`。浏览器和客户端也改用新端口。部署失败可先看 `docker compose logs --tail=80`。
 
 | 用途 | `.env` 变量 | 默认宿主机端口 |
 | --- | --- | --- |
@@ -129,18 +124,17 @@ docker compose ps
 
 默认 Web 和 SMTP 仅绑定本机回环。邮件客户端、HTTP-01 验证和运行指标端口由对应的覆盖文件启用。
 
-MySQL 的 `3306` 和 Redis 的 `6379` 只在 Compose 网络内使用。宿主机上已经有服务占用这两个端口，Harbor Mail 仍可正常启动。自行发布数据库或 Redis 端口时，需选用空闲的宿主机端口。
+MySQL 的 `3306`、两个 Redis 的 `6379` 和扫描组件端口均留在 Compose 网络内。宿主机上已有服务使用这些端口时，可同时运行 Harbor Mail。
 
 升级镜像时在项目目录运行 `docker compose pull harbor && docker compose up -d --no-build --wait`，沿用原有凭据和数据卷。
 
-### SQLite 与可选组件
-
-使用 SQLite 时，创建邮箱后运行 `docker compose -f compose.yaml up -d --build --wait`。Web 与 SMTP 默认只绑定主机回环地址，Harbor 容器以 UID/GID `10001:10001` 运行，SQLite 数据保存在 `harbor_data` 卷。
+### 可选组件
 
 | 可选 Compose 文件 | 用途 |
 | --- | --- |
 | `compose.mysql.yaml` | 启动内部 MySQL 8.4 和专用 Redis，数据库保存在 `mysql_data` 卷 |
 | `compose.registry.yaml` | 使用 GHCR 中的 Harbor Mail 镜像，关闭源码构建 |
+| `compose.mail-scan.yaml` | 启用 Rspamd、ClamAV 和扫描专用 Redis |
 | `compose.redis-cache.yaml` | 可选，用已有 Redis 替代随 MySQL 启动的缓存容器，也可用于 SQLite |
 | `compose.tls.yaml` | 启用邮件客户端端口 465、587、993、995，默认映射到回环地址 |
 | `compose.acme.yaml` | 使用 ACME 管理邮件 TLS 证书，并提供 HTTP-01 验证端点 |
@@ -149,7 +143,7 @@ MySQL 的 `3306` 和 Redis 的 `6379` 只在 Compose 网络内使用。宿主机
 | `compose.domain-relays.yaml` | 从文件配置各发件域的专用中继 |
 | `compose.relay-ca.yaml` | 只读挂载 SMTP 中继的 CA 证书目录 |
 
-使用三步部署的读者可在 `.env` 的 `COMPOSE_FILE` 末尾用冒号追加覆盖文件。使用 `-f` 的部署应在查看日志、重启、升级和停止时沿用同一组文件与项目名。
+可在 `.env` 的 `COMPOSE_FILE` 末尾用冒号追加覆盖文件。使用 `-f` 的部署应在查看日志、重启、升级和停止时沿用同一组文件与项目名。
 
 收到 `SIGTERM` 或 `Ctrl+C` 后，Harbor 停止监听和领取新任务，最多等待两分钟，让当前 Web 请求、SMTP 会话和已领取的外发任务收尾。已连接的 SMTP 客户端仍可完成当前事务，新事务会收到 `421`。IMAP、POP3 和网页 SSE 连接会断开，客户端可在服务回来后重连。Compose 为 Harbor 容器保留 125 秒的停止时间。
 
@@ -387,7 +381,7 @@ Docker 下保留 `HARBOR_TLS_DIR` 对应的挂载目录，更新目录内的文�
 
 ### Cloudflare DNS-01
 
-先完成[三步 Docker 部署](#docker-compose-部署)。域名的权威 DNS 需由 Cloudflare 托管。Let’s Encrypt 通过临时 TXT 记录验证域名，无需开放公网 80 或 443。 [ACME DNS-01](https://letsencrypt.org/docs/challenge-types/#dns-01-challenge)
+先按[Docker 安装指南](#docker-compose-部署)启动选定方案。域名的权威 DNS 需由 Cloudflare 托管。Let’s Encrypt 通过临时 TXT 记录验证域名，无需开放公网 80 或 443。 [ACME DNS-01](https://letsencrypt.org/docs/challenge-types/#dns-01-challenge)
 
 1. 在 Cloudflare 创建 API token，授予目标域名 **Zone → DNS → Edit** 和 **Zone → Zone → Read**。将 token 保存到 `secrets/acme-cloudflare-token`。曾设置 `HARBOR_SECRETS_DIR` 的部署使用该目录。 [创建 Cloudflare API token](https://developers.cloudflare.com/fundamentals/api/get-started/create-token/)
 2. 在项目目录给 token 文件设置权限。用了自定义凭据目录时，把下面命令中的 `secrets/` 换成该目录。
@@ -397,7 +391,7 @@ chgrp 10001 secrets/acme-cloudflare-token
 chmod 0640 secrets/acme-cloudflare-token
 ```
 
-3. 修改 `.env` 中的 `COMPOSE_FILE`，加入 Cloudflare 配置。将示例主机名改为自己的域名，阅读并同意 CA 条款后设置 `HARBOR_ACME_ACCEPT_TOS=true`。
+3. 在 `.env` 现有 `COMPOSE_FILE` 末尾追加 `:compose.acme-cloudflare.yaml`。下面以标准版为例。将示例主机名改为自己的域名，阅读并同意 CA 条款后设置 `HARBOR_ACME_ACCEPT_TOS=true`。
 
 ```dotenv
 COMPOSE_FILE=compose.yaml:compose.mysql.yaml:compose.registry.yaml:compose.acme-cloudflare.yaml

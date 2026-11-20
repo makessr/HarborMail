@@ -4,12 +4,7 @@ Harbor Mail 对接 Rspamd 扫描公网 SMTP 来信，并可提交用户分类反
 
 ## Docker 一键启用
 
-按[快速部署](deployment-and-usage.md#docker-compose-部署)完成初始配置后，在 `.env` 的 `COMPOSE_FILE` 末尾追加 `:compose.mail-scan.yaml`。Windows 开发机沿用 Compose 的分隔符 `;`。
-
-```bash
-docker compose up -d --no-build --wait --wait-timeout 900
-docker compose ps
-```
+首次部署时选择 [Docker 全量版](deployment-and-usage.md#全量版)。已有 Docker 标准版时，可在原配置上[添加邮件扫描](deployment-and-usage.md#已有安装添加邮件扫描)。扫描组件由 `compose.mail-scan.yaml` 提供。
 
 首次启动需要下载镜像、更新病毒库并加载签名，可能需要数分钟。Rspamd、ClamAV 和扫描专用 Redis 均不发布宿主机端口。病毒库、Rspamd 和扫描 Redis 分别使用持久卷，扫描使用的 Redis 与 Harbor Mail 后台缓存分开。内置控制器仅监听容器回环地址，如需用户分类训练，可按原有训练配置接入可信的专用控制器。 [Rspamd 容器](https://docs.rspamd.com/getting-started/installation/#docker-installation) · [ClamAV 容器](https://docs.clamav.net/manual/Installing/Docker.html)
 

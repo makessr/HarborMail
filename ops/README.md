@@ -57,7 +57,7 @@ Environment=HARBOR_MYSQL_DSN_FILE=%d/mysql-dsn
 
 ## 首次启动与上线验收
 
-首次部署按[三步 Docker 部署](../docs/deployment-and-usage.md#docker-compose-部署)生成凭据、启动并验证登录。已有实例沿用原有凭据和数据卷。
+首次部署按[Docker 安装方案](../docs/deployment-and-usage.md#docker-compose-部署)生成凭据、启动并验证登录。已有实例沿用原有凭据和数据卷。
 
 配置好生产挂载和备份账号后，从外部网络核对 MX 与 TCP 25 连通性、HTTPS 与邮件客户端证书、实际收发和备份恢复。Web 反向代理应允许 `/api/events` 的 SSE 长连接通过。 [域名、DNS 与 TLS 配置](../docs/deployment-and-usage.md#接入真实域名)
 
