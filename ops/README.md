@@ -188,6 +188,25 @@ Environment=HARBOR_BACKUP_MYSQL_CNF=%d/mysql-backup.cnf
 
 原生 SQLite 模式在 `backup.env` 设为 `HARBOR_BACKUP_DRIVER=sqlite`，并填写 `HARBOR_BACKUP_SQLITE`。在上述 drop-in 保留 Restic 两行，加入 `User=harbormail`。这样可以读取权限为 `0700` 的原生数据目录和正在使用的 SQLite WAL。Compose 的 SQLite 数据须按实际 UID 和挂载方式，确保备份账号能访问数据库及对应 WAL。开启备份成功指标时，指标目录还须供 node_exporter 读取。
 
+#### 备份预检
+
+首次启用定时备份或更换异地仓库时，可用实际备份账号运行 `bash ops/backup.sh check`。直接运行时沿用 `backup` 命令的环境和凭据。按上面的 MySQL systemd 示例安装后，可执行以下命令从 root 专用文件加载凭据。
+
+```bash
+sudo systemd-run --wait --pipe --collect -p User=harbor-backup \
+  -p StateDirectory=harbor-backup -p StateDirectoryMode=0700 \
+  -p EnvironmentFile=/etc/harbor/backup.env -p Environment=HARBOR_BACKUP_WORK=/var/lib/harbor-backup \
+  -p LoadCredential=restic-password:/etc/harbor/restic-password \
+  -p LoadCredential=mysql-backup.cnf:/etc/harbor/mysql-backup.cnf \
+  /usr/bin/bash -c 'RESTIC_PASSWORD_FILE="$CREDENTIALS_DIRECTORY/restic-password" \
+    HARBOR_BACKUP_MYSQL_CNF="$CREDENTIALS_DIRECTORY/mysql-backup.cnf" \
+    exec bash /opt/harbor-mail/ops/backup.sh check'
+```
+
+原生 SQLite 使用 `-p User=harbormail`，并去掉 `mysql-backup.cnf` 和 `HARBOR_BACKUP_MYSQL_CNF` 对应的两行。自定义部署使用与备份服务相同的用户、路径和环境文件。命令检查源库必备表、暂存目录、可选指标目录及 Restic 仓库的读取和解密权限。预检只读取库结构和仓库配置，不生成快照或更新成功指标。仓库写入和回读仍须通过一次完整备份确认。 [Restic 命令手册](https://restic.readthedocs.io/en/stable/manual_rest.html)
+
+#### 启动定时器
+
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl start harbor-backup.service

@@ -59,6 +59,7 @@ exercise_timer() {
   local driver=$1 actor=$2 subject=$3
   local repository="$state/$driver-repo" instance="ci-$driver"
   local metrics="$state/$driver-metrics" marker snapshot destination previous line attempt
+  local -a mysql_credentials=()
   marker="$metrics/harbor-backup.prom"
   destination="$restore_work/$driver"
   sudo install -d -o "$actor" -g "$actor" -m 0700 "$state" "$metrics"
@@ -71,6 +72,9 @@ exercise_timer() {
     printf 'HARBOR_BACKUP_MYSQL_DB=harbor_test\nHARBOR_BACKUP_SQLITE=/var/lib/harbormail/harbor.db\n'
   } > "$work/backup.env"
   sudo install -m 0600 "$work/backup.env" "$config/backup.env"
+  if [[ $driver == mysql ]]; then
+    mysql_credentials=(-p "LoadCredential=mysql-backup.cnf:$config/mysql-backup.cnf")
+  fi
   {
     printf '[Service]\nUser=%s\n' "$actor"
     printf 'LoadCredential=restic-password:%s/restic-password\n' "$config"
@@ -80,6 +84,14 @@ exercise_timer() {
       printf '%s\n' 'Environment=HARBOR_BACKUP_MYSQL_CNF=%d/mysql-backup.cnf'
     fi
   } | sudo tee "$unit.d/fixture.conf" >/dev/null
+  sudo systemd-run --quiet --wait --pipe --collect -p "User=$actor" \
+    -p "StateDirectory=harbor-backup" -p 'StateDirectoryMode=0700' \
+    -p "EnvironmentFile=$config/backup.env" -p "Environment=HARBOR_BACKUP_WORK=$state" \
+    -p "LoadCredential=restic-password:$config/restic-password" "${mysql_credentials[@]}" \
+    /usr/bin/bash -c 'RESTIC_PASSWORD_FILE="$CREDENTIALS_DIRECTORY/restic-password" HARBOR_BACKUP_MYSQL_CNF="$CREDENTIALS_DIRECTORY/mysql-backup.cnf" exec bash "$1" check' bash "$program"
+  ! sudo test -e "$marker"
+  sudo restic -r "$repository" --password-file "$config/restic-password" --no-lock snapshots --json |
+    jq -e 'length == 0' >/dev/null
   sudo systemd-analyze verify "$unit" "$timer"
   sudo systemctl daemon-reload
   sudo systemctl start harbor-backup.timer

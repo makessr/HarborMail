@@ -6,11 +6,11 @@ fail() { printf 'Harbor Mail backup: %s\n' "$*" >&2; exit 1; }
 
 mode=${1:-}
 case "$mode" in
-  backup|prune|plan) [[ $# == 1 ]] || fail "Usage: backup.sh $mode" ;;
+  backup|check|prune|plan) [[ $# == 1 ]] || fail "Usage: backup.sh $mode" ;;
   verify) [[ $# == 2 && $2 =~ ^[0-9a-f]{8,64}$ ]] || fail 'Usage: backup.sh verify SNAPSHOT_ID' ;;
   export) [[ $# == 3 && $2 =~ ^[0-9a-f]{8,64}$ && $3 == /* ]] ||
     fail 'Usage: backup.sh export SNAPSHOT_ID /absolute/new-directory' ;;
-  *) fail 'Usage: backup.sh {backup|plan|prune|verify SNAPSHOT_ID|export SNAPSHOT_ID /absolute/new-directory}' ;;
+  *) fail 'Usage: backup.sh {backup|check|plan|prune|verify SNAPSHOT_ID|export SNAPSHOT_ID /absolute/new-directory}' ;;
 esac
 
 : "${HARBOR_BACKUP_WORK:?Set HARBOR_BACKUP_WORK to a private, persistent directory}"
@@ -55,13 +55,17 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 verify_sqlite() {
-  local available
   command -v sqlite3 >/dev/null || fail 'sqlite3 is required'
   [[ $(sqlite3 -batch -bail -readonly "$1" 'PRAGMA integrity_check;') == ok ]] ||
     fail 'SQLite integrity check failed'
-  available=$(sqlite3 -batch -bail -readonly "$1" "SELECT name FROM sqlite_master WHERE type='table';") ||
-    fail 'Could not read SQLite snapshot tables'
-  verify_required_tables 'SQLite snapshot' "$available"
+  verify_sqlite_tables "$1" 'SQLite snapshot'
+}
+
+verify_sqlite_tables() {
+  local available
+  available=$(sqlite3 -batch -bail -readonly "$1" '.timeout 10000' "SELECT name FROM sqlite_master WHERE type='table';") ||
+    fail "Could not read $2 tables"
+  verify_required_tables "$2" "$available"
 }
 
 verify_required_tables() {
@@ -184,9 +188,13 @@ case "${HARBOR_BACKUP_DRIVER:-}" in
     : "${HARBOR_BACKUP_SQLITE:?Set an absolute path to the active SQLite database}"
     [[ $HARBOR_BACKUP_SQLITE == /* && -s $HARBOR_BACKUP_SQLITE ]] || fail 'SQLite source is missing or empty'
     command -v sqlite3 >/dev/null || fail 'sqlite3 is required'
-    (cd "$scratch/export"; sqlite3 -batch -bail -readonly "$HARBOR_BACKUP_SQLITE" '.timeout 10000' '.backup harbor.db')
-    verify_sqlite "$scratch/export/harbor.db"
-    artifact=harbor.db
+    if [[ $mode == check ]]; then
+      verify_sqlite_tables "$HARBOR_BACKUP_SQLITE" 'SQLite source'
+    else
+      (cd "$scratch/export"; sqlite3 -batch -bail -readonly "$HARBOR_BACKUP_SQLITE" '.timeout 10000' '.backup harbor.db')
+      verify_sqlite "$scratch/export/harbor.db"
+      artifact=harbor.db
+    fi
     ;;
   mysql)
     : "${HARBOR_BACKUP_MYSQL_CNF:?Set an absolute path to the backup account client config}"
@@ -194,13 +202,26 @@ case "${HARBOR_BACKUP_DRIVER:-}" in
     [[ $HARBOR_BACKUP_MYSQL_CNF == /* && -r $HARBOR_BACKUP_MYSQL_CNF ]] || fail 'Backup config must be an absolute readable path'
     [[ $HARBOR_BACKUP_MYSQL_DB =~ ^[a-zA-Z0-9_]{1,64}$ ]] || fail 'Invalid MySQL database name'
     command -v mysqldump >/dev/null || fail 'mysqldump is required'
+    schema_only=()
+    if [[ $mode == check ]]; then schema_only=(--no-data --skip-lock-tables); fi
     mysqldump "--defaults-extra-file=$HARBOR_BACKUP_MYSQL_CNF" --single-transaction --quick --no-tablespaces --skip-triggers \
-      --set-gtid-purged=OFF --hex-blob --max-allowed-packet=64M "$HARBOR_BACKUP_MYSQL_DB" > "$scratch/export/harbor.sql"
+      --set-gtid-purged=OFF --hex-blob --max-allowed-packet=64M "${schema_only[@]}" "$HARBOR_BACKUP_MYSQL_DB" > "$scratch/export/harbor.sql"
     verify_mysql_dump "$scratch/export/harbor.sql"
     artifact=harbor.sql
     ;;
   *) fail 'Set HARBOR_BACKUP_DRIVER to sqlite or mysql' ;;
 esac
+
+if [[ $mode == check ]]; then
+  if [[ -n ${HARBOR_BACKUP_METRIC_DIR:-} ]]; then
+    [[ $HARBOR_BACKUP_METRIC_DIR == /* && -d $HARBOR_BACKUP_METRIC_DIR && -w $HARBOR_BACKUP_METRIC_DIR && -x $HARBOR_BACKUP_METRIC_DIR ]] ||
+      fail 'Metrics directory must exist and be writable by the backup user'
+  fi
+  restic --no-lock --no-cache cat config >/dev/null 2>&1 ||
+    fail 'Could not open the Restic repository read-only; check its address, access credentials, TLS and repository password'
+  printf 'Harbor Mail backup preflight passed: source schema and Restic read access.\n'
+  exit
+fi
 
 (
   cd "$scratch/export"

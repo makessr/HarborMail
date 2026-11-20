@@ -70,6 +70,21 @@ export HARBOR_BACKUP_METRIC_DIR="$work/metrics"
 openssl rand -hex 32 > "$RESTIC_PASSWORD_FILE"
 mkdir -m 0700 -- "$HARBOR_BACKUP_WORK" "$HARBOR_BACKUP_METRIC_DIR"
 restic init
+bash ops/backup.sh check
+restic --no-lock snapshots --json | jq -e 'length == 0' >/dev/null
+[[ ! -e "$HARBOR_BACKUP_METRIC_DIR/harbor-backup.prom" ]]
+openssl rand -hex 32 > "$work/wrong-password"
+if output=$(RESTIC_PASSWORD_FILE="$work/wrong-password" bash ops/backup.sh check 2>&1); then
+  printf 'Preflight accepted a wrong repository password\n' >&2
+  exit 1
+fi
+[[ $output == *'Could not open the Restic repository read-only'* ]]
+sqlite3 "$work/incomplete.db" 'CREATE TABLE letters (id INTEGER PRIMARY KEY);'
+if output=$(HARBOR_BACKUP_SQLITE="$work/incomplete.db" bash ops/backup.sh check 2>&1); then
+  printf 'Preflight accepted an incomplete source schema\n' >&2
+  exit 1
+fi
+[[ $output == *'SQLite source is missing required Harbor Mail tables'* ]]
 bash ops/backup.sh backup
 [[ -s "$HARBOR_BACKUP_METRIC_DIR/harbor-backup.prom" ]]
 snapshot=$(restic snapshots --json | jq -er 'select(length == 1) | .[0].id')
