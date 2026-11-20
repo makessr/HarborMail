@@ -45,21 +45,21 @@
     <aside class="rail">
       <div class="brand"><img src="/harbor-mail-logo.png" alt="" width="48" height="48"> Harbor Mail</div>
       <p id="mail-recovery-mode" hidden>恢复校验模式</p>
-      <button id="compose" class="compose"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#add-line"></use></svg> 写邮件</button>
+      <button id="compose" class="compose"><svg class="glyph nav-glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#pencil"></use></svg> 写邮件</button>
       <nav id="folder-nav" aria-label="文件夹">
-        <button data-folder="inbox"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#inbox-line"></use></svg>收件箱</button>
-        <button data-folder="snoozed"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#time-line"></use></svg>稍后处理</button>
-        <button data-folder="all"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#archive-stack-line"></use></svg>全部邮件</button>
-        <button data-folder="starred"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#star-line"></use></svg>星标</button>
-        <button data-folder="drafts"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#draft-line"></use></svg>草稿箱</button>
-        <button data-folder="outbox"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#time-line"></use></svg>发件箱</button>
-        <button data-folder="sent"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#send-plane-line"></use></svg>已发送</button>
-        <button data-folder="archive"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#archive-line"></use></svg>归档</button>
-        <button data-folder="junk"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#spam-2-line"></use></svg>垃圾邮件</button>
-        <button data-folder="trash"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#delete-bin-6-line"></use></svg>废纸篓</button>
+        <button data-folder="inbox"><svg class="glyph nav-glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#inbox"></use></svg>收件箱</button>
+        <button data-folder="snoozed"><svg class="glyph nav-glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#alarm-clock"></use></svg>稍后处理</button>
+        <button data-folder="all"><svg class="glyph nav-glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#mail"></use></svg>全部邮件</button>
+        <button data-folder="starred"><svg class="glyph nav-glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#star"></use></svg>星标</button>
+        <button data-folder="drafts"><svg class="glyph nav-glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#file-text"></use></svg>草稿箱</button>
+        <button data-folder="outbox"><svg class="glyph nav-glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#clock"></use></svg>发件箱</button>
+        <button data-folder="sent"><svg class="glyph nav-glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#send"></use></svg>已发送</button>
+        <button data-folder="archive"><svg class="glyph nav-glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#archive"></use></svg>归档</button>
+        <button data-folder="junk"><svg class="glyph nav-glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#circle-alert"></use></svg>垃圾邮件</button>
+        <button data-folder="trash"><svg class="glyph nav-glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#trash"></use></svg>废纸篓</button>
         <div id="custom-folders"></div>
-        <button id="create-folder"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#folder-add-line"></use></svg>新建文件夹</button>
-        <button id="manage-labels"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#price-tag-3-line"></use></svg>管理标签</button>
+        <button id="create-folder"><svg class="glyph nav-glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#folder-plus"></use></svg>新建文件夹</button>
+        <button id="manage-labels"><svg class="glyph nav-glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#tag"></use></svg>管理标签</button>
         <div id="label-folders"></div>
         <div id="saved-search-nav"></div>
       </nav>
@@ -468,7 +468,7 @@
       </form>
     </section>
   </dialog>
-  <dialog id="folder-dialog">
+  <dialog id="folder-dialog" aria-labelledby="folder-dialog-title">
     <form id="folder-form" class="editor">
       <header class="heading"><h2 id="folder-dialog-title">新建文件夹</h2><button id="close-folder" class="icon" type="button" aria-label="关闭"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#close-line"></use></svg></button></header>
       <label>文件夹名称<input name="label" required maxlength="128" autocomplete="off" aria-describedby="folder-path-help"></label>

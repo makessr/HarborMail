@@ -29,7 +29,7 @@ function renderAdminOverview(data) {
   renderDetails("admin-service", [
     ["SMTP 服务主机", data.domain], ["数据库", data.database === "mysql" ? "MySQL" : "SQLite"],
     ["收信域名", overviewLink(data.domains.length, "/admin/domains")],
-    ["外部中继", data.relayConfigured ? "已配置" : "未配置"],
+    ["外发投递", data.directMX ? (data.relayConfigured ? "SMTP 中继 / MX 直投" : "MX 直投") : data.relayConfigured ? "SMTP 中继" : "仅站内"],
     ["垃圾邮件扫描", data.spamScanning ? "已配置" : "未配置"]
   ]);
   adminElement("admin-overview-updated").textContent = "更新于 " + queueTime(data.generatedAt);

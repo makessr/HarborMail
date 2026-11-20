@@ -82,7 +82,7 @@ function displayOutboxStatus(item) {
 
 let recipientProgressRequest = 0;
 const recipientProgressLabels = {
-  queued: "等待重试", sending: "投递中", accepted: "中继已接收", failed: "失败", uncertain: "结果待确认"
+  queued: "等待重试", sending: "投递中", accepted: "对端已接收", failed: "失败", uncertain: "结果待确认"
 };
 
 function renderDeliveryTimeline(events) {

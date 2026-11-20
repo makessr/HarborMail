@@ -34,16 +34,16 @@
   </header>
   <main class="admin-main">
     <nav class="admin-nav" aria-label="管理导航">
-      <a id="admin-overview-link" href="/admin">概览</a>
-      <a id="admin-accounts-link" href="/admin/accounts">账号</a>
-      <a id="admin-aliases-link" href="/admin/aliases">别名</a>
-      <a id="admin-domains-link" href="/admin/domains">域名</a>
-      <a id="admin-queue-link" href="/admin/queue">投递队列</a>
-      <a id="admin-runtime-link" href="/admin/runtime">运行监控</a>
-      <a id="admin-storage-link" href="/admin/storage">存储用量</a>
-      <a id="admin-quarantine-link" href="/admin/quarantine">隔离邮件</a>
-      <a id="admin-security-link" href="/admin/security">安全</a>
-      <a id="admin-audit-link" href="/admin/audit">审计</a>
+      <a id="admin-overview-link" href="/admin"><svg class="glyph nav-glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#layout-dashboard"></use></svg>概览</a>
+      <a id="admin-accounts-link" href="/admin/accounts"><svg class="glyph nav-glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#users"></use></svg>账号</a>
+      <a id="admin-aliases-link" href="/admin/aliases"><svg class="glyph nav-glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#contact-book"></use></svg>别名</a>
+      <a id="admin-domains-link" href="/admin/domains"><svg class="glyph nav-glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#globe"></use></svg>域名</a>
+      <a id="admin-queue-link" href="/admin/queue"><svg class="glyph nav-glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#list"></use></svg>投递队列</a>
+      <a id="admin-runtime-link" href="/admin/runtime"><svg class="glyph nav-glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#activity"></use></svg>运行监控</a>
+      <a id="admin-storage-link" href="/admin/storage"><svg class="glyph nav-glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#hard-drive"></use></svg>存储用量</a>
+      <a id="admin-quarantine-link" href="/admin/quarantine"><svg class="glyph nav-glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#archive"></use></svg>隔离邮件</a>
+      <a id="admin-security-link" href="/admin/security"><svg class="glyph nav-glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#shield"></use></svg>安全</a>
+      <a id="admin-audit-link" href="/admin/audit"><svg class="glyph nav-glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#list-checks"></use></svg>审计</a>
     </nav>
     <div class="admin-heading">
       <h1 id="admin-title">管理后台</h1>
@@ -369,10 +369,10 @@
         <button class="icon" id="admin-delivery-resolution-close" type="button" aria-label="关闭"><svg class="glyph" aria-hidden="true"><use href="/icons.svg#close-line"></use></svg></button>
       </header>
       <p class="admin-note" id="admin-delivery-resolution-target"></p>
-      <label>中继日志确认的结果<select name="outcome" required>
-        <option value="">选择结果</option><option value="accepted">中继已接收</option><option value="rejected">中继未接收</option>
+      <label>核对后的结果<select name="outcome" required>
+        <option value="">选择结果</option><option value="accepted">对端已接收</option><option value="rejected">对端未接收</option>
       </select></label>
-      <p class="admin-note">请先核对中继日志。保存结果只结案，邮件不会重发。</p>
+      <p class="admin-note">请先核对收件方或投递记录。保存结果只结案，邮件不会重发。</p>
       <label>你的管理员主邮箱密码<input name="password" type="password" maxlength="72" autocomplete="current-password" required></label>
       <p id="admin-delivery-resolution-error" role="status"></p>
       <footer><button class="primary" type="submit">确认结果</button></footer>
@@ -412,11 +412,9 @@
         <button class="icon" id="admin-dkim-close" type="button" aria-label="关闭"><svg class="glyph" aria-hidden="true"><use href="/icons.svg#close-line"></use></svg></button>
       </header>
       <dl id="admin-dkim-state"></dl>
-      <div id="admin-dkim-dns" hidden>
-        <label>TXT 记录名<input name="recordName" type="text" readonly></label>
-        <label>TXT 记录值<textarea name="recordValue" rows="4" readonly></textarea></label>
-      </div>
-      <p id="admin-dkim-status" role="status"></p>
+      <div id="admin-dkim-dns" hidden></div>
+      <p class="admin-note" id="admin-dkim-copy-status" role="status"></p>
+      <p class="admin-note" id="admin-dkim-status" role="status"></p>
       <div id="admin-dkim-controls" hidden>
         <label>管理员主邮箱密码<input name="password" type="password" maxlength="72" autocomplete="current-password" required></label>
         <footer>
@@ -438,10 +436,12 @@
         <label>公网 IPv4<input name="ipv4" maxlength="15" inputmode="decimal" autocomplete="off" placeholder="服务器公网地址"></label>
         <label>公网 IPv6（选填）<input name="ipv6" maxlength="45" autocomplete="off" spellcheck="false"></label>
         <label>中继 SPF include（选填）<input name="spfInclude" maxlength="254" autocomplete="off" spellcheck="false" placeholder="例如 _spf.example.com"></label>
-        <label class="admin-spf-receive-only"><input type="checkbox" name="receiveOnly" value="1">此域只收信</label>
-        <button class="secondary" id="admin-dns-plan-build" type="submit">生成记录</button>
+        <div class="admin-dns-plan-actions">
+          <label class="admin-spf-receive-only"><input type="checkbox" name="receiveOnly" value="1"><span>此域只收信</span></label>
+          <button class="secondary" id="admin-dns-plan-build" type="submit">生成记录</button>
+        </div>
       </form>
-      <details class="admin-note admin-spf-help"><summary>如何填写 SPF</summary><p>在外发服务的域名验证页找到以 <code>v=spf1</code> 开头的 TXT。把 <code>include:</code> 后的域名填到上方，例如 <code>_spf.example.com</code>，再点「生成记录」。已有 SPF 时将新授权合到同一条。只有确认这个域完全不发信时，才勾选「此域只收信」。</p></details>
+      <details class="admin-note admin-spf-help"><summary>如何填写 SPF</summary><p>在外发服务的域名验证页找到以 <code>v=spf1</code> 开头的 TXT。把 <code>include:</code> 后的域名填到上方，例如 <code>_spf.example.com</code>，再点「生成记录」。使用原生直投时，把实际发信公网 IP 加入 SPF，例如 <code>v=spf1 ip4:192.0.2.10 ~all</code>。已有 SPF 时将新授权合到同一条。只有确认这个域完全不发信时，才勾选「此域只收信」。</p></details>
       <p id="admin-dns-plan-status" role="status"></p>
       <div id="admin-dns-plan-output" hidden>
         <div class="admin-table"><table>
@@ -453,7 +453,7 @@
         <p class="admin-note" id="admin-dns-plan-dkim-note" hidden>发布待启用的 DKIM TXT 后，点「管理 DKIM」核验并启用。</p>
         <footer>
           <button class="secondary" id="admin-dns-plan-dkim" type="button" hidden>管理 DKIM</button>
-          <button class="secondary" id="admin-dns-plan-check" type="button">检查 DNS</button>
+          <button class="primary" id="admin-dns-plan-check" type="button">检查 DNS</button>
         </footer>
       </div>
     </div>
@@ -513,7 +513,7 @@
         <label>你的管理员主邮箱密码
           <input name="password" type="password" autocomplete="current-password" required maxlength="72">
         </label>
-        <button class="secondary" id="admin-access-revoke" type="submit">确认操作</button>
+        <footer><button class="secondary" id="admin-access-revoke" type="submit">确认操作</button></footer>
       </fieldset>
       <details id="admin-access-history" hidden>
         <summary>最近的账号操作记录</summary>

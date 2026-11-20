@@ -48,6 +48,7 @@ type app struct {
 	recoveryMode        bool
 	pauseOutbox         bool
 	relay               domainRelay
+	directMX            *directMX
 	auditDays           int
 	auditLogAt          atomic.Int64
 	webLogin            webLoginGuard

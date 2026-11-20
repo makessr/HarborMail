@@ -118,8 +118,8 @@ func (s *submission) Rcpt(to string, _ *smtp.RcptOptions) error {
 	if err != nil {
 		return &smtp.SMTPError{Code: 451, Message: "Temporary mailbox failure"}
 	}
-	if target.owner == "" && !s.app.hasRelayFor(s.author) {
-		return &smtp.SMTPError{Code: 550, EnhancedCode: smtp.EnhancedCode{5, 7, 1}, Message: "External delivery requires a configured relay"}
+	if target.owner == "" && !s.app.hasOutboundFor(s.author) {
+		return &smtp.SMTPError{Code: 550, EnhancedCode: smtp.EnhancedCode{5, 7, 1}, Message: "External delivery is not configured"}
 	}
 	for _, existing := range s.recipients {
 		if existing.Address == target.address {

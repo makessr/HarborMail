@@ -137,9 +137,10 @@ func (a *app) replyOverview(w http.ResponseWriter, owner string, snapshot adminO
 		Email           string `json:"email"`
 		Domain          string `json:"domain"`
 		Database        string `json:"database"`
+		DirectMX        bool   `json:"directMX"`
 		RelayConfigured bool   `json:"relayConfigured"`
 		SpamScanning    bool   `json:"spamScanning"`
-	}{snapshot, owner, a.domain, a.dbDriver, a.relay.Address != "" || len(a.domainRelays) > 0, a.spamScanner != nil})
+	}{snapshot, owner, a.domain, a.dbDriver, a.directMX != nil && a.relay.Address == "", a.relay.Address != "" || len(a.domainRelays) > 0, a.spamScanner != nil})
 }
 
 func (a *app) adminOverview(w http.ResponseWriter, r *http.Request, owner string) {

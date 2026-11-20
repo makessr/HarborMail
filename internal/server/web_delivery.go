@@ -46,8 +46,8 @@ func (a *app) webDeliveryEnvelope(w http.ResponseWriter, ctx context.Context, db
 		fail(w, 503, "暂时无法确认收件地址的投递配置")
 		return webEnvelope{}, false
 	}
-	if !a.hasRelayFor(owner) && len(envelope.externalAddresses()) != 0 {
-		fail(w, 422, "尚未配置外部 SMTP 中继，可向本站账号发送邮件")
+	if !a.hasOutboundFor(owner) && len(envelope.externalAddresses()) != 0 {
+		fail(w, 422, "尚未启用外发，可向本站账号发送邮件")
 		return webEnvelope{}, false
 	}
 	return envelope, true
@@ -147,11 +147,11 @@ func (a *app) processWebLocals(job *outboxJob, hasExternal bool) (bool, error) {
 	}
 	id := job.message.ID
 	guard := ` WHERE id=? AND claim=? AND state='preparing' AND lease>?`
-	continueToRelay := hasExternal && a.hasRelayFor(job.message.wireFrom())
+	continueExternal := hasExternal && a.hasOutboundFor(job.message.wireFrom())
 	statement := `DELETE FROM outbox`
 	if hasExternal {
 		statement = `UPDATE outbox SET lease=lease`
-		if !continueToRelay {
+		if !continueExternal {
 			// Release the claim with the local copies, so a later worker can
 			// resume the external delivery as soon as a relay is configured.
 			statement = `UPDATE outbox SET state='queued',claim='',lease=0`
@@ -192,5 +192,5 @@ func (a *app) processWebLocals(job *outboxJob, hasExternal bool) (bool, error) {
 		return false, err
 	}
 	job.localDone = true
-	return continueToRelay, nil
+	return continueExternal, nil
 }

@@ -35,7 +35,7 @@ Harbor Mail 是面向 Linux 部署的自建域名邮箱，提供中文 Web 邮�
 
 ## 局限与运维成本
 
-- **公网收发需要额外配置。** 直接从公网接收邮件需要正确的 MX 记录和可达的 TCP 25。对外发信依赖 SMTP 中继，投递表现还受域名认证、中继和收件方策略影响。[接入真实域名](docs/deployment-and-usage.md#接入真实域名)
+- **公网收发需要额外配置。** 直接从公网接收邮件需要正确的 MX 记录和可达的 TCP 25。向外部邮箱发信可启用原生 MX 直投，或配置 SMTP 中继。投递取决于 DNS 认证、出站网络和收件方策略。[接入真实域名](docs/deployment-and-usage.md#接入真实域名)
 - **自动垃圾邮件检测和训练依赖 Rspamd。** 基础安装可手动标记垃圾邮件并使用收信规则。可通过 Compose 一键启用 Rspamd 和 ClamAV，也可自行对接。[反垃圾邮件与杀毒部署](docs/spam-and-antivirus.md)
 - **网页发信有大小上限。** 每封最多 10 个附件，默认附件合计 6 MiB、整封邮件 10 MiB，可按部署需要分别提高到 28 MiB 和 40 MiB。[邮件大小限制](docs/deployment-and-usage.md#当前范围)
 - **SQLite 面向单实例。** 多实例部署使用共享 MySQL，Redis 用于后台统计缓存。邮箱容量、并发和备份耗时需要按部署环境实测。[生产运行手册](ops/README.md)

@@ -148,7 +148,7 @@ secrets_dir=${HARBOR_SECRETS_DIR:-./secrets}
 
 新增域名或全站管理员打开已有域名的「DNS 记录」时，会自动准备缺少的 DKIM 签名密钥。把显示的 TXT 名称和值添加到 DNS，再从「管理 DKIM」选择「检查 DNS 并启用」。Harbor Mail 会验证公钥一致，再启用该域的 RSA-SHA256 2048 位签名。轮换时先生成并发布新记录，再启用新选择器。为已经发出的邮件保留旧公钥记录。
 
-运行 `docker compose run --rm --no-deps -T harbor dns-check example.com --configured` 可用指定域名的当前选择器做预检。内置签名仍通过既有 SMTP 中继外发。向外部邮箱发一封测试邮件，在收件方查看 `Authentication-Results`，确认 `dkim=pass` 且签名域是你的域名。若中继会添加页脚或改写正文，需要让它保留原文，或由中继按改写后的内容完成 DKIM 签名。
+运行 `docker compose run --rm --no-deps -T harbor dns-check example.com --configured` 可用指定域名的当前选择器做预检。内置签名可用于原生 MX 直投和 SMTP 中继。向外部邮箱发一封测试邮件，在收件方查看 `Authentication-Results`，确认 `dkim=pass` 且签名域是你的域名。若中继会添加页脚或改写正文，需要让它保留原文，或由中继按改写后的内容完成 DKIM 签名。
 
 备份数据库时单独离线备份 `dkim-key`。数据库存储的是加密私钥，恢复时使用原来的加密密钥。启用签名的域在密钥缺失或无法解密时会等待重试。邮件的 From 地址须与 SMTP 信封发件地址一致。 [DKIM 密钥要求](https://www.rfc-editor.org/rfc/rfc8301.html)
 

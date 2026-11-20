@@ -52,9 +52,10 @@ function setupAdminDKIM() {
   const form = adminElement("admin-dkim-form");
   const close = adminElement("admin-dkim-close");
   const status = adminElement("admin-dkim-status");
+  const copyStatus = adminElement("admin-dkim-copy-status");
   const controls = adminElement("admin-dkim-controls");
   const dns = adminElement("admin-dkim-dns");
-  const { password, recordName, recordValue } = form.elements;
+  const { password } = form.elements;
   const buttons = [...form.querySelectorAll("button[name=action]")];
   const [generate, enable, disable] = buttons;
   let domain = "";
@@ -68,8 +69,18 @@ function setupAdminDKIM() {
       ...(data.pending ? [["待启用选择器", data.pending.selector]] : [])
     ]);
     dns.hidden = !record;
-    recordName.value = record?.name || "";
-    recordValue.value = record?.txt || "";
+    dns.replaceChildren();
+    copyStatus.textContent = "";
+    if (record) {
+      for (const [label, value] of [["TXT 记录名", record.name], ["TXT 记录值", record.txt]]) {
+        const row = document.createElement("div");
+        row.className = "admin-dkim-record";
+        const title = document.createElement("span");
+        title.textContent = label;
+        row.append(title, adminDNSRecordField(value, label, copyStatus));
+        dns.append(row);
+      }
+    }
     controls.hidden = !data.available && !data.active;
     generate.hidden = !data.available;
     generate.textContent = data.pending ? "重新生成待启用密钥" : data.active ? "生成轮换密钥" : "生成密钥";

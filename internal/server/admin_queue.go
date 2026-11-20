@@ -127,7 +127,7 @@ func (a *app) canRetryDelivery(item adminQueueItem, now int64) bool {
 	if from == "" {
 		from = item.Sender
 	}
-	return a.hasRelayFor(from) && item.State == "queued" && item.Attempts > 0 && item.Reason != "" && item.Due > now
+	return a.hasOutboundFor(from) && item.State == "queued" && item.Attempts > 0 && item.Reason != "" && item.Due > now
 }
 
 func (a *app) readAdminRetryRecords(ctx context.Context) ([]adminRetryRecord, error) {
@@ -174,8 +174,8 @@ func (a *app) adminRetryDelivery(w http.ResponseWriter, r *http.Request, actor s
 	} else if letterError(w, err) {
 		return
 	}
-	if !a.hasRelayFor(author) {
-		fail(w, 409, "发件域尚未配置外发中继")
+	if !a.hasOutboundFor(author) {
+		fail(w, 409, "发件域尚未配置外发投递")
 		return
 	}
 	now := time.Now().Unix()

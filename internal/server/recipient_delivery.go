@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"time"
-
-	"github.com/emersion/go-smtp"
 )
 
 type recipientProgress struct {
@@ -69,7 +67,7 @@ func (a *app) initializeRecipientProgress(ctx context.Context, job *outboxJob, a
 	return tx.Commit()
 }
 
-func (a *app) processRecipientDelivery(ctx context.Context, job *outboxJob, addresses []string, connect relayConnector) error {
+func (a *app) processRecipientDelivery(ctx context.Context, job *outboxJob, addresses []string, connect recipientConnector) error {
 	if err := a.initializeRecipientProgress(ctx, job, addresses); err != nil {
 		return err
 	}
@@ -102,7 +100,7 @@ func (a *app) processRecipientDelivery(ctx context.Context, job *outboxJob, addr
 	return a.finishOutbox(job, state, reason, due)
 }
 
-func (a *app) sendToOneRecipient(ctx context.Context, job *outboxJob, item recipientProgress, connect relayConnector) error {
+func (a *app) sendToOneRecipient(ctx context.Context, job *outboxJob, item recipientProgress, connect recipientConnector) error {
 	if err := a.requireSenderIdentity(ctx, a.db, job.message.From, job.message.author); errors.Is(err, errSendAs) {
 		return a.recordRecipientAttempt(job, item, "preparing", "failed", 0, 0)
 	} else if err != nil {
@@ -121,18 +119,18 @@ func (a *app) sendToOneRecipient(ctx context.Context, job *outboxJob, item recip
 	} else if err != nil {
 		return a.recordRecipientResult(job, item, err, false)
 	}
-	client, closeClient, err := connect(ctx)
+	client, closeClient, err := connect(ctx, item.Address)
 	if err != nil {
 		return a.recordRecipientResult(job, item, err, false)
 	}
 	defer closeClient()
-	if err := client.Mail(job.message.wireFrom(), nil); err != nil {
+	if err := client.mail(job.message.wireFrom()); err != nil {
 		return a.recordRecipientResult(job, item, err, false)
 	}
-	if err := client.Rcpt(item.Address, nil); err != nil {
+	if err := client.rcpt(item.Address); err != nil {
 		return a.recordRecipientResult(job, item, err, false)
 	}
-	data, err := client.Data()
+	data, err := client.data()
 	if err != nil {
 		return a.recordRecipientResult(job, item, err, false)
 	}
@@ -154,13 +152,9 @@ func (a *app) recordRecipientResult(job *outboxJob, item recipientProgress, caus
 	if cause == nil {
 		return a.recordRecipientAttempt(job, item, phase, "accepted", 250, 0)
 	}
-	var smtpError *smtp.SMTPError
-	code := 0
-	if errors.As(cause, &smtpError) {
-		code = smtpError.Code
-		if code >= 500 && code < 600 && !errors.Is(cause, errRelayAuthentication) {
-			return a.recordRecipientAttempt(job, item, phase, "failed", code, 0)
-		}
+	code := smtpResponseCode(cause)
+	if code >= 500 && code < 600 && !errors.Is(cause, errRelayAuthentication) {
+		return a.recordRecipientAttempt(job, item, phase, "failed", code, 0)
 	}
 	if submitted && (code < 400 || code >= 500) {
 		return a.recordRecipientAttempt(job, item, phase, "uncertain", code, 0)
@@ -272,7 +266,7 @@ func (a *app) recoverOutboxJob(job *outboxJob) error {
 	if err != nil {
 		return err
 	}
-	state, reason, due := "uncertain", "服务在等待中继确认时中断，请核对中继记录。", int64(0)
+	state, reason, due := "uncertain", "服务在等待投递确认时中断，请核对收件方或投递记录。", int64(0)
 	if changed == 0 {
 		if err := recordDeliveryEvent(tx, m.From, m.ID, "", "uncertain", 0, 0); err != nil {
 			return err

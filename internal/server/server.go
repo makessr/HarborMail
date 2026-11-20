@@ -95,6 +95,12 @@ func Run() {
 		}
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "mx-check" {
+		if err := runMXCheck(os.Stdout, os.Args[2:]...); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	if len(os.Args) == 2 && os.Args[1] == "healthcheck" {
 		if err := webHealthcheck(); err != nil {
 			log.Fatal(err)
@@ -167,6 +173,9 @@ func Run() {
 	case "", "false":
 	default:
 		log.Fatal("HARBOR_PAUSE_OUTBOX must be true or false")
+	}
+	if err := a.loadDirectMX(); err != nil {
+		log.Fatal(err)
 	}
 	if err := a.loadRelays(); err != nil {
 		log.Fatal(err)

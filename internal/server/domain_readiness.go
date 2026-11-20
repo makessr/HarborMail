@@ -22,6 +22,7 @@ type domainReadiness struct {
 	domainDNS
 	Key   *dkimCheckReport `json:"key,omitempty"`
 	TLS   domainCheckStep  `json:"tls"`
+	Mode  string           `json:"outboundMode"`
 	Relay domainCheckStep  `json:"relay"`
 }
 
@@ -57,9 +58,15 @@ func (a *app) checkDomainReadiness(ctx context.Context, domain, selector string)
 	checks.Go(func() {
 		sender := "postmaster@" + domain
 		if !a.hasRelayFor(sender) {
-			result.Relay = domainCheckStep{State: "skipped", Next: "配置全局或按域 SMTP 中继。"}
+			result.Mode = "local"
+			result.Relay = domainCheckStep{State: "skipped", Next: "当前仅支持站内投递。"}
+			if a.directMX != nil {
+				result.Mode = "direct"
+				result.Relay = domainCheckStep{State: "configured", Next: "已启用 MX 直投，向外部邮箱发送测试邮件确认实际投递。"}
+			}
 			return
 		}
+		result.Mode = "relay"
 		client, closeClient, err := a.connectSenderRelay(ctx, sender)
 		if err == nil {
 			defer closeClient()

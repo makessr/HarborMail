@@ -217,7 +217,10 @@ MySQL 的 `3306`、两个 Redis 的 `6379` 和扫描组件端口均留在 Compos
 | `HARBOR_RSPAMD_TRAIN_URL` | 可选，可信私有 Rspamd 控制器的 HTTP(S) 基础地址，例如 `http://127.0.0.1:11334`。留空关闭训练 |
 | `HARBOR_RSPAMD_TRAIN_ACCOUNTS` | 开启训练时必填。用逗号分隔获准提交反馈的主账号地址 |
 | `HARBOR_RSPAMD_TRAIN_PASSWORD` / `HARBOR_RSPAMD_TRAIN_PASSWORD_FILE` | 训练所用控制器权限密码，二选一。文件仅存放实际密码 |
-| `HARBOR_RELAY` | 外部发信中继地址，如 `smtp.provider.example:587` |
+| `HARBOR_DIRECT_MX` | 启用原生直投，默认 `false` |
+| `HARBOR_DIRECT_MX_HELO` | 直投的 SMTP 主机名，默认使用 `HARBOR_DOMAIN` |
+| `HARBOR_DIRECT_MX_TLS` | 默认 `required`。设为 `opportunistic` 可连接未提供 STARTTLS 的服务器 |
+| `HARBOR_RELAY` | 可选的外部发信中继地址，如 `smtp.provider.example:587` |
 | `HARBOR_RELAY_TLS` | `starttls`（默认，强制 STARTTLS）或 `implicit`（隐式 TLS，通常为 465） |
 | `HARBOR_RELAY_USER` / `HARBOR_RELAY_PASSWORD` | 中继需要 SMTP AUTH PLAIN 时成对设置。配置缺项会导致启动失败 |
 | `HARBOR_RELAY_PASSWORD_FILE` | 从文件读取中继密码，与 `HARBOR_RELAY_PASSWORD` 二选一 |
@@ -385,20 +388,37 @@ Docker 的 MySQL 模式已包含 Redis。如果使用已有 Redis，将 `compose
 1. 选一个指向服务器的邮件主机，例如 `mail.example.com`。登录「管理后台 → 域名」添加邮件域 `example.com`，在打开的「DNS 记录」中填写主机名、公网 IP 和中继商提供的 SPF include，复制记录到域名的 DNS 服务商。
 2. 直收公网邮件需要让 TCP 25 到达 Harbor Mail。Docker 部署可在 `.env` 设置 `HARBOR_SMTP_BIND=0.0.0.0` 和 `HARBOR_SMTP_PORT=25` 后重建服务，并核对云安全组及防火墙。检查现有 TCP 25 是否已被占用，已有收信网关时使用其转发方案。公网邮件服务器按 MX 连接 TCP 25。
 3. 给 Web 邮箱配 HTTPS。使用 1Panel 时，在网站管理里为 Web 邮箱建立反向代理。同机 OpenResty 使用宿主机网络时，回源可填 `http://127.0.0.1:8080`。代理在独立容器网络时，使用它可访问的私有回源地址。SMTP 走自己的 TCP 端口。为代理端配置登录限流，在 Harbor Mail 设置 `HARBOR_SECURE_COOKIE=true`。 [1Panel 反向代理](https://1panel.cn/blog/reverse-proxy-security-v1-2-0.html)
-4. 配置支持发件域名的 SMTP 中继。中继商有专用退信域名或要求额外的 TXT、CNAME 时，按其记录名称和值添加。外发邮件入队后由中继投递。备份和恢复按[生产运行手册](../ops/README.md)执行。
+4. 对外发信选择[原生 MX 直投](#原生-mx-直投)或 SMTP 中继。中继商有专用退信域名或要求额外的 TXT、CNAME 时，按其记录名称和值添加。
 
 | 类型 | 名称示例 | 值或来源 |
 | --- | --- | --- |
 | A | `mail.example.com` | 服务器的公网 IPv4 |
 | AAAA | `mail.example.com` | 服务器的公网 IPv6，确认公网 IPv6 SMTP 可达后添加 |
 | MX | `example.com` | `mail.example.com`，优先级 `10` |
-| TXT（SPF） | `example.com` | 填中继 SPF 的 `include:` 域名后自动生成。仅收信的域可选择 `v=spf1 -all`。已有 SPF 时合并授权并保留单条记录 |
+| TXT（SPF） | `example.com` | 直投授权实际发信 IP，例如 `v=spf1 ip4:192.0.2.10 ~all`。中继可填 `include:` 域名后生成。已有 SPF 时合并授权并保留单条记录 |
 | TXT（DKIM） | 选择器对应的 `._domainkey` 名称 | 后台自动生成内置 DKIM 公钥，发布后检查并启用 |
 | TXT（DMARC） | `_dmarc.example.com` | 新域可从 `v=DMARC1; p=none` 开始，已有域保留当前策略 |
 
 DNS 后台若要求相对名称，在 `example.com` 区域中分别填 `mail`、`@` 和 `_dmarc`。使用 Cloudflare 时，MX 指向的 `mail` 的 A 或 AAAA 记录选择「仅 DNS」。已有旧邮件服务时，在确认切换时机后再调整 MX。 [Cloudflare 邮件记录](https://developers.cloudflare.com/dns/manage-dns-records/how-to/email-records/) · [SPF 标准](https://www.rfc-editor.org/info/rfc7208/)
 
 全站管理员可在「管理后台 → 域名 → 域名上线检查」核对 DNS、内置 DKIM 和中继连接。HTTPS 探测使用管理员配置的 `HARBOR_PUBLIC_HTTPS_HOST`（默认使用 `HARBOR_CLIENT_HOST`）及 `HARBOR_PUBLIC_HTTPS_PORT`（默认 443），从 Harbor Mail 所在网络检查证书。上传收件方导出的 EML 可核验 DKIM，文件仅用于当前请求。公网 TCP 25、实际收发和 SPF/DMARC 对齐仍需在外部收件方验收。[上线验收](../ops/README.md#首次启动与上线验收)
+
+### 原生 MX 直投
+
+服务器能访问公网 TCP 25 时，在 Docker 的 `.env` 或单二进制环境文件中设置：
+
+```dotenv
+HARBOR_DIRECT_MX=true
+HARBOR_DIRECT_MX_HELO=mail.example.com
+```
+
+HELO 主机名的 A 或 AAAA 记录应匹配实际发信公网 IP，公网 IP 的 PTR 应指回同一主机名。发布 SPF，启用内置 DKIM，并核对 DMARC。Docker 应用配置后运行 `docker compose up -d --no-deps --no-build --wait harbor`。systemd 部署重启 Harbor Mail 服务即可。
+
+站内邮件继续直接入箱。外部邮件按发件域依次选择按域中继、全局中继和原生直投。要让所有外部邮件都由本机直投，可清空中继配置并启用直投。关闭直投且没有中继时，应用只接受站内投递。
+
+直投按收件域的 MX 优先级连接 TCP 25。未发布 MX 时查询该域的 A 或 AAAA。默认需要证书校验通过的 STARTTLS。设置 `HARBOR_DIRECT_MX_TLS=opportunistic` 后允许向未提供 STARTTLS 的主机明文发送。已提供 STARTTLS 的主机仍须通过 TLS 校验。明确拒收会记录 SMTP 状态。发送完邮件后连接中断且未收到最终响应时，发件箱显示「结果待确认」。
+
+运行 `docker compose exec -T harbor harbormail mx-check gmail.com` 可以验证 MX 解析和 SMTP 握手。检查不会投递邮件。再向自己的外部邮箱发一封测试邮件，查看收件方的 SPF、DKIM 和 DMARC 结果。
 
 ## 轮换 PEM 证书
 
@@ -584,7 +604,7 @@ IMAP 客户端支持 `CREATE`、`RENAME`、`DELETE`、`SUBSCRIBE`、`UNSUBSCRIBE
 
 密送地址只用于确定投递目标。发件人可在自己的网页草稿、发件箱和已发送邮件中看到密送名单。投递的邮件头、下载的 `.eml` 和转发的原始邮件不包含该名单。正文转发引用原邮件头中的收件人和抄送，站内副本仍保留各自的实际投递地址供收信规则使用。 [RFC 5322 §3.6.3](https://www.rfc-editor.org/rfc/rfc5322.html#section-3.6.3)
 
-含外部地址的邮件进入发件箱，需要配置 SMTP 中继。混合投递先提交站内副本。如果入队后移除了中继，站内副本仍会在发送时间到达后投递，外部地址继续在队列中等待原定投递期限内恢复中继。外部重试不重复投递站内副本。多个外部地址分别使用 SMTP 事务和持久化状态。中继拒绝一个地址时，其他地址继续投递，已成功的地址不会因临时失败而重投。中继最终确认丢失时只冻结当次地址。发件人可在发件箱查看各外部地址的结果，并在核对中继记录后单独结案。共享 MySQL 的部署应在停止所有旧版实例后升级，再恢复接入。
+含外部地址的邮件进入发件箱，需要启用原生 MX 直投或配置 SMTP 中继。混合投递先提交站内副本。如果入队后关闭外发，站内副本仍会在发送时间到达后投递，外部地址继续在队列中等待原定投递期限内恢复外发。外部重试不重复投递站内副本。多个外部地址分别使用 SMTP 事务和持久化状态。中继拒绝一个地址时，其他地址继续投递，已成功的地址不会因临时失败而重投。中继最终确认丢失时只冻结当次地址。发件人可在发件箱查看各外部地址的结果，并在核对中继记录后单独结案。共享 MySQL 的部署应在停止所有旧版实例后升级，再恢复接入。
 
 ## 草稿箱
 
@@ -600,7 +620,7 @@ IMAP 的 **Drafts** 文件夹支持 `APPEND`，原始 MIME 和附件会完整保
 
 ## 定时发送
 
-网页写信时点击「定时发送」，按设备时区选择将来的发送时间，再点击「确认定时发送」。收件人可以是站内账号，外部地址需要配置 SMTP 中继。邮件会保存在发件箱，Harbor Mail 服务到时处理。关闭浏览器后，计划仍有效。
+网页写信时点击「定时发送」，按设备时区选择将来的发送时间，再点击「确认定时发送」。收件人可以是站内账号，外部地址需要启用原生 MX 直投或配置 SMTP 中继。邮件会保存在发件箱，Harbor Mail 服务到时处理。关闭浏览器后，计划仍有效。
 
 在发件箱打开等待定时发送的邮件，可查看计划时间并选择「取消并转为草稿」。草稿保留编辑内容和附件，可修改后重新发送或安排新时间。服务重启后会继续处理计划，投递期限从计划时间起算五天。
 

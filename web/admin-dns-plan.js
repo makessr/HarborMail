@@ -1,5 +1,43 @@
 "use strict";
 
+function adminDNSRecordField(value, label, status) {
+  const field = document.createElement("code");
+  field.textContent = value;
+  field.tabIndex = -1;
+  function select() {
+    field.focus();
+    const range = document.createRange();
+    range.selectNodeContents(field);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+  field.setAttribute("aria-label", label);
+  const copy = document.createElement("button");
+  copy.type = "button";
+  copy.className = "secondary";
+  copy.textContent = "复制";
+  copy.setAttribute("aria-label", "复制" + label);
+  copy.addEventListener("click", async () => {
+    try {
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(value);
+      } else {
+        select();
+        if (!document.execCommand("copy")) throw new Error();
+      }
+      status.textContent = "已复制" + label;
+    } catch {
+      select();
+      status.textContent = "已选中，请手动复制";
+    }
+  });
+  const group = document.createElement("div");
+  group.className = "admin-dns-record-field";
+  group.append(field, copy);
+  return group;
+}
+
 function setupDNSPlan() {
   const dialog = adminElement("admin-dns-plan-dialog");
   const form = adminElement("admin-dns-plan-form");
@@ -10,45 +48,6 @@ function setupDNSPlan() {
   const dkim = adminElement("admin-dns-plan-dkim");
   let domain = "";
   let pending;
-
-  function recordField(value, label, empty) {
-    if (!value) return empty;
-    const field = document.createElement("code");
-    field.textContent = value;
-    field.tabIndex = -1;
-    function select() {
-      field.focus();
-      const range = document.createRange();
-      range.selectNodeContents(field);
-      const selection = window.getSelection();
-      selection.removeAllRanges();
-      selection.addRange(range);
-    }
-    field.setAttribute("aria-label", label);
-    const copy = document.createElement("button");
-    copy.type = "button";
-    copy.className = "secondary";
-    copy.textContent = "复制";
-    copy.setAttribute("aria-label", "复制" + label);
-    copy.addEventListener("click", async () => {
-      try {
-        if (navigator.clipboard) {
-          await navigator.clipboard.writeText(value);
-        } else {
-          select();
-          if (!document.execCommand("copy")) throw new Error();
-        }
-        status.textContent = "已复制" + label;
-      } catch {
-        select();
-        status.textContent = "已选中，请手动复制";
-      }
-    });
-    const group = document.createElement("div");
-    group.className = "admin-dns-record-field";
-    group.append(field, copy);
-    return group;
-  }
 
   function render(data) {
     form.elements.host.value = data.host;
@@ -62,8 +61,9 @@ function setupDNSPlan() {
       purpose.textContent = record.priority ? "优先级 " + record.priority : record.purpose;
       type.append(purpose);
       return deliveryRow([type,
-        recordField(record.name,"名称（" + record.purpose + "）",record.purpose === "DKIM" ? "按选择器确定" : "请填写邮件主机名"),
-        recordField(record.value,"值（" + record.purpose + "）",empty)]);
+        record.name ? adminDNSRecordField(record.name, "名称（" + record.purpose + "）", status) :
+          (record.purpose === "DKIM" ? "按选择器确定" : "请填写邮件主机名"),
+        record.value ? adminDNSRecordField(record.value, "值（" + record.purpose + "）", status) : empty]);
     }));
     dkim.hidden = domainAdminOnly || !data.dkimAvailable;
     adminElement("admin-dns-plan-dkim-note").hidden = !data.records.some(record => record.purpose === "DKIM 待启用");

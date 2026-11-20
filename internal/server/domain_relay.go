@@ -115,6 +115,10 @@ func (a *app) hasRelayFor(owner string) bool {
 	return a.sendRelay(owner).Address != ""
 }
 
+func (a *app) hasOutboundFor(owner string) bool {
+	return a.directMX != nil || a.hasRelayFor(owner)
+}
+
 func (a *app) connectSenderRelay(ctx context.Context, owner string) (*smtp.Client, func(), error) {
 	relay := a.sendRelay(owner)
 	host, _, err := net.SplitHostPort(relay.Address)

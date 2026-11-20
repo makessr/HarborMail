@@ -113,10 +113,14 @@ func (a *app) runOutbox(ctx context.Context, connectRelay func(context.Context, 
 				if job == nil {
 					break
 				}
-				connect := func(ctx context.Context) (*smtp.Client, func(), error) {
-					return connectRelay(ctx, job.message.wireFrom())
+				sender := job.message.wireFrom()
+				connect := relayForRecipient(func(ctx context.Context) (*smtp.Client, func(), error) {
+					return connectRelay(ctx, sender)
+				})
+				if a.directMX != nil && !a.hasRelayFor(sender) {
+					connect = a.directMX.connect
 				}
-				if err := a.processOutbox(job, connect); err != nil {
+				if err := a.processOutboxForRecipient(job, connect); err != nil {
 					log.Print("outbox delivery state: ", err)
 				}
 			}
@@ -167,7 +171,7 @@ func (a *app) claimOutbox() (*outboxJob, error) {
 	args := []any{now.Unix(), now.Unix()}
 	query := `SELECT id,sender FROM outbox WHERE ((state IN ('queued','scheduled','undo') AND due<=?)
 		OR (state='preparing' AND lease<=?))`
-	if a.relay.Address == "" {
+	if a.directMX == nil && a.relay.Address == "" {
 		// Mixed envelopes can still deliver their local targets without a relay.
 		localTarget := `EXISTS (SELECT 1 FROM json_each(
 			CASE WHEN json_valid(e.envelope) THEN e.envelope ELSE '{}' END, '$.Targets') AS target
@@ -248,6 +252,10 @@ func (job *outboxJob) expires() time.Time {
 }
 
 func (a *app) processOutbox(job *outboxJob, connect relayConnector) error {
+	return a.processOutboxForRecipient(job, relayForRecipient(connect))
+}
+
+func (a *app) processOutboxForRecipient(job *outboxJob, connect recipientConnector) error {
 	ctx, cancel := context.WithTimeout(context.Background(), outboxTimeout)
 	defer cancel()
 	if err := a.requireSenderIdentity(ctx, a.db, job.message.From, job.message.author); errors.Is(err, errSendAs) {
@@ -304,23 +312,26 @@ func (a *app) processOutbox(job *outboxJob, connect relayConnector) error {
 			return err
 		}
 	}
+	if len(recipients) == 0 {
+		return a.finishOutbox(job, "failed", "邮件缺少可投递的收件人。", 0)
+	}
 	if err := a.prepareDKIM(ctx, job); err != nil {
 		return a.resolveOutboxError(job, err, false)
 	}
-	client, closeClient, err := connect(ctx)
+	client, closeClient, err := connect(ctx, recipients[0])
 	if err != nil {
 		return a.resolveOutboxError(job, err, false)
 	}
 	defer closeClient()
-	if err := client.Mail(job.message.wireFrom(), nil); err != nil {
+	if err := client.mail(job.message.wireFrom()); err != nil {
 		return a.resolveOutboxError(job, err, false)
 	}
 	for _, recipient := range recipients {
-		if err := client.Rcpt(recipient, nil); err != nil {
+		if err := client.rcpt(recipient); err != nil {
 			return a.resolveOutboxError(job, err, false)
 		}
 	}
-	data, err := client.Data()
+	data, err := client.data()
 	if err != nil {
 		return a.resolveOutboxError(job, err, false)
 	}
@@ -361,28 +372,26 @@ func (a *app) markOutboxSending(ctx context.Context, job *outboxJob) error {
 }
 
 func (a *app) resolveOutboxError(job *outboxJob, cause error, submitted bool) error {
-	var response *smtp.SMTPError
-	if errors.As(cause, &response) {
-		job.smtpCode = response.Code
-	}
-	reason := "无法连接 SMTP 中继或投递暂时受阻。"
+	code := smtpResponseCode(cause)
+	job.smtpCode = code
+	reason := "无法连接投递服务器或投递暂时受阻。"
 	if errors.Is(cause, errDKIMAuthor) {
 		return a.finishOutbox(job, "failed", "DKIM 要求邮件 From 与发件地址一致。", 0)
 	} else if errors.Is(cause, errDKIMSigning) {
 		reason = "DKIM 签名暂不可用，请检查签名密钥和数据库。"
 	} else if errors.Is(cause, errRelayAuthentication) {
 		reason = "SMTP 中继认证失败，请检查中继凭据。"
-	} else if response != nil {
-		if response.Code >= 500 && response.Code <= 599 {
-			return a.finishOutbox(job, "failed", fmt.Sprintf("SMTP 中继拒绝了邮件（%d）。", response.Code), 0)
+	} else if code != 0 {
+		if code >= 500 && code <= 599 {
+			return a.finishOutbox(job, "failed", fmt.Sprintf("投递服务器拒绝了邮件（%d）。", code), 0)
 		}
-		if response.Code >= 400 && response.Code <= 499 {
-			reason = fmt.Sprintf("SMTP 中继暂时拒绝了邮件（%d）。", response.Code)
+		if code >= 400 && code <= 499 {
+			reason = fmt.Sprintf("投递服务器暂时拒绝了邮件（%d）。", code)
 			submitted = false
 		}
 	}
 	if submitted {
-		return a.finishOutbox(job, "uncertain", "未收到中继的最终确认，请先核对中继记录再决定是否重发。", 0)
+		return a.finishOutbox(job, "uncertain", "未收到投递服务器的最终确认，请先核对收件方或投递记录再决定是否重发。", 0)
 	}
 	delay := min(30*time.Minute<<min(job.attempts-1, 4), 6*time.Hour)
 	due := min(time.Now().Add(delay).Unix(), job.expires().Unix())

@@ -12,7 +12,7 @@ function setupAdminAudit() {
     alias_send_grant: "授权别名发信", alias_send_revoke: "撤销别名发信",
     quarantine_release: "释放隔离邮件", quarantine_discard: "删除隔离邮件",
     domain_add: "新增域名", domain_remove: "移除域名", dkim_generate: "生成 DKIM 密钥", dkim_enable: "启用 DKIM 签名", dkim_disable: "停用 DKIM 签名",
-    delivery_confirmed: "确认中继已接收", delivery_rejected: "确认中继未接收",
+    delivery_confirmed: "确认对端已接收", delivery_rejected: "确认对端未接收",
     recipient_confirmed: "确认单地址已接收", recipient_rejected: "确认单地址未接收" };
   const timestamp = new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "medium" });
   const formatTime = value => timestamp.format(value * 1000);

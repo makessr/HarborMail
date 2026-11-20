@@ -609,7 +609,7 @@ adminElement("admin-dns-form").addEventListener("submit", async event => {
       ? data.hosts.map(({ Host, Pref }) => Pref + " " + Host.replace(/\.$/, "")).join("、")
       : describeDNS(data.mx);
     const results = [data.mx.state === "present" ? ["MX", mx] : readinessDNS("MX", data.mx, "核对收信主机的 MX"),
-      readinessDNS("SPF", data.spf, "核对外发中继提供的 SPF"),
+      readinessDNS("SPF", data.spf, "核对发信公网 IP 或中继的 SPF 授权"),
       readinessDNS("DMARC", data.dmarc, "核对 _dmarc TXT"),
       readinessDNS("DKIM", data.dkim, "核对选择器和 DNS 公钥")];
     if (data.key) {
@@ -618,7 +618,7 @@ adminElement("admin-dns-form").addEventListener("submit", async event => {
     }
     if (data.tls) results.push(["公网 HTTPS", data.tls.state === "pass"
       ? "证书有效至 " + new Date(data.tls.until * 1000).toLocaleDateString("zh-CN") : data.tls.next]);
-    if (data.relay) results.push(["SMTP 中继", data.relay.state === "pass" ? "连接、TLS 及已配置认证通过" : data.relay.next]);
+    if (data.relay) results.push([data.outboundMode === "relay" ? "SMTP 中继" : "外发投递", data.relay.state === "pass" ? "连接、TLS 及已配置认证通过" : data.relay.next]);
     renderDetails("admin-dns-results", results);
     adminElement("admin-domain-verify").hidden = !data.tls;
     dnsResults.hidden = false;

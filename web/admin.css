@@ -15,7 +15,8 @@
 .admin-row-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
 
 .admin-nav { display: flex; gap: 6px; margin-bottom: 22px; border-bottom: 1px solid var(--line); overflow: auto; }
-.admin-nav a { flex: none; color: var(--muted); padding: 10px 12px; border-bottom: 2px solid transparent; text-decoration: none; }
+.admin-nav a { display: inline-flex; align-items: center; gap: 6px; flex: none; color: var(--muted); padding: 9px 10px; border-bottom: 2px solid transparent; text-decoration: none; font-size: 14px; }
+.admin-nav .nav-glyph { font-size: 17px; }
 .admin-nav a:focus-visible { outline-offset: -3px; }
 .admin-nav a:hover { color: var(--ink); background: var(--hover); }
 .admin-nav a[aria-current="page"] { color: var(--accent-ink); border-color: var(--accent); font-weight: 650; }
@@ -150,7 +151,18 @@
 .admin-domain-actions button { padding: 4px 8px; }
 .admin-dns-plan { width: min(860px, calc(100% - 24px)); }
 .admin-dns-plan-inputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 10px; align-items: end; }
-.admin-dns-plan-inputs button { justify-self: start; }
+.admin-dns-plan-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+@media (min-width: 720px) {
+  .admin-dns-plan-actions { grid-column: 2 / -1; }
+}
+#admin-dns-plan-status:empty { display: none; }
+#admin-dns-plan-output .admin-table { margin-bottom: 8px; }
 .admin-dns-plan [scope="col"] { white-space: nowrap; }
 .admin-dns-plan .admin-table table { table-layout: fixed; width: 100%; font-size: 13px; }
 .admin-dns-plan th:first-child { width: 18%; }
@@ -159,11 +171,52 @@
 .admin-dns-plan td small { display: block; color: var(--muted); }
 .admin-dns-record-field { display: flex; align-items: start; flex-wrap: wrap; gap: 3px 6px; }
 .admin-dns-record-field code { flex: 1 1 80px; min-width: 0; font: 12px/1.5 ui-monospace, monospace; overflow-wrap: anywhere; }
-.admin-dns-record-field button { flex: none; padding: 2px 6px; min-height: 24px; font-size: 12px; }
-.admin-dns-plan-inputs .admin-spf-receive-only { display: flex; align-items: center; gap: 6px; font-size: 13px; }
-#admin-dkim-dns label + label { margin-top: 10px; }
-#admin-dkim-dns textarea { width: 100%; overflow-wrap: anywhere; resize: vertical; }
-#admin-dkim-controls footer { flex-wrap: wrap; }
+.admin-dns-record-field > .secondary { flex: none; padding: 2px 7px; min-height: 26px; font-size: 12px; }
+@media (pointer: coarse) { .admin-dns-record-field > .secondary { min-height: 32px; } }
+.admin-spf-receive-only {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: var(--dialog-button-height);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.admin-spf-receive-only input {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--action);
+}
+#admin-dkim-state {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 5px 14px;
+  margin: 0;
+  font-size: 13px;
+}
+#admin-dkim-state dt, .admin-dkim-record > span { color: var(--muted); }
+#admin-dkim-state dd { margin: 0; overflow-wrap: anywhere; }
+#admin-dkim-dns { display: grid; gap: 10px; min-width: 0; }
+.admin-dkim-record {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 5px 8px;
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  font-size: 12px;
+}
+.admin-dkim-record .admin-dns-record-field { display: contents; }
+.admin-dkim-record code { grid-column: 1 / -1; grid-row: 2; }
+.admin-dkim-record button { grid-column: 2; grid-row: 1; }
+#admin-dkim-copy-status:empty, #admin-dkim-status:empty { display: none; }
+#admin-dkim-title { overflow-wrap: anywhere; }
+#admin-dkim-controls { min-width: 0; }
 #admin-domain-error { color: var(--danger); }
 #admin-accounts .secondary { white-space: nowrap; padding: 5px 8px; }
 .admin-access-target { overflow-wrap: anywhere; }
