@@ -2,9 +2,7 @@
 
 <img src="../web/harbor-mail-logo.png" alt="" width="72" height="72">
 
-Harbor Mail 是用 Go 编写的自建域名邮箱。它通过 SMTP 接收发给已配置账号的邮件，用 SQLite 或 MySQL 保存邮件和原始 MIME 内容，并提供中文 Web 邮箱。发布时可以将前端和服务端打包成一个可执行文件，无需单独部署 Node.js。
-
-Web 邮箱提供登录、搜索、阅读、回复、转发、星标、归档、草稿箱、废纸篓、附件收发和原始邮件下载。同站邮件直接投递，发往外部域名的邮件经配置好的 SMTP 中继发送。支持配置多个账号及多个收信域名。
+首次安装从[三步 Docker 部署](#docker-compose-部署)开始。已有部署可直接查看[配置项](#配置)、[邮件客户端](#接入邮件客户端)或[生产运行手册](../ops/README.md)。
 
 ## 本地启动
 
@@ -48,47 +46,73 @@ $env:HARBOR_ACCOUNTS = @{ 'hello@harbor.test' = $accountHash } | ConvertTo-Json 
 
 ## Docker Compose 部署
 
-在 Linux amd64 服务器使用 Docker Engine 和 Compose，从项目目录运行。下面的流程拉取发布镜像并启动 MySQL 与 Redis。需要自行构建时可使用 BuildKit，生产主机的挂载和备份见[生产运行手册](../ops/README.md)。Windows 本机容器开发可使用 Docker Desktop 的 WSL 2 后端。
+适用于首次在 Linux x86_64（amd64）服务器部署。需要 Docker Engine、Compose 插件、Git、OpenSSL 和 Bash。以下命令在服务器的 root 终端运行。使用 sudo 登录的用户可先执行 `sudo -i`。 [安装 Docker Engine](https://docs.docker.com/engine/install/) · [安装 Compose 插件](https://docs.docker.com/compose/install/linux/)
 
 ### 创建首个邮箱
 
-Linux 新部署可用下面的 Bash 示例创建账号文件。已有部署使用原有文件。
+下载部署文件。
+
+```bash
+git clone --depth 1 https://github.com/makessr/HarborMail.git
+cd HarborMail
+```
+
+复制下方整个代码块，输入一个至少 12 字节、最多 72 字节的邮箱密码。登录账号是 `hello@harbor.test`，自带管理员权限。数据库密码由命令随机生成。此步骤只在首次安装时运行。
 
 ```bash
 (
-  set -e
+  set -Eeuo pipefail
   umask 077
+  for file in .env secrets/{accounts.json,mysql-password,mysql-root-password,mysql-dsn}; do
+    if [[ -e "$file" || -L "$file" ]]; then
+      printf '已有部署文件 %s，请保留现有配置。\n' "$file" >&2
+      exit 1
+    fi
+  done
+  set -o noclobber
   docker pull ghcr.io/makessr/harbormail:latest
-  mkdir -p secrets
   read -rsp '输入邮箱密码（12–72 字节）: ' mailbox_password
   printf '\n'
   hash=$(printf '%s\n' "$mailbox_password" | docker run --rm -i ghcr.io/makessr/harbormail:latest hash-password)
   unset mailbox_password
+  mysql_password=$(openssl rand -hex 24)
+  mysql_root_password=$(openssl rand -hex 24)
+  install -d -m 0700 secrets
   printf '{"hello@harbor.test":"%s"}\n' "$hash" > secrets/accounts.json
+  printf '%s' "$mysql_password" > secrets/mysql-password
+  printf '%s' "$mysql_root_password" > secrets/mysql-root-password
+  printf 'harbor:%s@tcp(mysql:3306)/harbor_mail' "$mysql_password" > secrets/mysql-dsn
+  chgrp 10001 secrets/accounts.json secrets/mysql-dsn
+  chmod 0640 secrets/accounts.json secrets/mysql-dsn
+  cat > .env <<'EOF'
+COMPOSE_FILE=compose.yaml:compose.mysql.yaml:compose.registry.yaml
+HARBOR_ADMINS=hello@harbor.test
+HARBOR_WEB_PORT=8080
+HARBOR_SMTP_PORT=2525
+EOF
 )
-sudo chgrp 10001 secrets/accounts.json
-sudo chmod 0640 secrets/accounts.json
 ```
 
-如需查看管理后台，把 `HARBOR_ADMINS=hello@harbor.test` 加到项目目录的 `.env`。管理员地址须是账号文件里的主邮箱。
+### 启动 MySQL 与 Redis
+
+在同一目录启动。Compose 从 `.env` 读取部署文件和端口。 [Compose 环境变量](https://docs.docker.com/compose/how-tos/environment-variables/envvars/#compose_file)
+
+```bash
+docker compose config --quiet && docker compose up -d --no-build --wait
+docker compose ps
+```
+
+### 启动后验收
+
+- `harbor`、`mysql` 和 `redis` 均为 `healthy`。
+- 在服务器上打开 [网页邮箱](http://127.0.0.1:8080/) 或 [管理后台](http://127.0.0.1:8080/admin)，用 `hello@harbor.test` 和刚输入的密码登录。给自己发一封邮件，在收件箱确认收到。
+- 如果只有远程服务器，在**自己电脑的终端**执行 `ssh -N -L 8080:127.0.0.1:8080 用户名@服务器地址`，保持该终端开启，再打开上面的链接。若改了服务器 Web 端口，SSH 命令中第二个 `8080` 也要改。
+
+开通公网访问见 [Cloudflare 自动证书](#cloudflare-dns-01)和 [公网邮件收发](#接入真实域名)。
 
 ### 配置宿主机端口
 
-Docker Compose 从项目目录的 `.env` 读取端口。Web 默认发布为 `127.0.0.1:8080`，SMTP 默认发布为 `127.0.0.1:2525`。如果默认端口已占用，可以在现有 `.env` 添加或修改下列配置。
-
-```dotenv
-HARBOR_WEB_PORT=18080
-HARBOR_SMTP_PORT=12525
-```
-
-启动前可在 Linux 部署主机检查这两个示例端口。使用默认端口或其他端口时，相应替换命令中的数字。
-
-```bash
-sudo ss -ltnp '( sport = :18080 or sport = :12525 )'
-docker ps --format '{{.Names}}  {{.Ports}}'
-```
-
-`docker compose config --quiet` 校验配置。Docker 在 `up` 时实际绑定端口，遇到冲突会报 `port is already allocated` 或 `address already in use`，此时可更换 `.env` 中的宿主机端口再启动。用 `docker compose … ps` 核对最终映射，验收 URL 的端口也要随之调整。 [Docker 端口绑定错误](https://docs.docker.com/desktop/troubleshoot-and-support/troubleshoot/topics/#port-already-allocated-errors)
+端口被占用时，修改 `.env` 中已有的端口值，再运行 `docker compose up -d --no-build --wait`。浏览器和客户端也改用新端口。部署失败可先看 `docker compose logs --tail=80 harbor mysql redis`。
 
 | 用途 | `.env` 变量 | 默认宿主机端口 |
 | --- | --- | --- |
@@ -101,51 +125,7 @@ docker ps --format '{{.Names}}  {{.Ports}}'
 | ACME HTTP-01 | `HARBOR_ACME_PORT` | 8081 |
 | 运行指标 | `HARBOR_METRICS_PORT` | 9091 |
 
-邮件客户端端口由 TLS 或 ACME 覆盖文件启用，ACME 验证端口和指标端口分别由对应覆盖文件启用。MySQL 和 Redis 默认只在 Compose 网络内访问。公网直接收信需要让对方邮件服务器能够连接公网 TCP 25，可将该端口转发给 Harbor Mail。
-
-使用已有 TLS 证书并接入邮件客户端时，准备好下文的证书文件，在默认 MySQL + Redis 部署命令中加入 `compose.tls.yaml`。
-
-```bash
-docker compose -f compose.yaml -f compose.mysql.yaml -f compose.registry.yaml -f compose.tls.yaml up -d --no-build --wait
-```
-
-由 Harbor Mail 自动申请证书时，将命令中的 `compose.tls.yaml` 换为 `compose.acme.yaml` 或 `compose.acme-cloudflare.yaml`。 [选择 ACME 验证方式](#自动签发与续签-tls-证书)
-
-### 启动 MySQL 与 Redis
-
-首次部署时，在已创建的 `secrets` 目录生成 MySQL 凭据。下面的 Bash 示例需要 OpenSSL。密码使用十六进制字符，可直接写入 DSN。
-
-```bash
-(
-  set -e
-  umask 077
-  mysql_password=$(openssl rand -hex 24)
-  mysql_root_password=$(openssl rand -hex 24)
-  printf '%s' "$mysql_password" > secrets/mysql-password
-  printf '%s' "$mysql_root_password" > secrets/mysql-root-password
-  printf 'harbor:%s@tcp(mysql:3306)/harbor_mail' "$mysql_password" > secrets/mysql-dsn
-)
-sudo chgrp 10001 secrets/mysql-dsn
-sudo chmod 0640 secrets/mysql-dsn
-```
-
-用 PowerShell 准备开发环境凭据时，三个文件都使用 `Set-Content -Encoding utf8NoBOM -NoNewline`，避免 MySQL 将 Windows 行尾的回车算进密码。
-
-```text
-docker compose -f compose.yaml -f compose.mysql.yaml -f compose.registry.yaml config --quiet
-docker compose -f compose.yaml -f compose.mysql.yaml -f compose.registry.yaml up -d --no-build --wait
-docker compose -f compose.yaml -f compose.mysql.yaml -f compose.registry.yaml ps
-```
-
-MySQL 密码文件用于首次初始化。已有数据卷的密码在 MySQL 内修改，再同步更新对应文件和 DSN。MySQL、Redis 都在 Compose 网络内，Redis 随 MySQL 启动并使用独立的内部网络。Redis 缓存上限为 64 MiB，容器内存限制为 128 MiB，重启后会随请求重新填充。
-
-### 启动后验收
-
-1. 确认 `ps` 中 `harbor`、`mysql` 和 `redis` 均为 `healthy`。访问 [健康检查](http://127.0.0.1:8080/healthz)，应返回 HTTP 200 和 `ok`。该端点检查数据库连通性。
-2. 打开[本地 Web 邮箱](http://127.0.0.1:8080/?view=mail)并登录。从网页给同一实例上的账号发信，确认收件箱可以读取邮件。用管理员账号打开[管理后台](http://127.0.0.1:8080/admin)，确认「服务配置」中的数据库为 MySQL。
-3. 若需核对 Redis 连接，使用同一组 Compose 文件执行 `exec -T redis redis-cli -e PING`，预期为 `PONG`。在独立演练环境可用同一组文件执行 `stop redis`，刷新后台概览确认仍能读取，再执行 `start redis`。
-
-以上启动方式已在 Windows 的 Docker Desktop Linux 容器环境实测，覆盖本机 SMTP 投递、应用重启后的邮件读取和 Redis 停止时回源 MySQL。公网收发、域名与 TLS 在目标主机按[真实域名接入](#接入真实域名)验收。
+默认 Web 和 SMTP 仅绑定本机回环。邮件客户端、HTTP-01 验证和运行指标端口由对应的覆盖文件启用。MySQL 和 Redis 仅在 Compose 网络内访问。升级镜像时在项目目录运行 `docker compose pull harbor && docker compose up -d --no-build --wait`，沿用原有凭据和数据卷。
 
 ### SQLite 与可选组件
 
@@ -163,7 +143,7 @@ MySQL 密码文件用于首次初始化。已有数据卷的密码在 MySQL 内�
 | `compose.domain-relays.yaml` | 从文件配置各发件域的专用中继 |
 | `compose.relay-ca.yaml` | 只读挂载 SMTP 中继的 CA 证书目录 |
 
-按需在 `-f compose.yaml` 后追加覆盖文件。查看日志、重启、升级和停止服务时沿用部署时的文件顺序与项目名。
+使用三步部署的读者可在 `.env` 的 `COMPOSE_FILE` 末尾用冒号追加覆盖文件。使用 `-f` 的部署应在查看日志、重启、升级和停止时沿用同一组文件与项目名。
 
 收到 `SIGTERM` 或 `Ctrl+C` 后，Harbor 停止监听和领取新任务，最多等待两分钟，让当前 Web 请求、SMTP 会话和已领取的外发任务收尾。已连接的 SMTP 客户端仍可完成当前事务，新事务会收到 `421`。IMAP、POP3 和网页 SSE 连接会断开，客户端可在服务回来后重连。Compose 为 Harbor 容器保留 125 秒的停止时间。
 
@@ -384,20 +364,34 @@ Docker 下保留 `HARBOR_TLS_DIR` 对应的挂载目录，更新目录内的文�
 
 ### Cloudflare DNS-01
 
-域名的权威 DNS 由 Cloudflare 托管时，Harbor Mail 可通过临时的 `_acme-challenge` TXT 记录完成签发和续签。签发机构默认为 Let's Encrypt。验证无需开放公网 TCP 80 或 443，Web 和邮件端口可按部署需要配置。 [ACME DNS-01](https://letsencrypt.org/docs/challenge-types/#dns-01-challenge)
+先完成[三步 Docker 部署](#docker-compose-部署)。域名的权威 DNS 需由 Cloudflare 托管。Let’s Encrypt 通过临时 TXT 记录验证域名，无需开放公网 80 或 443。 [ACME DNS-01](https://letsencrypt.org/docs/challenge-types/#dns-01-challenge)
 
-1. 在 Cloudflare 创建 API token，授予 **Zone → DNS → Edit** 和 **Zone → Zone → Read**，资源范围限定为证书涉及的 DNS 区域。 [创建 Cloudflare API token](https://developers.cloudflare.com/fundamentals/api/get-started/create-token/)
-2. Compose 部署将 token 写入 `secrets/acme-cloudflare-token`，确保容器 UID `10001` 可读。若配置了 `HARBOR_SECRETS_DIR`，文件随该目录放置。在 `.env` 设置 `HARBOR_ACME_HOSTS=mail.example.com`，阅读并同意 CA 条款后设置 `HARBOR_ACME_ACCEPT_TOS=true`。
-3. 使用 `compose.acme-cloudflare.yaml` 作为证书覆盖文件。MySQL + Redis 的 GHCR 部署命令如下。
+1. 在 Cloudflare 创建 API token，授予目标域名 **Zone → DNS → Edit** 和 **Zone → Zone → Read**。将 token 保存到 `secrets/acme-cloudflare-token`。曾设置 `HARBOR_SECRETS_DIR` 的部署使用该目录。 [创建 Cloudflare API token](https://developers.cloudflare.com/fundamentals/api/get-started/create-token/)
+2. 在项目目录给 token 文件设置权限。用了自定义凭据目录时，把下面命令中的 `secrets/` 换成该目录。
 
 ```bash
-docker compose -f compose.yaml -f compose.mysql.yaml -f compose.registry.yaml \
-  -f compose.acme-cloudflare.yaml up -d --no-build
+chgrp 10001 secrets/acme-cloudflare-token
+chmod 0640 secrets/acme-cloudflare-token
 ```
 
-单二进制部署设置 `HARBOR_ACME_CHALLENGE=cloudflare`，并将 `HARBOR_ACME_CLOUDFLARE_TOKEN_FILE` 指向服务账号可读的文件。systemd 可用 `LoadCredential=` 传入 token，再将文件路径配置为相应的 `%d/` 路径。
+3. 修改 `.env` 中的 `COMPOSE_FILE`，加入 Cloudflare 配置。将示例主机名改为自己的域名，阅读并同意 CA 条款后设置 `HARBOR_ACME_ACCEPT_TOS=true`。
 
-Harbor 自动清理验证 TXT 记录，并把证书与 ACME 账号状态保存在 `HARBOR_ACME_CACHE` 下的 `cloudflare/`。首次启用会单独签发证书，可在 Harbor 日志查看签发进度。保留该目录以供重启和续签，并允许 Harbor 出站访问 ACME CA、Cloudflare API 和 DNS。使用私有测试 CA 时，按 CA 要求配置独立缓存和系统信任。
+```dotenv
+COMPOSE_FILE=compose.yaml:compose.mysql.yaml:compose.registry.yaml:compose.acme-cloudflare.yaml
+HARBOR_ACME_HOSTS=mail.example.com
+HARBOR_ACME_ACCEPT_TOS=true
+```
+
+如需直接通过 `https://mail.example.com:8443/` 访问，在 Cloudflare 为该主机添加指向服务器的 **仅 DNS** 记录，在 `.env` 设置 `HARBOR_WEB_TLS=on` 和 `HARBOR_WEB_BIND=0.0.0.0`，将已有的 `HARBOR_WEB_PORT` 改为 `8443`，并在服务器防火墙及云安全组放行 TCP 8443。
+
+```bash
+docker compose config --quiet && docker compose up -d --no-build
+docker compose logs -f harbor
+```
+
+首次签发成功后再打开 HTTPS 地址。按 `Ctrl+C` 退出日志查看。Harbor 自动清理 TXT 记录并在 `HARBOR_ACME_CACHE` 下的 `cloudflare/` 保存证书及 ACME 账号状态。请保留该目录，并允许 Harbor 出站访问 CA、Cloudflare API 和 DNS。
+
+单二进制部署需使用包含 Cloudflare DNS-01 的构建。设置 `HARBOR_ACME_CHALLENGE=cloudflare`，并将 `HARBOR_ACME_CLOUDFLARE_TOKEN_FILE` 指向服务账号可读的文件。systemd 可用 `LoadCredential=` 传入 token，再将文件路径配置为相应的 `%d/` 路径。 [下载构建产物](https://github.com/makessr/HarborMail/actions/workflows/publish-image.yaml)
 
 ### HTTP-01 与 TLS-ALPN-01
 

@@ -39,30 +39,9 @@ Environment=HARBOR_MYSQL_DSN_FILE=%d/mysql-dsn
 
 ## 首次启动与上线验收
 
-新实例先用[基础 Compose 配置](../docs/deployment-and-usage.md#启动-mysql-与-redis)完成启动和本机验收，再接入公网。Linux 上可用下面的 Bash 示例准备凭据，需要 OpenSSL。从项目目录执行，先把示例主邮箱换成自己的地址；已有实例沿用现有凭据。
+首次部署按[三步 Docker 部署](../docs/deployment-and-usage.md#docker-compose-部署)生成凭据、启动并验证登录。已有实例沿用原有凭据和数据卷。
 
-```bash
-(
-  set -e
-  umask 077
-  mkdir -p secrets
-  docker compose -f compose.yaml build harbor
-  read -rsp '输入邮箱密码（12–72 字节）: ' mailbox_password
-  printf '\n'
-  account_hash=$(printf '%s\n' "$mailbox_password" | docker run --rm -i harbormail:local hash-password)
-  unset mailbox_password
-  printf '{"hello@harbor.test":"%s"}\n' "$account_hash" > secrets/accounts.json
-  mysql_password=$(openssl rand -hex 24)
-  mysql_root_password=$(openssl rand -hex 24)
-  printf '%s' "$mysql_password" > secrets/mysql-password
-  printf '%s' "$mysql_root_password" > secrets/mysql-root-password
-  printf 'harbor:%s@tcp(mysql:3306)/harbor_mail' "$mysql_password" > secrets/mysql-dsn
-)
-```
-
-启动前确认 Harbor 容器的 UID/GID `10001:10001` 能读取 `accounts.json` 和 `mysql-dsn`。可在标准 Linux Docker 主机上把这两个文件的组设为 `10001`、权限设为 `0640`。保留主机凭据目录的访问限制，并在 `.env` 写入实际的 `HARBOR_DOMAIN` 和 `HARBOR_ADMINS`。
-
-准备好下文的挂载和备份账号配置后，使用相应的生产 Compose 文件组合启动。上线前从外部网络核对 MX 与 TCP 25 连通性、HTTPS 与邮件客户端证书、实际收发和备份恢复。Web 反向代理应允许 `/api/events` 的 SSE 长连接通过。 [域名、DNS 与 TLS 配置](../docs/deployment-and-usage.md#接入真实域名)
+配置好生产挂载和备份账号后，从外部网络核对 MX 与 TCP 25 连通性、HTTPS 与邮件客户端证书、实际收发和备份恢复。Web 反向代理应允许 `/api/events` 的 SSE 长连接通过。 [域名、DNS 与 TLS 配置](../docs/deployment-and-usage.md#接入真实域名)
 
 ### SMTP 中继预检
 
