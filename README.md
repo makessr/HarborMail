@@ -4,6 +4,18 @@
 
 Harbor Mail 是面向 Linux 部署的自建域名邮箱，提供中文 Web 邮箱、管理后台和标准邮件协议。Go 程序内嵌前端资源，支持单二进制或 Docker Compose 部署。
 
+## 界面截图
+
+截图来自 Harbor Mail v0.2.6 实际运行的页面，邮件、账号和投递记录均为演示数据。
+
+### 网页邮箱
+
+![Harbor Mail 网页邮箱的文件夹侧栏、收件箱列表和右侧邮件阅读区](docs/assets/webmail.webp)
+
+### 管理后台
+
+![Harbor Mail 管理后台的七日操作趋势、投递状态分布和最近队列任务](docs/assets/admin-overview.webp)
+
 ## 功能
 
 | 场景 | 支持内容 |
@@ -13,6 +25,21 @@ Harbor Mail 是面向 Linux 部署的自建域名邮箱，提供中文 Web 邮�
 | 邮件协议 | SMTP 收信和提交、IMAP（含 IDLE）、POP3、应用密码及 TLS |
 | 管理后台 | 多域名、域管理员、邮箱与别名管理、容量配额、投递队列、运行监控、审计和管理员 MFA |
 | 数据与部署 | SQLite、MySQL、可选 Redis 后台缓存、数据库迁移、备份与恢复工具 |
+
+## 优势
+
+- **部署方式灵活。** Linux 单二进制内嵌前端，单实例可用 SQLite。Docker Compose 方案默认搭配 MySQL 和 Redis，发布镜像同时支持 amd64 和 arm64。
+- **网页与邮件客户端共用邮箱。** 网页支持定时与撤销发送、邮件规则和标签。桌面和移动客户端可通过 SMTP Submission、IMAP 或 POP3 访问同一邮箱。
+- **集中管理多个域名。** 后台可按域委派管理权限，处理邮箱、别名、配额和投递队列，查看登录审计。管理员可启用 TOTP 和恢复码。
+- **提供上线和恢复工具。** 支持 Cloudflare DNS-01 签发和续签、内置 DKIM、SQLite 至 MySQL 迁移，以及备份校验和隔离恢复。
+
+## 局限与运维成本
+
+- **公网收发需要额外配置。** 直接从公网接收邮件需要正确的 MX 记录和可达的 TCP 25。对外发信依赖 SMTP 中继，投递表现还受域名认证、中继和收件方策略影响。[接入真实域名](docs/deployment-and-usage.md#接入真实域名)
+- **自动垃圾邮件检测和训练依赖 Rspamd。** 需要单独部署和配置 Rspamd。基础安装可手动标记垃圾邮件并使用收信规则。[部署与使用指南](docs/deployment-and-usage.md)
+- **网页写信支持纯文本正文。** 每封最多 10 个附件，附件合计上限 6 MiB。网页发信编码后和 SMTP 收信的整封邮件上限均为 10 MiB。[邮件大小限制](docs/deployment-and-usage.md#当前范围)
+- **SQLite 面向单实例。** 多实例部署使用共享 MySQL，Redis 用于后台统计缓存。邮箱容量、并发和备份耗时需要按部署环境实测。[生产运行手册](ops/README.md)
+- **公网环境仍需现场验收。** 仓库中的回归和隔离演练已覆盖数据库及核心流程。实际域名的公网收发、证书续签和异地灾难恢复需要在部署环境验证。[生产运行手册](ops/README.md)
 
 ## Docker 快速部署
 
@@ -66,4 +93,4 @@ GitHub 的 `Verify Harbor Mail` 工作流统一执行 Go 回归、SQLite 与 MyS
 - [生产运行手册](ops/README.md)涵盖 Linux 部署、站点验收和监控告警，另见 [从 Restic 导出恢复包](ops/README.md#从-restic-导出恢复包)。
 - [接入真实域名](docs/deployment-and-usage.md#接入真实域名)涵盖 DNS、邮件 TLS、中继和公网接入。
 
-已在本地 Docker 验证 MySQL 与 Redis 部署、SMTP 收信、Redis 停机回源及双实例网页同步。正式域名的公网收发、TLS 续签和灾难恢复需要在目标环境验收。
+已在本地 Docker 验证 MySQL 与 Redis 部署、SMTP 收信、Redis 停机回源及双实例网页同步。
