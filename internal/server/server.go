@@ -155,6 +155,10 @@ func Run() {
 	if err := a.loadRelays(); err != nil {
 		log.Fatal(err)
 	}
+	a.auditDays, err = loginAuditRetention()
+	if err != nil {
+		log.Fatal(err)
+	}
 	a.webLogin.proxies, err = parseTrustedProxies(os.Getenv("HARBOR_TRUSTED_PROXIES"))
 	if err != nil {
 		log.Fatal(err)
@@ -389,6 +393,7 @@ func (a *app) startMailServices(runtime *serviceRuntime, tlsConfig *tls.Config) 
 		runtime.worker(a.runSpamFeedback)
 	}
 	runtime.worker(a.runSnoozes)
+	runtime.worker(a.runLoginAudit)
 	runtime.worker(func(ctx context.Context) {
 		if err := a.backfillThreads(ctx); err != nil && ctx.Err() == nil {
 			log.Print("index existing mail conversations: ", err)
@@ -434,7 +439,7 @@ func (a *app) login(w http.ResponseWriter, r *http.Request) {
 	}
 	var input struct{ Email, Password, Code string }
 	if !decode(w, r, &input) {
-		a.webLogin.record(source, "", "failed")
+		a.recordLogin(source, "", "failed", "web")
 		return
 	}
 	email := strings.ToLower(strings.TrimSpace(input.Email))
@@ -442,18 +447,18 @@ func (a *app) login(w http.ResponseWriter, r *http.Request) {
 		email = ""
 	}
 	if retry := a.webLogin.reserve(r.Context(), source, email, true); retry > 0 {
-		a.rejectWebLoginRate(w, source, "", retry)
+		a.rejectWebLoginRate(w, source, loginAuditAccount(email), retry)
 		return
 	}
 	owner, verifiedHash, err := a.authenticatePrimary(r.Context(), input.Email, input.Password)
 	if errors.Is(err, errLoginBusy) {
-		a.webLogin.record(source, "", "busy")
+		a.recordLogin(source, loginAuditAccount(email), "busy", "web")
 		w.Header().Set("Retry-After", "1")
 		fail(w, 429, "登录请求过多，请稍后重试")
 		return
 	}
 	if err != nil {
-		a.webLogin.record(source, owner, "failed")
+		a.recordLogin(source, loginAuditAccount(email), "failed", "web")
 		fail(w, 401, "邮箱或密码不正确")
 		return
 	}
@@ -461,20 +466,20 @@ func (a *app) login(w http.ResponseWriter, r *http.Request) {
 	digest := sha256.Sum256([]byte(value))
 	if err := a.createBrowserSession(r, owner, digest[:], verifiedHash, input.Code); err != nil {
 		if errors.Is(err, errAdminMFA) {
-			a.webLogin.record(source, owner, "failed")
+			a.recordLogin(source, owner, "failed", "web")
 			fail(w, http.StatusPreconditionRequired, "请输入有效的管理员验证码或未使用的恢复码")
 			return
 		}
 		if errors.Is(err, errAccountSuspended) || errors.Is(err, errPrimaryPasswordChanged) {
-			a.webLogin.record(source, owner, "failed")
+			a.recordLogin(source, owner, "failed", "web")
 			fail(w, 401, "邮箱或密码不正确")
 			return
 		}
-		a.webLogin.record(source, owner, "error")
+		a.recordLogin(source, owner, "error", "web")
 		fail(w, 500, "无法创建登录会话")
 		return
 	}
-	a.webLogin.record(source, owner, "success")
+	a.recordLogin(source, owner, "success", "web")
 	a.cookie(w, value, int(sessionAge.Seconds()))
 	a.replySession(w, owner)
 }

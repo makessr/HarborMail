@@ -281,25 +281,34 @@
       </div>
     </div>
     <div id="admin-security-view" hidden>
-      <dl class="admin-kpis" id="admin-security-kpis" aria-label="本实例启动后的登录统计"></dl>
+      <dl class="admin-kpis" id="admin-security-kpis" aria-label="保留期内的登录统计"></dl>
       <section class="admin-panel" aria-labelledby="admin-security-policy-title">
         <div class="admin-heading"><h2 id="admin-security-policy-title">登录限速</h2><a href="/admin/audit">管理审计</a></div>
         <dl id="admin-security-policy"></dl>
       </section>
       <section class="admin-panel admin-directory" aria-labelledby="admin-security-log-title">
         <div class="admin-heading">
-          <div><h2 id="admin-security-log-title">近期登录</h2><p>最多保留本实例近 100 条记录，重启后清空。</p></div>
-          <div class="admin-filters">
-            <select id="admin-security-result" aria-label="按登录结果筛选"></select>
-            <input id="admin-security-search" type="search" aria-label="搜索账号或来源" placeholder="搜索账号或来源" autocomplete="off">
-          </div>
+          <h2 id="admin-security-log-title">登录记录</h2>
         </div>
+        <form class="admin-filters" id="admin-security-filters">
+          <input name="account" type="email" aria-label="邮箱账号" placeholder="邮箱账号" autocomplete="off" maxlength="254">
+          <input name="source" type="search" aria-label="来源地址" placeholder="来源地址" autocomplete="off" maxlength="48">
+          <select name="protocol" aria-label="按协议筛选"></select>
+          <select name="result" aria-label="按登录结果筛选"></select>
+          <label>起始日期 <input name="from" type="date"></label>
+          <label>结束日期 <input name="until" type="date"></label>
+          <button type="submit">筛选</button>
+        </form>
         <div class="admin-table">
           <table>
             <thead><tr><th scope="col">时间</th><th scope="col">账号</th><th scope="col">来源</th><th scope="col">协议</th><th scope="col">结果</th></tr></thead>
             <tbody id="admin-security-items"></tbody>
           </table>
           <p class="admin-note" id="admin-security-empty" hidden>没有匹配的登录记录。</p>
+        </div>
+        <div class="admin-filters">
+          <button id="admin-security-previous" type="button" disabled>上一页</button>
+          <button id="admin-security-next" type="button" disabled>下一页</button>
         </div>
       </section>
     </div>

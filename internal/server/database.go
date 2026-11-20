@@ -17,6 +17,12 @@ import (
 var sqliteSchema = []string{
 	`PRAGMA busy_timeout=5000`,
 	`PRAGMA journal_mode=WAL`,
+	`CREATE TABLE IF NOT EXISTS login_audit_events (
+		id INTEGER PRIMARY KEY AUTOINCREMENT, stamp INTEGER NOT NULL, source TEXT NOT NULL,
+		account TEXT NOT NULL, protocol TEXT NOT NULL, result TEXT NOT NULL
+	)`,
+	`CREATE INDEX IF NOT EXISTS login_audit_stamp ON login_audit_events(stamp,id)`,
+	`CREATE INDEX IF NOT EXISTS login_audit_account ON login_audit_events(account,id)`,
 	`CREATE TABLE IF NOT EXISTS letters (
 		id INTEGER PRIMARY KEY, owner TEXT NOT NULL, sender TEXT NOT NULL,
 		recipient TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL,
@@ -168,6 +174,11 @@ var sqliteSchema = []string{
 }
 
 var mysqlSchema = []string{
+	`CREATE TABLE IF NOT EXISTS login_audit_events (
+		id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY, stamp BIGINT NOT NULL,
+		source VARCHAR(48) NOT NULL, account VARCHAR(254) NOT NULL, protocol VARCHAR(8) NOT NULL,
+		result VARCHAR(8) NOT NULL, KEY login_audit_stamp (stamp,id), KEY login_audit_account (account,id)
+	) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin`,
 	`CREATE TABLE IF NOT EXISTS login_rate_buckets (
 		bucket BINARY(32) NOT NULL PRIMARY KEY,
 		attempts INT NOT NULL,

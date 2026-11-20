@@ -115,7 +115,7 @@ snapshot_ids | jq -e --arg expired "${expired:0:8}" --arg retained "${retained:0
     length == 4 and contains([$oldest, $retained, $foreign, $current]) and (index($expired) == null)
   ' >/dev/null
 bash ops/backup.sh verify "$snapshot"
-[[ $(restic dump "$snapshot" /harbor-schema) == dkim-v1 ]]
+[[ $(restic dump "$snapshot" /harbor-schema) == login-audit-v1 ]]
 
 mkdir -m 0700 -- "$work/legacy"
 cp -- "$work/recovered/harbor.db" "$work/legacy/harbor.db"
@@ -139,5 +139,16 @@ if output=$(HARBOR_BACKUP_INSTANCE=incomplete-ci bash ops/backup.sh export "$inc
 fi
 [[ $output == *'missing required Harbor Mail tables: domain_dkim_keys outbox_dkim_signatures'* ]]
 [[ ! -e "$work/incomplete-export" ]]
+cp -- "$work/recovered/harbor.db" "$work/legacy/harbor.db"
+sqlite3 "$work/legacy/harbor.db" 'DROP TABLE login_audit_events;'
+dkim_only=$(legacy_snapshot dkim-only-ci harbor-schema)
+HARBOR_BACKUP_INSTANCE=dkim-only-ci bash ops/backup.sh verify "$dkim_only"
+printf '%s\n' login-audit-v1 > "$work/legacy/harbor-schema"
+missing_audit=$(legacy_snapshot missing-audit-ci harbor-schema)
+if output=$(HARBOR_BACKUP_INSTANCE=missing-audit-ci bash ops/backup.sh verify "$missing_audit" 2>&1); then
+  printf 'Verification accepted a snapshot missing login audit records.\n' >&2
+  exit 1
+fi
+[[ $output == *'missing required Harbor Mail tables: login_audit_events'* ]]
 printf 'Legacy snapshots remain recoverable, and marked snapshots require DKIM tables.\n'
 printf 'Authenticated HTTPS backup, restore and instance-scoped retention passed.\n'

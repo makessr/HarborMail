@@ -33,17 +33,17 @@ func (a *app) authenticateProtocol(peer net.Addr, username, password string, pro
 	ctx := context.Background()
 	if source.IsValid() && (a.clientLogin.reserve(ctx, source, "", false) > 0 ||
 		(login != "" && a.clientLogin.reserve(ctx, source, login, true) > 0)) {
-		a.webLogin.recordProtocol(source, "", "blocked", name)
+		a.recordLogin(source, login, "blocked", name)
 		return "", errLoginBusy
 	}
 	owner, err := a.authenticateClient(username, password, protocol)
 	switch {
 	case err == nil:
-		a.webLogin.recordProtocol(source, owner, "success", name)
+		a.recordLogin(source, owner, "success", name)
 	case errors.Is(err, errLoginBusy):
-		a.webLogin.recordProtocol(source, "", "busy", name)
+		a.recordLogin(source, login, "busy", name)
 	default:
-		a.webLogin.recordProtocol(source, "", "failed", name)
+		a.recordLogin(source, login, "failed", name)
 	}
 	return owner, err
 }

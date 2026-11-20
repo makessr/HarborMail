@@ -26,7 +26,7 @@ command -v restic >/dev/null || fail 'restic is required'
 command -v flock >/dev/null || fail 'flock is required'
 
 tag="harbor-mail-$HARBOR_BACKUP_INSTANCE"
-current_schema=dkim-v1
+current_schema=login-audit-v1
 exec 9>"$HARBOR_BACKUP_WORK/$tag.lock"
 flock -n 9 || fail 'Another backup or verification is running'
 
@@ -84,8 +84,11 @@ verify_required_tables() {
     outbox outbox_recipient_progress outbox_schedule saved_searches sessions signature_settings
     spam_feedback web_drafts web_letter_recipients web_outbox_envelopes web_session_details
   )
-  if [[ $schema == "$current_schema" ]] || grep -Eq '^(domain_dkim_keys|outbox_dkim_signatures)$' <<< "$available"; then
+  if [[ $schema == "$current_schema" || $schema == dkim-v1 ]] || grep -Eq '^(domain_dkim_keys|outbox_dkim_signatures)$' <<< "$available"; then
     required+=(domain_dkim_keys outbox_dkim_signatures)
+  fi
+  if [[ $schema == "$current_schema" ]]; then
+    required+=(login_audit_events)
   fi
   local -a missing=()
   for table in "${required[@]}" "$@"; do
@@ -108,14 +111,19 @@ verify_mysql_dump() {
 }
 
 snapshot_schema() {
-  local marker="$1/harbor-schema"
+  local marker="$1/harbor-schema" schema
   if [[ ! -e $marker && ! -L $marker ]]; then
     printf 'legacy\n'
     return
   fi
-  [[ -f $marker && ! -L $marker ]] && printf '%s\n' "$current_schema" | cmp -s -- - "$marker" ||
-    fail 'Snapshot has an unsupported or invalid schema marker'
-  printf '%s\n' "$current_schema"
+  [[ -f $marker && ! -L $marker ]] || fail 'Snapshot has an invalid schema marker'
+  for schema in "$current_schema" dkim-v1; do
+    if printf '%s\n' "$schema" | cmp -s -- - "$marker"; then
+      printf '%s\n' "$schema"
+      return
+    fi
+  done
+  fail 'Snapshot has an unsupported or invalid schema marker'
 }
 
 read_back() (

@@ -14,6 +14,7 @@ import (
 	"net/mail"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	_ "github.com/emersion/go-message/charset"
@@ -42,6 +43,8 @@ type app struct {
 	recoveryMode        bool
 	pauseOutbox         bool
 	relay               domainRelay
+	auditDays           int
+	auditLogAt          atomic.Int64
 	webLogin            webLoginGuard
 	clientLogin         webLoginGuard
 	contentIndex        int

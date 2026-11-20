@@ -46,7 +46,7 @@ $env:HARBOR_ACCOUNTS = @{ 'hello@harbor.test' = $accountHash } | ConvertTo-Json 
 
 ## Docker Compose 部署
 
-适用于首次在 Linux x86_64（amd64）服务器部署。需要 Docker Engine、Compose 插件、Git、OpenSSL 和 Bash。以下命令在服务器的 root 终端运行。使用 sudo 登录的用户可先执行 `sudo -i`。 [安装 Docker Engine](https://docs.docker.com/engine/install/) · [安装 Compose 插件](https://docs.docker.com/compose/install/linux/)
+适用于首次在 Linux amd64 或 arm64 服务器部署。需要 Docker Engine、Compose 插件、Git、OpenSSL 和 Bash。以下命令在服务器的 root 终端运行。使用 sudo 登录的用户可先执行 `sudo -i`。 [安装 Docker Engine](https://docs.docker.com/engine/install/) · [安装 Compose 插件](https://docs.docker.com/compose/install/linux/)
 
 ### 创建首个邮箱
 
@@ -200,6 +200,7 @@ MySQL 的 `3306` 和 Redis 的 `6379` 只在 Compose 网络内使用。宿主机
 | `HARBOR_ACME_DIRECTORY` | 可选的 ACME HTTPS Directory URL，留空使用 Let's Encrypt 生产环境 |
 | `HARBOR_WEB_TLS` | Compose 默认 `off`，由反向代理终结 Web TLS。启用 PEM 或 ACME 后设为 `on`，可由 Harbor 直接提供 HTTPS |
 | `HARBOR_SECURE_COOKIE` | 反向代理终结 Web TLS 时设为 `true` |
+| `HARBOR_LOGIN_AUDIT_DAYS` | 登录审计保留天数，默认 30，可设为 1–90。共享 MySQL 的实例使用同一值 |
 | `HARBOR_TRUSTED_PROXIES` | 可选。以逗号分隔的可信反向代理 IP 或 CIDR，供 Web 登录限速识别来源 |
 | `HARBOR_METRICS` | 可选的私有 Prometheus 指标监听地址，例如 `127.0.0.1:9091` |
 | `HARBOR_RSPAMD_URL` | 可选，私有 Rspamd 扫描端点，例如 `http://127.0.0.1:11333/checkv2` |
@@ -234,7 +235,7 @@ MySQL 的 `3306` 和 Redis 的 `6379` 只在 Compose 网络内使用。宿主机
 
 「运行监控」位于 `/admin/runtime`。Windows 与 Linux 显示 Harbor Mail 进程 CPU、常驻内存和 Go 堆对象内存，另有数据库连接池、探测耗时、队列等待及训练失败数。CPU 以一个逻辑核心满载为 100%，多核可超过 100%。运行监控页打开且可见时每十秒采样一次，最多保留本页最近 30 个样本，可暂停。MySQL 和 Rspamd 进程需单独监控，长期采集用 `HARBOR_METRICS` 与主机监控。[Windows 工作集](https://learn.microsoft.com/en-us/windows/win32/procthread/process-working-set) · [Linux 进程指标](https://www.kernel.org/doc/html/v6.16/filesystems/proc.html) · [Go 运行时指标](https://pkg.go.dev/runtime/metrics)
 
-「安全」位于 `/admin/security`，显示本实例 Web、SMTP 提交、IMAP 和 POP3 登录统计及最近 100 条记录。Web 登录与邮件客户端分别计数，三个邮件协议共享客户端计数。每五分钟同一来源最多 30 次，同一来源向同一账号最多 8 次。Web 超限返回 HTTP 429 和 `Retry-After`，邮件客户端收到临时认证失败。IPv6 按 /64 聚合，邮件协议使用 TCP 对端地址。SQLite 部署使用进程内限速。共享 MySQL 的 Harbor Mail 实例共用限速窗口，数据库无法确认额度时暂缓认证。后台登录统计与近期记录按实例展示，重启清空。
+全站管理员可在 `/admin/security` 查看 Web、SMTP 提交、IMAP 和 POP3 登录审计，按邮箱账号、来源、协议、日期和结果筛选，每页 100 条。SQLite 在本地持久化审计，共享 MySQL 的实例使用同一份记录。日期筛选按浏览器所在时区计算。Web 登录与邮件客户端分别计数，三个邮件协议共享客户端计数。每五分钟同一来源最多 30 次，同一来源向同一账号最多 8 次。Web 超限返回 HTTP 429 和 `Retry-After`，邮件客户端收到临时认证失败。IPv6 按 /64 聚合，邮件协议使用 TCP 对端地址。SQLite 部署使用进程内限速。共享 MySQL 的 Harbor Mail 实例共用限速窗口，数据库无法确认额度时暂缓认证。登录统计覆盖整个保留期。过期记录在查询时立即隐藏，服务启动及之后每小时清理。审计记录包含尝试登录的账号、来源地址、协议、时间和结果。升级后开始积累，审计随数据库备份和迁移，备份中的副本由备份保留策略管理。
 
 为管理员启用网页登录第二因素时，在可信且不录屏、不记录输出的终端运行以下命令。把示例地址换成管理员邮箱。
 

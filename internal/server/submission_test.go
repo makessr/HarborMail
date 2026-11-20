@@ -73,8 +73,12 @@ func TestProtocolLoginLimitsAttemptsAcrossClients(t *testing.T) {
 	if _, err := a.authenticate(owner, password); err != nil {
 		t.Fatalf("Web and protocol authentication should be independent: %v", err)
 	}
-	event := a.webLogin.recent[loginPairLimit]
-	if event.Result != "blocked" || event.Protocol != "imap" || event.Source != "192.0.2.4" {
+	var event loginEvent
+	if err := db.QueryRow(`SELECT result,protocol,source,account FROM login_audit_events ORDER BY id DESC LIMIT 1`).
+		Scan(&event.Result, &event.Protocol, &event.Source, &event.Account); err != nil {
+		t.Fatal(err)
+	}
+	if event.Result != "blocked" || event.Protocol != "imap" || event.Source != "192.0.2.4" || event.Account != owner {
 		t.Fatalf("wrong limit event: %+v", event)
 	}
 }

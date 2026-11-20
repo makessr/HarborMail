@@ -16,7 +16,7 @@ Harbor Mail 是面向 Linux 部署的自建域名邮箱，提供中文 Web 邮�
 
 ## Docker 快速部署
 
-Linux amd64 上推荐使用发布镜像。按指南创建首个管理员，启动默认的 MySQL + Redis，再打开网页邮箱。 [三步部署](docs/deployment-and-usage.md#docker-compose-部署)
+Linux amd64 和 arm64 均可使用同一个发布镜像标签，由 Docker 选择对应架构。按指南创建首个管理员，启动默认的 MySQL + Redis，再打开网页邮箱。 [三步部署](docs/deployment-and-usage.md#docker-compose-部署)
 
 需要公网 HTTPS 时，可用 Cloudflare DNS-01 自动签发证书，Web 端口可自行选择。 [Cloudflare 自动证书](docs/deployment-and-usage.md#cloudflare-dns-01)
 
@@ -47,7 +47,7 @@ ARM64 源码构建把 `GOARCH=amd64` 改为 `GOARCH=arm64`。准备好二进制�
 
 GitHub 的 `Verify Harbor Mail` 工作流统一执行 Go 回归、SQLite 与 MySQL 8.4 验证、前端和运维脚本语法检查及 Prometheus 告警规则测试。拉取请求与镜像、二进制发布都会运行这套检查，也可从 Actions 手动运行。
 
-`Publish Harbor Mail image` 检查通过后会并行构建 GHCR 镜像和同一提交的单文件程序。Actions 的 **Artifacts** 用于验收，下载需要登录 GitHub，文件会到期。推送 `vMAJOR.MINOR.PATCH` 标签后，Linux amd64、Linux arm64、Windows amd64、systemd 模板和 `SHA256SUMS` 会发布到 [GitHub Releases](https://github.com/makessr/HarborMail/releases/latest)，可公开下载。
+`Publish Harbor Mail image` 检查通过后会并行构建 GHCR 镜像和同一提交的单文件程序。GHCR 固定提交标签包含 Linux amd64 和 arm64，两个架构的容器均通过启动二进制检查后才更新 `latest`。Actions 的 **Artifacts** 用于验收，下载需要登录 GitHub，文件会到期。推送 `vMAJOR.MINOR.PATCH` 标签后，Linux amd64、Linux arm64、Windows amd64、systemd 模板和 `SHA256SUMS` 会发布到 [GitHub Releases](https://github.com/makessr/HarborMail/releases/latest)，可公开下载。
 
 | 目录 | 内容 |
 | --- | --- |

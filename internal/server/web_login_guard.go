@@ -19,7 +19,6 @@ const (
 	loginSourceLimit = 30
 	loginPairLimit   = 8
 	loginBucketLimit = 8192
-	loginRecentLimit = 100
 )
 
 type loginBucketKey struct {
@@ -33,14 +32,6 @@ type loginBucket struct {
 	attempts int
 }
 
-type loginEvent struct {
-	At       int64  `json:"at"`
-	Source   string `json:"source"`
-	Account  string `json:"account,omitempty"`
-	Result   string `json:"result"`
-	Protocol string `json:"protocol"`
-}
-
 type webLoginGuard struct {
 	shared    *mysqlLoginLimiter
 	scope     string
@@ -48,10 +39,6 @@ type webLoginGuard struct {
 	mutex     sync.Mutex
 	buckets   map[loginBucketKey]loginBucket
 	nextSweep time.Time
-	recent    [loginRecentLimit]loginEvent
-	next      int
-	size      int
-	totals    map[string]uint64
 }
 
 func (g *webLoginGuard) reserve(ctx context.Context, source netip.Prefix, email string, perAccount bool) time.Duration {
@@ -153,52 +140,9 @@ func (g *webLoginGuard) allow(now time.Time, source netip.Prefix, email string, 
 	return 0
 }
 
-func (g *webLoginGuard) record(source netip.Prefix, account, result string) {
-	g.recordProtocol(source, account, result, "web")
-}
-
-func (g *webLoginGuard) recordProtocol(source netip.Prefix, account, result, protocol string) {
-	value := "未知"
-	if source.IsValid() {
-		value = source.String()
-		if source.Addr().Is4() {
-			value = source.Addr().String()
-		}
-	}
-	g.mutex.Lock()
-	defer g.mutex.Unlock()
-	if g.totals == nil {
-		g.totals = make(map[string]uint64)
-	}
-	g.totals[result]++
-	g.recent[g.next] = loginEvent{At: time.Now().Unix(), Source: value, Account: account, Result: result, Protocol: protocol}
-	g.next = (g.next + 1) % len(g.recent)
-	g.size = min(g.size+1, len(g.recent))
-}
-
 func (a *app) rejectWebLoginRate(w http.ResponseWriter, source netip.Prefix, account string, retry time.Duration) {
-	a.webLogin.record(source, account, "blocked")
+	a.recordLogin(source, account, "blocked", "web")
 	seconds := int((retry + time.Second - 1) / time.Second)
 	w.Header().Set("Retry-After", strconv.Itoa(seconds))
 	fail(w, http.StatusTooManyRequests, fmt.Sprintf("登录尝试过多，请在 %d 秒后重试", seconds))
-}
-
-func (a *app) adminSecurity(w http.ResponseWriter, _ *http.Request, actor string) {
-	g := &a.webLogin
-	g.mutex.Lock()
-	events := make([]loginEvent, 0, g.size)
-	for i := 0; i < g.size; i++ {
-		index := (g.next - 1 - i + len(g.recent)) % len(g.recent)
-		events = append(events, g.recent[index])
-	}
-	totals := make(map[string]uint64, len(g.totals))
-	for key, count := range g.totals {
-		totals[key] = count
-	}
-	g.mutex.Unlock()
-	reply(w, http.StatusOK, map[string]any{
-		"email": actor, "events": events, "totals": totals, "windowSeconds": int(loginWindow.Seconds()),
-		"sourceLimit": loginSourceLimit, "pairLimit": loginPairLimit, "trustedProxies": len(g.proxies),
-		"sharedLimit": g.shared != nil,
-	})
 }
