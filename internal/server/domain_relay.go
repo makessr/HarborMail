@@ -76,6 +76,34 @@ func parseDomainRelays(raw string) (map[string]domainRelay, error) {
 	return relays, nil
 }
 
+func (a *app) loadRelays() error {
+	raw, err := fileSetting("HARBOR_DOMAIN_RELAYS")
+	if err != nil {
+		return err
+	}
+	a.domainRelays, err = parseDomainRelays(raw)
+	if err != nil {
+		return err
+	}
+	if addr := os.Getenv("HARBOR_RELAY"); addr != "" {
+		password, err := fileSetting("HARBOR_RELAY_PASSWORD")
+		if err != nil {
+			return err
+		}
+		a.relay = domainRelay{
+			Address:  addr,
+			TLS:      env("HARBOR_RELAY_TLS", "starttls"),
+			User:     os.Getenv("HARBOR_RELAY_USER"),
+			Password: password,
+			CAFile:   os.Getenv("HARBOR_RELAY_CA_FILE"),
+		}
+		if err := a.relay.configure(); err != nil {
+			return fmt.Errorf("invalid global SMTP relay configuration: %w", err)
+		}
+	}
+	return nil
+}
+
 func (a *app) sendRelay(owner string) domainRelay {
 	if relay, exists := a.domainRelays[emailDomain(owner)]; exists {
 		return relay

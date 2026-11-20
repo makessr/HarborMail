@@ -41,6 +41,15 @@ func env(key, fallback string) string {
 }
 
 func Run() {
+	if len(os.Args) > 1 && os.Args[1] == "relay-check" {
+		if len(os.Args) != 3 {
+			log.Fatal("usage: harbormail relay-check SENDER_EMAIL")
+		}
+		if err := runRelayCheck(os.Stdout, os.Args[2]); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	if len(os.Args) == 2 && os.Args[1] == "healthcheck" {
 		if err := webHealthcheck(); err != nil {
 			log.Fatal(err)
@@ -113,12 +122,7 @@ func Run() {
 	default:
 		log.Fatal("HARBOR_PAUSE_OUTBOX must be true or false")
 	}
-	domainRelays, err := fileSetting("HARBOR_DOMAIN_RELAYS")
-	if err != nil {
-		log.Fatal(err)
-	}
-	a.domainRelays, err = parseDomainRelays(domainRelays)
-	if err != nil {
+	if err := a.loadRelays(); err != nil {
 		log.Fatal(err)
 	}
 	a.webLogin.proxies, err = parseTrustedProxies(os.Getenv("HARBOR_TRUSTED_PROXIES"))
@@ -128,22 +132,6 @@ func Run() {
 	a.spamScanner, err = newRspamdScanner(os.Getenv("HARBOR_RSPAMD_URL"))
 	if err != nil {
 		log.Fatal(err)
-	}
-	if addr := os.Getenv("HARBOR_RELAY"); addr != "" {
-		password, err := fileSetting("HARBOR_RELAY_PASSWORD")
-		if err != nil {
-			log.Fatal(err)
-		}
-		a.relay = domainRelay{
-			Address:  addr,
-			TLS:      env("HARBOR_RELAY_TLS", "starttls"),
-			User:     os.Getenv("HARBOR_RELAY_USER"),
-			Password: password,
-			CAFile:   os.Getenv("HARBOR_RELAY_CA_FILE"),
-		}
-		if err := a.relay.configure(); err != nil {
-			log.Fatal("invalid global SMTP relay configuration: ", err)
-		}
 	}
 	for key, hash := range configured {
 		email, err := address(key)

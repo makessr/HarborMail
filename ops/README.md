@@ -64,6 +64,19 @@ Environment=HARBOR_MYSQL_DSN_FILE=%d/mysql-dsn
 
 准备好下文的挂载和备份账号配置后，使用相应的生产 Compose 文件组合启动。上线前从外部网络核对 MX 与 TCP 25 连通性、HTTPS 与邮件客户端证书、实际收发和备份恢复。Web 反向代理应允许 `/api/events` 的 SSE 长连接通过。 [域名、DNS 与 TLS 配置](../docs/deployment-and-usage.md#接入真实域名)
 
+### SMTP 中继预检
+
+为每个使用外发中继的发件域选一个发件地址。使用部署时相同的 Compose 文件、项目名及环境配置，保留已启用的中继认证、按域中继和私有 CA 覆盖文件。下面是已配置全局中继认证时的示例。 [Docker Compose run](https://docs.docker.com/reference/cli/docker/compose/run/)
+
+```bash
+docker compose -f compose.yaml -f compose.mysql.yaml -f compose.registry.yaml \
+  -f compose.relay-auth.yaml run --rm --no-deps -T harbor relay-check hello@example.com
+```
+
+单二进制部署使用服务的运行环境和可读的凭据文件执行 `/usr/local/bin/harbormail relay-check hello@example.com`。按域配置时，命令选取对应的专用中继。其余地址沿用全局中继。
+
+命令显示选中的中继、TLS 模式和认证结果。检查通过返回 0，配置、连接、证书或认证失败时返回非零状态。每次网络检查最多 20 秒。检查不读取数据库或队列，也不提交邮件。中继是否允许该发件地址、实际公网收发及 SPF、DKIM、DMARC 结果仍需实信验收。
+
 ### 多实例网页同步验收
 
 使用两个 Harbor Mail 实例连接同一 MySQL 库，两个实例使用相同的账号与管理员认证配置。单机演练时分别映射不同的 Web 和 SMTP 回环端口，避免固定宿主机端口冲突。在实例 B 打开网页收件箱，向实例 A 的 SMTP 端口投递一封测试邮件。实例 B 应在约 5 秒内通过 `/api/events` 收到刷新事件，并显示新邮件。用另一个账号核对它的收件箱。部署反向代理后，从实际 HTTPS 入口再验收一遍，确认代理关闭 SSE 响应缓冲并放行 15 秒心跳。
