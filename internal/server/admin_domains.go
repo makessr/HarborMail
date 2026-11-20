@@ -120,6 +120,9 @@ func (a *app) adminChangeDomain(w http.ResponseWriter, r *http.Request, actor st
 			return
 		}
 		_, err = tx.ExecContext(ctx, `INSERT INTO managed_domains(name) VALUES(?)`, domain)
+		if err == nil && a.dkimCipher != nil && validDKIMDomain(domain) && dkimPrepareError(w, a.prepareDomainDKIM(ctx, tx, domain, actor)) {
+			return
+		}
 	} else {
 		if !registered {
 			fail(w, http.StatusNotFound, "此域名未在后台登记")

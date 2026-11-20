@@ -137,7 +137,10 @@ async function loadOverview() {
     const data = await response.json();
     signedInAdmin = data.email;
     adminElement("admin-identity").textContent = data.email;
-    if (section === "overview") renderAdminOverview(data);
+    if (section === "overview") {
+      renderAdminOverview(data);
+      renderOnboarding();
+    }
     accounts = data.accounts;
     renderDomains(data.domains);
     renderAccounts();
@@ -167,6 +170,27 @@ async function loadOverview() {
     refresh.disabled = false;
   }
 }
+
+const onboarding = adminElement("admin-onboarding");
+const onboardingShow = adminElement("admin-onboarding-show");
+const onboardingHide = adminElement("admin-onboarding-hide");
+let onboardingHidden = false;
+
+function renderOnboarding() {
+  try { onboardingHidden = localStorage.getItem("harbor-admin-guide:" + signedInAdmin) === "hidden"; } catch {}
+  onboarding.hidden = onboardingHidden;
+  onboardingShow.hidden = !onboardingHidden;
+}
+
+function setOnboardingHidden(hidden) {
+  onboardingHidden = hidden;
+  try { localStorage.setItem("harbor-admin-guide:" + signedInAdmin, hidden ? "hidden" : "shown"); } catch {}
+  onboarding.hidden = hidden;
+  onboardingShow.hidden = !hidden;
+  (hidden ? onboardingShow : onboardingHide).focus();
+}
+onboardingHide.addEventListener("click", () => setOnboardingHidden(true));
+onboardingShow.addEventListener("click", () => setOnboardingHidden(false));
 
 const accessDialog = adminElement("admin-access-dialog");
 const accessForm = adminElement("admin-access-form");

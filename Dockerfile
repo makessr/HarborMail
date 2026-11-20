@@ -25,7 +25,8 @@ COPY docs/licenses/go-qrcode.txt /usr/share/licenses/harbormail/go-qrcode.txt
 COPY docs/licenses/go-msgauth.txt /usr/share/licenses/harbormail/go-msgauth.txt
 USER 10001:10001
 WORKDIR /var/lib/harbormail
-ENV HARBOR_WEB=0.0.0.0:8080 HARBOR_SMTP=0.0.0.0:2525 HARBOR_DB=/var/lib/harbormail/harbor.db
+ENV HARBOR_WEB=0.0.0.0:8080 HARBOR_SMTP=0.0.0.0:2525 HARBOR_DB=/var/lib/harbormail/harbor.db \
+    HARBOR_DKIM_LOCAL_KEY_FILE=/var/lib/harbormail/dkim-key
 EXPOSE 8080 2525 2465 2587 2993 2995
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD ["/usr/local/bin/harbormail", "healthcheck"]

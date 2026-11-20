@@ -276,9 +276,12 @@ func Run() {
 			log.Fatal(err)
 		}
 	}
-	a.dkimCipher, err = loadDKIMCipher()
+	a.dkimCipher, err = a.loadServerDKIM()
 	if err != nil {
 		log.Fatal(err)
+	}
+	if a.dkimCipher == nil && os.Getenv("HARBOR_DKIM_LOCAL_KEY_FILE") != "" && !a.recoveryMode {
+		log.Print("DKIM keys already exist; restore the original wrapping key")
 	}
 	if driver == "mysql" {
 		limiter := &mysqlLoginLimiter{db: a.db}
@@ -626,6 +629,7 @@ func (a *app) routes() http.Handler {
 	mux.HandleFunc("POST /api/admin/domains", a.adminOnly(a.adminChangeDomain))
 	mux.HandleFunc("GET /api/admin/domains/{domain}/dkim", a.adminOnly(a.adminDKIMStatus))
 	mux.HandleFunc("POST /api/admin/domains/{domain}/dkim", a.adminOnly(a.adminChangeDKIM))
+	mux.HandleFunc("POST /api/admin/domains/{domain}/dkim/prepare", a.adminOnly(a.adminPrepareDKIM))
 	mux.HandleFunc("GET /api/admin/queue", a.adminOnly(a.adminQueue))
 	mux.HandleFunc("POST /api/admin/queue/{id}/retry", a.adminOnly(a.adminRetryDelivery))
 	mux.HandleFunc("POST /api/admin/queue/{id}/resolve", a.adminOnly(a.adminResolveDelivery))

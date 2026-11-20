@@ -13,10 +13,17 @@ function setupDNSPlan() {
 
   function recordField(value, label, empty) {
     if (!value) return empty;
-    const field = document.createElement("input");
-    field.type = "text";
-    field.readOnly = true;
-    field.value = value;
+    const field = document.createElement("code");
+    field.textContent = value;
+    field.tabIndex = -1;
+    function select() {
+      field.focus();
+      const range = document.createRange();
+      range.selectNodeContents(field);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
     field.setAttribute("aria-label", label);
     const copy = document.createElement("button");
     copy.type = "button";
@@ -28,14 +35,12 @@ function setupDNSPlan() {
         if (navigator.clipboard) {
           await navigator.clipboard.writeText(value);
         } else {
-          field.focus();
-          field.select();
+          select();
           if (!document.execCommand("copy")) throw new Error();
         }
         status.textContent = "已复制" + label;
       } catch {
-        field.focus();
-        field.select();
+        select();
         status.textContent = "已选中，请手动复制";
       }
     });
@@ -48,8 +53,8 @@ function setupDNSPlan() {
   function render(data) {
     form.elements.host.value = data.host;
     records.replaceChildren(...data.records.map(record => {
-      const empty = record.purpose === "SPF" ? "按中继商提供的值填写" :
-        record.purpose === "DKIM" ? "按中继商提供的值填写，或生成内置 DKIM" :
+      const empty = record.purpose === "SPF" ? "在上方填 include 域名。仅收信的域可勾选「此域只收信」。" :
+        record.purpose === "DKIM" ? (domainAdminOnly ? "请全站管理员打开此清单生成" : data.dkimAvailable ? "正在等待生成内置 DKIM" : "服务器需要配置 DKIM 加密密钥") :
         record.type === "MX" ? "请填写邮件主机名" : "请先填写公网 IP";
       const type = document.createElement("span");
       type.textContent = record.type;
@@ -61,8 +66,7 @@ function setupDNSPlan() {
         recordField(record.value,"值（" + record.purpose + "）",empty)]);
     }));
     dkim.hidden = domainAdminOnly || !data.dkimAvailable;
-    const keys = data.records.some(record => record.value && record.purpose.startsWith("DKIM"));
-    adminElement("admin-dns-plan-dkim-note").hidden = !keys;
+    adminElement("admin-dns-plan-dkim-note").hidden = !data.records.some(record => record.purpose === "DKIM 待启用");
     output.hidden = false;
   }
 
@@ -75,11 +79,23 @@ function setupDNSPlan() {
     generate.disabled = true;
     try {
       const query = new URLSearchParams(new FormData(form));
-      const response = await fetch("/api/admin/domains/" + encodeURIComponent(domain) + "/dns-plan?" + query,
-        { signal: request.signal });
-      if (response.status === 401) return location.replace("/");
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "无法生成 DNS 记录");
+      const endpoint = "/api/admin/domains/" + encodeURIComponent(domain);
+      async function readPlan() {
+        const response = await fetch(endpoint + "/dns-plan?" + query, { signal: request.signal });
+        if (response.status === 401) { location.replace("/"); throw new Error("请重新登录"); }
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "无法生成 DNS 记录");
+        return data;
+      }
+      let data = await readPlan();
+      if (!domainAdminOnly && data.dkimAvailable && data.dkimMissing) {
+        const prepared = await fetch(endpoint + "/dkim/prepare", { method: "POST", signal: request.signal });
+        if (!prepared.ok) {
+          render(data);
+          throw new Error((await prepared.json()).error || "无法生成 DKIM，请重试");
+        }
+        data = await readPlan();
+      }
       if (pending !== request) return;
       render(data);
       status.textContent = "";
@@ -91,7 +107,10 @@ function setupDNSPlan() {
   }
 
   adminElement("admin-dns-plan-close").addEventListener("click", () => dialog.close());
-  dialog.addEventListener("close", () => pending?.abort());
+  dialog.addEventListener("close", () => { if (!dialog.open) pending?.abort(); });
+  form.elements.receiveOnly.addEventListener("change", () => {
+    form.elements.spfInclude.disabled = form.elements.receiveOnly.checked;
+  });
   form.addEventListener("submit", event => { event.preventDefault(); void load(); });
   dkim.addEventListener("click", () => {
     dialog.close();
@@ -109,6 +128,7 @@ function setupDNSPlan() {
   return name => {
     domain = name;
     form.reset();
+    form.elements.spfInclude.disabled = false;
     adminElement("admin-dns-plan-title").textContent = "DNS 记录 · " + name;
     dialog.showModal();
     void load();

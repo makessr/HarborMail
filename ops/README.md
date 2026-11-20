@@ -135,7 +135,9 @@ docker compose run --rm --no-deps -T harbor dns-check example.com selector1
 
 ### 启用内置 DKIM
 
-内置签名默认关闭。首次启用时，在部署目录生成一次 32 字节加密密钥。已配置 `HARBOR_SECRETS_DIR` 时使用同一目录。
+单实例 Docker 默认把 DKIM 加密密钥生成在持久化数据目录 `/var/lib/harbormail/dkim-key`。新 systemd 模板使用同一路径。单二进制手动启动可通过 `HARBOR_DKIM_LOCAL_KEY_FILE` 指定可写数据目录内的文件。
+
+多主机共享 MySQL 时，先准备同一份外置加密密钥并分发到各实例。首次启用时在部署目录生成一次 32 字节密钥。已配置 `HARBOR_SECRETS_DIR` 时使用同一目录。已有签名或待启用公钥时，继续使用原加密密钥。
 
 ```bash
 secrets_dir=${HARBOR_SECRETS_DIR:-./secrets}
@@ -144,7 +146,7 @@ secrets_dir=${HARBOR_SECRETS_DIR:-./secrets}
 
 确保容器内 UID `10001` 可读该文件。在 `.env` 的 `COMPOSE_FILE` 末尾加 `:compose.dkim.yaml`，然后运行 `docker compose up -d --no-build --wait`。单二进制部署把 `HARBOR_DKIM_KEY_FILE` 指向服务账号可读的密钥文件。systemd 可以用 `LoadCredential=dkim-key:/etc/harbormail/dkim-key` 和 `Environment=HARBOR_DKIM_KEY_FILE=%d/dkim-key` 挂载 root 专用文件。共享 MySQL 的所有实例使用同一密钥，并在开启签名前统一升级。
 
-在「管理后台 → 域名 → DKIM」生成密钥。把显示的记录名和值添加到 DNS，然后选择「检查 DNS 并启用」。Harbor Mail 会验证公钥一致，再启用该域的 RSA-SHA256 2048 位签名。轮换时先生成并发布新记录，再启用新选择器。为已经发出的邮件保留旧公钥记录。
+新增域名或全站管理员打开已有域名的「DNS 记录」时，会自动准备缺少的 DKIM 签名密钥。把显示的 TXT 名称和值添加到 DNS，再从「管理 DKIM」选择「检查 DNS 并启用」。Harbor Mail 会验证公钥一致，再启用该域的 RSA-SHA256 2048 位签名。轮换时先生成并发布新记录，再启用新选择器。为已经发出的邮件保留旧公钥记录。
 
 运行 `docker compose run --rm --no-deps -T harbor dns-check example.com --configured` 可用指定域名的当前选择器做预检。内置签名仍通过既有 SMTP 中继外发。向外部邮箱发一封测试邮件，在收件方查看 `Authentication-Results`，确认 `dkim=pass` 且签名域是你的域名。若中继会添加页脚或改写正文，需要让它保留原文，或由中继按改写后的内容完成 DKIM 签名。
 

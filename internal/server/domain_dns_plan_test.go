@@ -56,6 +56,10 @@ func TestAdminDomainDNSPlan(t *testing.T) {
 	if key.Type != "TXT" || key.Name != "harbor-test._domainkey.example.test" || key.Value != "v=DKIM1; k=rsa; p=synthetic-public" {
 		t.Fatalf("unexpected DKIM public record: %+v", key)
 	}
+	receiveOnly := request(domain, "?receiveOnly=1", http.StatusOK)
+	if receiveOnly[2].Value != "v=spf1 -all" {
+		t.Fatalf("unexpected receive-only SPF: %+v", receiveOnly[2])
+	}
 	request(other, "", http.StatusForbidden)
 	request(domain, "?host=https://mail.example.test", http.StatusBadRequest)
 	request(domain, "?ipv4=127.0.0.1", http.StatusBadRequest)

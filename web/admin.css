@@ -56,12 +56,16 @@
 .admin-overview-grid { display: grid; grid-template-columns: 1.25fr 1fr; gap: 16px; }
 .admin-overview-grid > section { min-width: 0; }
 .admin-onboarding { margin-bottom: 16px; }
-.admin-onboarding summary { cursor: pointer; font-weight: 650; }
-.admin-onboarding-steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px 28px; padding-inline-start: 25px; }
+.admin-onboarding-show { margin-bottom: 12px; }
+.admin-onboarding .admin-heading { margin-bottom: 8px; }
+.admin-onboarding .admin-heading button, .admin-onboarding-show { padding: 4px 9px; font-size: 13px; }
+.admin-onboarding-steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(176px, 100%), 1fr)); gap: 10px; margin: 0; padding: 0; list-style: none; }
+.admin-onboarding-steps li { padding: 10px 12px; background: var(--paper); border: 1px solid var(--line); border-radius: 8px; }
 .admin-onboarding-steps a { font-weight: 600; }
-.admin-onboarding-steps span { display: block; margin-top: 3px; color: var(--muted); }
-.admin-settings-locations { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 14px; margin-bottom: 0; }
-.admin-settings-locations dd { margin: 0; color: var(--muted); }
+.admin-onboarding-steps span { display: block; margin-top: 3px; color: var(--muted); font-size: 13px; }
+.admin-onboarding .admin-settings-locations { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 5px 12px; margin: 12px 0 0; font-size: 13px; }
+.admin-onboarding .admin-settings-locations :is(dt,dd) { margin: 0; color: var(--muted); }
+.admin-onboarding .admin-settings-locations dt { color: var(--ink); font-weight: 600; }
 .admin-chart-legend { display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 16px 0; color: var(--muted); font-size: 12px; }
 .admin-chart-legend span::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-inline-end: 5px; border-radius: 2px; background: var(--chart-color); }
 .chart-account { --chart-color: #3565c9; }
@@ -144,14 +148,19 @@
 .admin-domain-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
 .admin-domain-actions :is(a, button) { white-space: nowrap; }
 .admin-domain-actions button { padding: 4px 8px; }
-.admin-dns-plan { width: min(760px, calc(100% - 24px)); }
+.admin-dns-plan { width: min(860px, calc(100% - 24px)); }
 .admin-dns-plan-inputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 10px; align-items: end; }
 .admin-dns-plan-inputs button { justify-self: start; }
 .admin-dns-plan [scope="col"] { white-space: nowrap; }
-.admin-dns-plan td small { display: block; white-space: nowrap; color: var(--muted); }
-.admin-dns-record-field { display: flex; gap: 6px; min-width: 145px; }
-.admin-dns-record-field input { width: 100%; min-width: 0; font-family: ui-monospace, monospace; }
-.admin-dns-record-field button { flex: none; }
+.admin-dns-plan .admin-table table { table-layout: fixed; width: 100%; font-size: 13px; }
+.admin-dns-plan th:first-child { width: 18%; }
+.admin-dns-plan th:nth-child(2) { width: 32%; }
+.admin-dns-plan .admin-table :is(th, td) { padding: 7px 6px; overflow-wrap: anywhere; vertical-align: top; }
+.admin-dns-plan td small { display: block; color: var(--muted); }
+.admin-dns-record-field { display: flex; align-items: start; flex-wrap: wrap; gap: 3px 6px; }
+.admin-dns-record-field code { flex: 1 1 80px; min-width: 0; font: 12px/1.5 ui-monospace, monospace; overflow-wrap: anywhere; }
+.admin-dns-record-field button { flex: none; padding: 2px 6px; min-height: 24px; font-size: 12px; }
+.admin-dns-plan-inputs .admin-spf-receive-only { display: flex; align-items: center; gap: 6px; font-size: 13px; }
 #admin-dkim-dns label + label { margin-top: 10px; }
 #admin-dkim-dns textarea { width: 100%; overflow-wrap: anywhere; resize: vertical; }
 #admin-dkim-controls footer { flex-wrap: wrap; }

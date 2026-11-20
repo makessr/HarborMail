@@ -225,7 +225,7 @@ MySQL 的 `3306`、两个 Redis 的 `6379` 和扫描组件端口均留在 Compos
 
 ## 管理后台
 
-首次登录全站管理后台，可从概览的「首次设置」添加域名、创建邮箱和检查收发。账号、别名、配额、队列、隔离及审计由后台处理。监听端口、数据库连接、证书、SMTP 中继和扫描服务由服务器配置。DNS 记录在域名服务商发布。
+首次登录全站管理后台，可从概览的「首次设置」添加域名、创建邮箱和检查收发。点「隐藏」收起指南，之后可通过「显示设置指南」重新打开。选择按当前浏览器和管理员账号保存。账号、别名、配额、队列、隔离及审计由后台处理。监听端口、数据库连接、证书、SMTP 中继和扫描服务由服务器配置。DNS 记录在域名服务商发布。
 
 「存储用量」位于 `/admin/storage`，也可从账号列表进入。选定主邮箱后，按文件夹和投递状态查看原始邮件的数量与字节数。计算包括附件和实际保存的副本，队列按任务计数。统计按请求计算，不修改数据，也不包含数据库索引、重复文本字段、空闲页或备份，因此不能用来估算磁盘剩余空间或判断配额。
 
@@ -392,8 +392,8 @@ Docker 的 MySQL 模式已包含 Redis。如果使用已有 Redis，将 `compose
 | A | `mail.example.com` | 服务器的公网 IPv4 |
 | AAAA | `mail.example.com` | 服务器的公网 IPv6，确认公网 IPv6 SMTP 可达后添加 |
 | MX | `example.com` | `mail.example.com`，优先级 `10` |
-| TXT（SPF） | `example.com` | 中继商给出的授权值。已有 SPF 时合并授权并保留单条记录 |
-| TXT 或 CNAME（DKIM） | 选择器对应的 `._domainkey` 名称 | 复制内置 DKIM 公钥或使用中继商给出的记录 |
+| TXT（SPF） | `example.com` | 填中继 SPF 的 `include:` 域名后自动生成。仅收信的域可选择 `v=spf1 -all`。已有 SPF 时合并授权并保留单条记录 |
+| TXT（DKIM） | 选择器对应的 `._domainkey` 名称 | 后台自动生成内置 DKIM 公钥，发布后检查并启用 |
 | TXT（DMARC） | `_dmarc.example.com` | 新域可从 `v=DMARC1; p=none` 开始，已有域保留当前策略 |
 
 DNS 后台若要求相对名称，在 `example.com` 区域中分别填 `mail`、`@` 和 `_dmarc`。使用 Cloudflare 时，MX 指向的 `mail` 的 A 或 AAAA 记录选择「仅 DNS」。已有旧邮件服务时，在确认切换时机后再调整 MX。 [Cloudflare 邮件记录](https://developers.cloudflare.com/dns/manage-dns-records/how-to/email-records/) · [SPF 标准](https://www.rfc-editor.org/info/rfc7208/)

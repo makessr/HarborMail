@@ -15,8 +15,75 @@ type domainDKIMStatus struct {
 	Pending   *dkimPublicKey `json:"pending,omitempty"`
 }
 
+func validDKIMDomain(domain string) bool {
+	return validDNSName(domain) && len("harbor-0000000000000000._domainkey."+domain) <= 253
+}
+
+var errDKIMPrepareBusy = errors.New("DKIM key preparation busy")
+
+// prepareDomainDKIM is called with the mailbox write lock held.
+func (a *app) prepareDomainDKIM(ctx context.Context, tx *sql.Tx, domain, actor string) error {
+	var exists bool
+	if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM domain_dkim_keys WHERE domain=?)", domain).Scan(&exists); err != nil || exists {
+		return err
+	}
+	select {
+	case loginSlots <- struct{}{}:
+		defer func() { <-loginSlots }()
+	default:
+		return errDKIMPrepareBusy
+	}
+	selector, public, sealed, err := generateDKIMKey(a.dkimCipher, domain)
+	if err != nil {
+		return err
+	}
+	if err := changeDomainDKIM(ctx, tx, domain, "generate", "", selector, public, sealed); err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, "INSERT INTO admin_account_actions(actor,target,action,affected,stamp) VALUES(?,?,'dkim_generate',0,?)",
+		actor, domain, time.Now().Unix())
+	return err
+}
+
+func (a *app) adminPrepareDKIM(w http.ResponseWriter, r *http.Request, actor string) {
+	if a.dkimCipher == nil {
+		fail(w, http.StatusServiceUnavailable, "请配置服务器的 DKIM 加密密钥")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	defer cancel()
+	domain := r.PathValue("domain")
+	tx, err := a.db.BeginTx(ctx, nil)
+	if letterError(w, err) {
+		return
+	}
+	defer tx.Rollback()
+	if letterError(w, lockIMAPUIDs(ctx, tx)) || browserSessionError(w, a.lockBrowserSession(ctx, tx, actor, browserSessionDigest(r))) {
+		return
+	}
+	known, err := a.knownDKIMDomain(ctx, tx, domain)
+	if letterError(w, err) {
+		return
+	}
+	if !known {
+		fail(w, http.StatusNotFound, "该域名不支持生成内置 DKIM")
+		return
+	}
+	if !dkimPrepareError(w, a.prepareDomainDKIM(ctx, tx, domain, actor)) && !letterError(w, tx.Commit()) {
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func dkimPrepareError(w http.ResponseWriter, err error) bool {
+	if errors.Is(err, errDKIMPrepareBusy) {
+		fail(w, http.StatusTooManyRequests, "密钥生成繁忙，请稍后再试")
+		return true
+	}
+	return letterError(w, err)
+}
+
 func (a *app) knownDKIMDomain(ctx context.Context, db folderQueryer, domain string) (bool, error) {
-	if !validDNSName(domain) || len("harbor-0000000000000000._domainkey."+domain) > 253 {
+	if !validDKIMDomain(domain) {
 		return false, nil
 	}
 	var registered bool

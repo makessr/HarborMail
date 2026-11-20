@@ -60,7 +60,9 @@ func (a *app) adminDomainDNSPlan(w http.ResponseWriter, r *http.Request, actor s
 		records = append(records, mailDNSRecord{Type: "AAAA", Name: host, Value: ipv6, Purpose: "邮件主机 IPv6"})
 	}
 	spf := ""
-	if include != "" {
+	if query.Get("receiveOnly") == "1" {
+		spf = "v=spf1 -all"
+	} else if include != "" {
 		spf = "v=spf1 include:" + include + " ~all"
 	}
 	records = append(records,
@@ -80,10 +82,10 @@ func (a *app) adminDomainDNSPlan(w http.ResponseWriter, r *http.Request, actor s
 		}
 	}
 	if status.Active == nil && status.Pending == nil {
-		records = append(records, mailDNSRecord{Type: "TXT / CNAME", Purpose: "DKIM"})
+		records = append(records, mailDNSRecord{Type: "TXT", Purpose: "DKIM"})
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	reply(w, http.StatusOK, map[string]any{"host": host, "records": records, "dkimAvailable": status.Available})
+	reply(w, http.StatusOK, map[string]any{"host": host, "records": records, "dkimAvailable": status.Available && !a.recoveryMode && validDKIMDomain(domain), "dkimMissing": status.Active == nil && status.Pending == nil})
 }
 
 func dnsPlanName(raw string) string {

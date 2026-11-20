@@ -15,6 +15,8 @@ import (
 	"io"
 	"net"
 	"net/mail"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -26,8 +28,26 @@ var errDKIMAuthor = errors.New("DKIM requires one From address matching the enve
 
 func loadDKIMCipher() (cipher.AEAD, error) {
 	value, err := fileSetting("HARBOR_DKIM_KEY")
-	if err != nil || value == "" {
+	if err != nil {
 		return nil, err
+	}
+	if value == "" && os.Getenv("HARBOR_DKIM_KEY_FILE") != "" {
+		return nil, errors.New("the configured DKIM key file is empty")
+	}
+	if value == "" {
+		if path := os.Getenv("HARBOR_DKIM_LOCAL_KEY_FILE"); path != "" {
+			stored, err := os.ReadFile(path)
+			if err != nil && !errors.Is(err, os.ErrNotExist) {
+				return nil, err
+			}
+			if err == nil && strings.TrimSpace(string(stored)) == "" {
+				return nil, errors.New("the local DKIM key file is empty")
+			}
+			value = string(stored)
+		}
+	}
+	if value == "" {
+		return nil, nil
 	}
 	key, err := hex.DecodeString(strings.TrimSpace(value))
 	if err != nil || len(key) != 32 {
@@ -39,6 +59,46 @@ func loadDKIMCipher() (cipher.AEAD, error) {
 		return nil, err
 	}
 	return cipher.NewGCMWithRandomNonce(block)
+}
+
+// The local wrapping key travels with the server's persistent data, separate from MySQL.
+func (a *app) loadServerDKIM() (cipher.AEAD, error) {
+	box, err := loadDKIMCipher()
+	path := os.Getenv("HARBOR_DKIM_LOCAL_KEY_FILE")
+	if err != nil || box != nil || path == "" || a.recoveryMode {
+		return box, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var exists bool
+	if err := a.db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM domain_dkim_keys)").Scan(&exists); err != nil {
+		return nil, err
+	}
+	if exists {
+		return loadDKIMCipher()
+	}
+	var key [32]byte
+	if _, err := rand.Read(key[:]); err != nil {
+		return nil, err
+	}
+	defer clear(key[:])
+	f, err := os.CreateTemp(filepath.Dir(path), ".dkim-key-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(f.Name())
+	var encoded [64]byte
+	hex.Encode(encoded[:], key[:])
+	defer clear(encoded[:])
+	_, writeErr := f.Write(encoded[:])
+	if err := errors.Join(writeErr, f.Sync(), f.Close()); err != nil {
+		return nil, err
+	}
+	// Publish only a complete key without replacing a key created by another instance.
+	if err := os.Link(f.Name(), path); err != nil && !errors.Is(err, os.ErrExist) {
+		return nil, err
+	}
+	return loadDKIMCipher()
 }
 
 type dkimPublicKey struct {
