@@ -32,14 +32,22 @@ function renderDomainRows(domains) {
       dkim.addEventListener("click", () => openDKIMEditor(name));
       actions.append(dkim);
     }
-    if (!domainAdminOnly && managed && accounts === 0 && aliases === 0) {
-      const remove = document.createElement("button");
-      remove.type = "button";
-      remove.className = "secondary";
-      remove.textContent = "移除";
-      remove.setAttribute("aria-label", "移除 " + name);
-      remove.addEventListener("click", () => openDomainEditor(name));
-      actions.append(remove);
+    if (!domainAdminOnly) {
+      if (managed && accounts === 0 && aliases === 0) {
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "secondary admin-domain-remove";
+        remove.textContent = "删除域名";
+        remove.setAttribute("aria-label", "删除域名 " + name);
+        remove.addEventListener("click", () => openDomainEditor(name));
+        actions.append(remove);
+      } else {
+        const note = document.createElement("span");
+        note.className = "admin-domain-remove-note";
+        const addresses = [accounts ? accounts + " 个邮箱" : "", aliases ? aliases + " 个别名" : ""].filter(Boolean);
+        note.textContent = managed ? "删除前先处理 " + addresses.join("、") : "由邮箱或别名生成";
+        actions.append(note);
+      }
     }
     cell.append(actions);
     content.append(row);
@@ -153,6 +161,7 @@ function setupAdminDomains() {
   const dialog = adminElement("admin-domain-dialog");
   const form = adminElement("admin-domain-form");
   const close = adminElement("admin-domain-close");
+  const cancel = adminElement("admin-domain-cancel");
   const save = adminElement("admin-domain-save");
   const errorOutput = adminElement("admin-domain-error");
   const status = adminElement("admin-domain-status");
@@ -164,11 +173,13 @@ function setupAdminDomains() {
     removing = Boolean(name);
     domain.value = name;
     domain.readOnly = removing;
-    const title = removing ? "移除域名" : "新增域名";
+    const title = removing ? "删除域名" : "新增域名";
     adminElement("admin-domain-dialog-title").textContent = title;
     adminElement("admin-domain-impact").textContent = removing
-      ? "移除后，此域名将从后台列表中消失。"
+      ? "将从 Harbor Mail 删除此域名及内置 DKIM 密钥。公网 DNS 由域名服务商管理。"
       : "登记后会显示收发邮件所需的 DNS 记录。";
+    save.toggleAttribute("data-destructive", removing);
+    cancel.hidden = !removing;
     save.textContent = title;
     errorOutput.textContent = "";
     dialog.showModal();
@@ -177,6 +188,7 @@ function setupAdminDomains() {
 
   adminElement("admin-domain-add").addEventListener("click", () => open());
   close.addEventListener("click", () => dialog.close());
+  cancel.addEventListener("click", () => dialog.close());
   dialog.addEventListener("cancel", event => { if (save.disabled) event.preventDefault(); });
   dialog.addEventListener("close", () => form.reset());
   window.addEventListener("pageshow", event => { if (event.persisted && dialog.open) dialog.close(); });
@@ -187,7 +199,7 @@ function setupAdminDomains() {
     const remove = removing;
     const data = { domain: domain.value.trim(), password: password.value, action: remove ? "domain_remove" : "domain_add" };
     password.value = "";
-    close.disabled = save.disabled = true;
+    close.disabled = cancel.disabled = save.disabled = true;
     errorOutput.textContent = "";
     try {
       const response = await fetch("/api/admin/domains", {
@@ -204,13 +216,13 @@ function setupAdminDomains() {
       }
       const name = remove ? data.domain : (await response.json()).name;
       dialog.close();
-      status.textContent = (remove ? "已移除 " : "已登记 ") + name + "。";
+      status.textContent = (remove ? "已删除 " : "已登记 ") + name + "。";
       await loadOverview();
       if (!remove) void openDNSPlan(name);
     } catch {
       errorOutput.textContent = "未收到保存结果，请关闭窗口并刷新域名列表核对。";
     } finally {
-      close.disabled = save.disabled = false;
+      close.disabled = cancel.disabled = save.disabled = false;
     }
   });
   return open;

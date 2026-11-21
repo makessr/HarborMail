@@ -74,10 +74,14 @@ func validNewPrimaryPassword(password string) bool {
 
 func (a *app) adminResetPassword(w http.ResponseWriter, r *http.Request, actor string) {
 	target := r.PathValue("email")
-	if a.admins[target] {
-		fail(w, http.StatusForbidden, "请通过服务器配置修改管理员密码")
-		return
-	}
+	a.updatePrimaryPassword(w, r, actor, target, "password_reset")
+}
+
+func (a *app) adminChangeOwnPassword(w http.ResponseWriter, r *http.Request, actor string) {
+	a.updatePrimaryPassword(w, r, actor, actor, "password_change")
+}
+
+func (a *app) updatePrimaryPassword(w http.ResponseWriter, r *http.Request, actor, target, action string) {
 	var input struct {
 		Password    string
 		NewPassword string
@@ -89,7 +93,17 @@ func (a *app) adminResetPassword(w http.ResponseWriter, r *http.Request, actor s
 		fail(w, http.StatusBadRequest, "新密码长度须为 12 至 72 字节，且不能含换行或空字符")
 		return
 	}
-	if _, err := a.authenticate(actor, input.Password); err != nil {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if action == "password_change" {
+		source := loginSource(r, a.webLogin.proxies)
+		if retry := a.webLogin.reserve(ctx, source, actor, true); retry > 0 {
+			a.rejectWebLoginRate(w, source, actor, retry)
+			return
+		}
+	}
+	_, verified, err := a.authenticatePrimary(ctx, actor, input.Password)
+	if err != nil {
 		if errors.Is(err, errLoginBusy) {
 			fail(w, http.StatusTooManyRequests, "验证请求过多，请稍后重试")
 		} else {
@@ -97,11 +111,12 @@ func (a *app) adminResetPassword(w http.ResponseWriter, r *http.Request, actor s
 		}
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	previous, err := a.primaryPasswordHash(ctx, a.db, target)
-	if letterError(w, err) {
-		return
+	previous := verified
+	if actor != target {
+		previous, err = a.primaryPasswordHash(ctx, a.db, target)
+		if letterError(w, err) {
+			return
+		}
 	}
 	hash, err := hashPrimaryPassword(previous, input.NewPassword)
 	switch {
@@ -119,11 +134,21 @@ func (a *app) adminResetPassword(w http.ResponseWriter, r *http.Request, actor s
 		return
 	}
 	defer tx.Rollback()
-	if browserSessionError(w, a.lockBrowserSession(ctx, tx, actor, browserSessionDigest(r))) {
+	if letterError(w, lockIMAPUIDs(ctx, tx)) || browserSessionError(w, a.lockBrowserSession(ctx, tx, actor, browserSessionDigest(r))) {
 		return
 	}
 	if _, err := a.lockAccountAccess(ctx, tx, target); letterError(w, err) {
 		return
+	}
+	if action == "password_reset" {
+		administrator, err := a.isGlobalAdmin(ctx, tx, target)
+		if letterError(w, err) {
+			return
+		}
+		if administrator {
+			fail(w, http.StatusForbidden, "管理员可在后台页首修改自己的密码")
+			return
+		}
 	}
 	err = a.checkPrimaryPassword(ctx, tx, target, previous)
 	if errors.Is(err, errPrimaryPasswordChanged) {
@@ -138,10 +163,14 @@ func (a *app) adminResetPassword(w http.ResponseWriter, r *http.Request, actor s
 		return
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO admin_account_actions(actor,target,action,affected,stamp)
-		VALUES(?,?,?,?,?)`, actor, target, "password_reset", affected, time.Now().Unix()); letterError(w, err) {
+		VALUES(?,?,?,?,?)`, actor, target, action, affected, time.Now().Unix()); letterError(w, err) {
 		return
 	}
-	if !letterError(w, a.commitMailbox(tx, target)) {
-		reply(w, http.StatusOK, map[string]int64{"affected": affected})
+	if letterError(w, a.commitMailbox(tx, target)) {
+		return
 	}
+	if actor == target {
+		a.cookie(w, "", -1)
+	}
+	reply(w, http.StatusOK, map[string]any{"affected": affected, "signedOut": actor == target})
 }

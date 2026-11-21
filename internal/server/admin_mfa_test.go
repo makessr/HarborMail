@@ -42,7 +42,7 @@ func TestAdminMFAEnrollmentCLI(t *testing.T) {
 		if !found || !hasRecovery || err != nil || uri.Scheme != "otpauth" || uri.Host != "totp" || uri.Path != "/Harbor Mail:"+owner {
 			t.Fatal("invalid enrollment URI or missing configuration or recovery codes")
 		}
-		config, err := parseAdminMFA(configText, map[string]bool{owner: true})
+		config, err := parseAdminMFA(configText)
 		if err != nil || uri.Query().Get("secret") != totpBase32.EncodeToString(config[owner].secret) {
 			t.Fatal("authenticator URI and administrator configuration must share the same seed")
 		}
@@ -136,7 +136,7 @@ func TestAdminMFARequiresFreshProofAndInvalidatesOldSession(t *testing.T) {
 	raw, _ := json.Marshal(map[string]adminMFAConfig{owner: {
 		Secret: totpBase32.EncodeToString(secret), RecoveryHashes: []string{hex.EncodeToString(recoveryHash[:])},
 	}})
-	a.adminMFA, err = parseAdminMFA(string(raw), a.admins)
+	a.adminMFA, err = parseAdminMFA(string(raw))
 	if err != nil {
 		t.Fatal(err)
 	}

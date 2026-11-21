@@ -19,9 +19,9 @@ if (( $# > 1 )); then
 fi
 mode=${1:-standard}
 case "$mode" in
-  minimal) compose_files=compose.yaml:compose.registry.yaml ;;
-  standard) compose_files=compose.yaml:compose.mysql.yaml:compose.registry.yaml ;;
-  full) compose_files=compose.yaml:compose.mysql.yaml:compose.registry.yaml:compose.mail-scan.yaml ;;
+  minimal) compose_files=compose.minimal.yaml ;;
+  standard) compose_files=compose.standard.yaml ;;
+  full) compose_files=compose.full.yaml ;;
   *) usage >&2; exit 2 ;;
 esac
 
@@ -47,6 +47,21 @@ for file in "${files[@]}"; do
   fi
 done
 
+admin_email=${HARBOR_INITIAL_ADMIN_EMAIL:-}
+if [[ -z $admin_email && -t 0 ]]; then
+  read -rp '输入管理员邮箱（留空使用演示邮箱 hello@harbor.test）: ' admin_email
+fi
+admin_email=${admin_email:-hello@harbor.test}
+admin_email=${admin_email,,}
+if [[ ${#admin_email} -gt 254 || ! $admin_email =~ ^[a-z0-9][a-z0-9._%+-]*@([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]]; then
+  printf '请输入有效的管理员邮箱。\n' >&2
+  exit 1
+fi
+mail_host=mail.${admin_email#*@}
+if [[ ${admin_email#*@} == harbor.test ]]; then
+  mail_host=harbor.test
+fi
+
 image=ghcr.io/makessr/harbormail:latest
 docker pull "$image"
 if ! read -rsp '输入邮箱密码（12–72 字节）: ' mailbox_password; then
@@ -64,7 +79,7 @@ fi
 
 set -o noclobber
 install -d -m 0700 secrets
-printf '{"hello@harbor.test":"%s"}\n' "$hash" > secrets/accounts.json
+printf '{"%s":"%s"}\n' "$admin_email" "$hash" > secrets/accounts.json
 harbor_credentials=(secrets/accounts.json)
 if [[ $mode != minimal ]]; then
   printf '%s' "$mysql_password" > secrets/mysql-password
@@ -74,5 +89,5 @@ if [[ $mode != minimal ]]; then
 fi
 chgrp 10001 "${harbor_credentials[@]}"
 chmod 0640 "${harbor_credentials[@]}"
-printf 'COMPOSE_FILE=%s\nHARBOR_ADMINS=hello@harbor.test\nHARBOR_WEB_PORT=8080\nHARBOR_SMTP_PORT=2525\n' "$compose_files" > .env
-printf '已生成部署配置。启动后使用 hello@harbor.test 登录。\n'
+printf 'COMPOSE_FILE=%s\nHARBOR_ADMINS=%s\nHARBOR_DOMAIN=%s\n' "$compose_files" "$admin_email" "$mail_host" > .env
+printf '已生成部署配置。启动后使用 %s 登录。\n' "$admin_email"

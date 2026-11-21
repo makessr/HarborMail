@@ -247,3 +247,32 @@ func TestDirectMXWebmailRoutesEachRecipient(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadDirectMXDefaults(t *testing.T) {
+	t.Setenv("HARBOR_DIRECT_MX_HELO", "")
+	t.Setenv("HARBOR_DIRECT_MX_TLS", "")
+	for _, tc := range []struct {
+		name, setting, domain, wantHELO string
+	}{
+		{"default", "", "mail.example.test", "mail.example.test"},
+		{"explicit off", "false", "mail.example.test", ""},
+		{"legacy SMTP banner", "true", "localhost", "harbor.test"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("HARBOR_DIRECT_MX", tc.setting)
+			a := &app{domain: tc.domain}
+			if err := a.loadDirectMX(); err != nil {
+				t.Fatal(err)
+			}
+			if tc.wantHELO == "" {
+				if a.directMX != nil {
+					t.Fatal("direct MX enabled despite explicit opt-out")
+				}
+				return
+			}
+			if a.directMX == nil || a.directMX.helo != tc.wantHELO || !a.directMX.requireTLS {
+				t.Fatalf("unexpected direct MX settings: %+v", a.directMX)
+			}
+		})
+	}
+}

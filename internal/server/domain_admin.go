@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -35,7 +36,11 @@ func parseDomainAdmins(raw string, accounts map[string][]byte) (map[string]map[s
 
 func (a *app) domainAdminOnly(handler authorized) http.HandlerFunc {
 	return a.auth(func(w http.ResponseWriter, r *http.Request, actor string) {
-		if !a.admins[actor] && len(a.domainAdmins[actor]) == 0 {
+		administrator, err := a.isGlobalAdmin(r.Context(), a.db, actor)
+		if letterError(w, err) {
+			return
+		}
+		if !administrator && len(a.domainAdmins[actor]) == 0 {
 			fail(w, http.StatusForbidden, "当前账号没有管理权限")
 			return
 		}
@@ -43,17 +48,17 @@ func (a *app) domainAdminOnly(handler authorized) http.HandlerFunc {
 	})
 }
 
-func (a *app) canManageDomain(actor, domain string) bool {
-	return a.admins[actor] || a.domainAdmins[actor][domain]
+func (a *app) canManageDomain(ctx context.Context, actor, domain string) bool {
+	administrator, err := a.isGlobalAdmin(ctx, a.db, actor)
+	return err == nil && (administrator || a.domainAdmins[actor][domain])
 }
 
-func (a *app) canManageDomainAlias(actor, alias, owner string) bool {
-	return a.admins[actor] || (!a.admins[owner] && a.canManageDomain(actor, emailDomain(alias)) &&
-		a.canManageDomain(actor, emailDomain(owner)))
+func (a *app) canManageDomainAlias(actor, alias, owner string, admins map[string]bool) bool {
+	return admins[actor] || (!admins[owner] && a.domainAdmins[actor][emailDomain(alias)] && a.domainAdmins[actor][emailDomain(owner)])
 }
 
-func (a *app) scopedDomains(actor string, all []adminDomain) []adminDomain {
-	if a.admins[actor] {
+func (a *app) scopedDomains(actor string, all []adminDomain, administrator bool) []adminDomain {
+	if administrator {
 		return all
 	}
 	byName := make(map[string]adminDomain)

@@ -74,6 +74,14 @@ func (a *app) adminMailboxLifecycle(w http.ResponseWriter, r *http.Request, acto
 		browserSessionError(w, a.lockBrowserSession(ctx, tx, actor, browserSessionDigest(r))) {
 		return
 	}
+	administrator, err := a.isGlobalAdmin(ctx, tx, owner)
+	if letterError(w, err) {
+		return
+	}
+	if administrator {
+		fail(w, http.StatusForbidden, "请先撤销管理员权限，再管理邮箱生命周期")
+		return
+	}
 	var hash []byte
 	err = tx.QueryRowContext(ctx, `SELECT password_hash FROM managed_accounts WHERE email=?`, owner).Scan(&hash)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -205,7 +213,7 @@ func suspendAndRevokeMailbox(ctx context.Context, tx *sql.Tx, owner string) erro
 
 var mailboxOwnedSettings = []string{"contacts", "custom_folders", "mail_rules", "mail_labels", "mail_templates",
 	"mailbox_preferences", "mailbox_send_delay", "mailbox_storage_alerts", "signature_settings", "saved_searches",
-	"account_password_overrides", "draft_creation_keys", "mail_threads", "spam_feedback"}
+	"account_password_overrides", "managed_admin_roles", "draft_creation_keys", "mail_threads", "spam_feedback"}
 
 func purgeRetiredMailbox(ctx context.Context, tx *sql.Tx, owner string) error {
 	for _, table := range []string{"draft_creation_keys", "imap_deleted", "imap_uids", "web_drafts", "web_letter_recipients",

@@ -36,7 +36,7 @@ type adminMFA struct {
 	recovery   map[[32]byte]bool
 }
 
-func parseAdminMFA(raw string, admins map[string]bool) (map[string]adminMFA, error) {
+func parseAdminMFA(raw string) (map[string]adminMFA, error) {
 	if strings.TrimSpace(raw) == "" {
 		return nil, nil
 	}
@@ -47,8 +47,8 @@ func parseAdminMFA(raw string, admins map[string]bool) (map[string]adminMFA, err
 	result := make(map[string]adminMFA)
 	seenSeeds := make(map[[32]byte]bool)
 	for owner, item := range settings {
-		if !admins[owner] {
-			return nil, errors.New("HARBOR_ADMIN_MFA contains an address without administrative privileges")
+		if canonical, err := address(owner); err != nil || canonical != owner {
+			return nil, errors.New("HARBOR_ADMIN_MFA contains an invalid primary mailbox address")
 		}
 		seed, err := totpBase32.DecodeString(strings.ToUpper(item.Secret))
 		if err != nil || len(seed) != 20 || len(item.RecoveryHashes) > 12 {

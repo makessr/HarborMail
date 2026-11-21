@@ -8,9 +8,26 @@ if (domainAdminOnly) {
   }
   adminElement("admin-domain-add").hidden = true;
 }
+const adminMenu = installNavigationDrawer("admin", adminElement("admin-nav"));
+let adminTheme = "light";
+systemTheme.addEventListener("change", () => applySiteTheme(adminTheme));
+async function refreshAdminTheme() {
+  try {
+    const response = await fetch("/api/preferences");
+    if (response.ok) {
+      adminTheme = (await response.json()).theme;
+      applySiteTheme(adminTheme);
+    }
+  } catch {
+    // Keep the current theme if preferences are temporarily unavailable.
+  }
+}
+
 const domainFromLink = new URLSearchParams(location.search).get("domain");
 const showDomains = location.pathname === "/admin/domains";
 const showQueue = location.pathname === "/admin/queue";
+const showDelivery = location.pathname === "/admin/delivery";
+const showDMARC = location.pathname === "/admin/dmarc";
 const showAudit = location.pathname === "/admin/audit";
 const showAliases = location.pathname === "/admin/aliases";
 const showRuntime = location.pathname === "/admin/runtime";
@@ -19,12 +36,13 @@ const showQuarantine = location.pathname === "/admin/quarantine";
 const showSecurity = location.pathname === "/admin/security";
 const showAccounts = location.pathname === "/admin/accounts" ||
   ((location.pathname === "/admin" || location.pathname === "/admin/") && Boolean(domainFromLink));
-const section = showQuarantine ? "quarantine" : showStorage ? "storage" : showSecurity ? "security" : showRuntime ? "runtime" : showAliases ? "aliases" : showAudit ? "audit" : showQueue ? "queue" :
+const section = showDelivery ? "delivery" : showDMARC ? "dmarc" : showQuarantine ? "quarantine" : showStorage ? "storage" : showSecurity ? "security" : showRuntime ? "runtime" : showAliases ? "aliases" : showAudit ? "audit" : showQueue ? "queue" :
   showDomains ? "domains" : showAccounts ? "accounts" : "overview";
 const activePanel = adminElement({
   audit: "admin-audit-view", queue: "admin-delivery", domains: "admin-domains", accounts: "admin-account-view",
   aliases: "admin-alias-view", runtime: "admin-runtime-view", storage: "admin-storage-view",
-  quarantine: "admin-quarantine-view", security: "admin-security-view", overview: "admin-overview"
+  quarantine: "admin-quarantine-view", security: "admin-security-view", overview: "admin-overview",
+  delivery: "admin-delivery-tools", dmarc: "admin-dmarc-tools"
 }[section]);
 const statusOutput = adminElement("admin-status");
 const refresh = adminElement("admin-refresh");
@@ -45,10 +63,18 @@ const queueLabels = {
 let accounts = [];
 let signedInAdmin = "";
 const domainOf = address => address.slice(address.lastIndexOf("@") + 1).replace(/\.$/, "").toLowerCase();
-adminElement("admin-" + section + "-link").setAttribute("aria-current", "page");
+const navSection = showDelivery ? "queue" : showDMARC ? "domains" : section;
+adminElement("admin-" + navSection + "-link").setAttribute("aria-current", "page");
+const related = { queue: ["/admin/delivery", "投递日志与额度"], delivery: ["/admin/queue", "投递队列"],
+  domains: ["/admin/dmarc", "DMARC 报告"], dmarc: ["/admin/domains", "域名管理"] }[section];
+if (related && !domainAdminOnly) {
+  const link = adminElement("admin-related-page");
+  [link.href, link.textContent] = related;
+  link.hidden = false;
+}
 if (section !== "overview") {
   const title = { queue: "投递队列", domains: "域名", accounts: "邮箱账号", audit: "操作审计",
-    aliases: "别名管理", runtime: "运行监控", storage: "存储用量", security: "安全", quarantine: "隔离邮件" }[section];
+    aliases: "别名管理", runtime: "运行监控", storage: "存储用量", security: "安全", quarantine: "隔离邮件", delivery: "投递日志", dmarc: "DMARC 报告" }[section];
   adminElement("admin-title").textContent = title;
   document.title = title + " · Harbor Mail";
 }
@@ -66,51 +92,73 @@ function renderDetails(id, entries) {
   adminElement(id).replaceChildren(content);
 }
 
+const accountList = adminElement("admin-accounts");
+const accountSheet = adminElement("admin-account-sheet");
+const accountSheetAccess = adminElement("admin-account-sheet-access");
+const accountSheetLifecycle = adminElement("admin-account-sheet-lifecycle");
+const accountRoleLabels = { admin: "全站管理员", domain_admin: "域管理员", user: "普通用户" };
+const accountStatusLabels = { retired: "已回收", suspended: "已停用", active: "启用" };
+const accountRoleOf = account => account.admin ? "admin" : account.domainAdmin ? "domain_admin" : "user";
+const accountStatusOf = account => account.retired ? "retired" : account.suspended ? "suspended" : "active";
+let selectedAccountEmail = "";
+
+function renderAccountSheet(account) {
+  adminElement("admin-account-sheet-email").textContent = account.email;
+  renderDetails("admin-account-sheet-details", [
+    ["角色", accountRoleLabels[accountRoleOf(account)]],
+    ["状态", accountStatusLabels[accountStatusOf(account)]],
+    ["来源", account.managed ? "后台" : "服务器配置"],
+    ["别名", account.aliases?.join("、") || "无"]
+  ]);
+  adminElement("admin-account-sheet-actions").hidden = domainAdminOnly;
+  accountSheetAccess.hidden = account.retired;
+  accountSheetLifecycle.hidden = !account.managed || account.admin;
+  adminElement("admin-account-sheet-storage").href = "/admin/storage?" + new URLSearchParams({ owner: account.email });
+}
+
 function renderAccounts() {
+  if (!showAccounts) return;
   const query = find.value.trim().toLowerCase();
   const matching = accounts.filter(account => {
     const addresses = [account.email, ...(account.aliases || [])];
-    const role = account.admin ? "admin" : "user";
-    const status = account.retired ? "retired" : account.suspended ? "suspended" : "active";
-    return (!accountRole.value || accountRole.value === role) &&
-      (!accountStatus.value || accountStatus.value === status) &&
+    return (!accountRole.value || accountRole.value === accountRoleOf(account)) &&
+      (!accountStatus.value || accountStatus.value === accountStatusOf(account)) &&
       addresses.some(address => !accountDomain.value || domainOf(address) === accountDomain.value) &&
       addresses.some(address => address.toLowerCase().includes(query));
   });
   const content = document.createDocumentFragment();
   for (const account of matching) {
     const row = document.createElement("tr");
-    for (const value of [account.email, account.admin ? "管理员" : "普通用户",
-      account.retired ? "已回收" : account.suspended ? "已停用" : "启用",
-      account.managed ? "后台" : "服务器配置", account.aliases?.join("、") || "无"]) {
-      row.insertCell().textContent = value;
-    }
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "secondary";
-    button.textContent = "管理访问";
-    button.setAttribute("aria-label", "管理 " + account.email + " 的访问");
-    button.addEventListener("click", () => openAccountAccess(account.email));
-    const actions = row.insertCell();
-    actions.className = "admin-account-actions";
-    if (domainAdminOnly) {
-      actions.textContent = "—";
-    } else {
-      if (!account.retired) actions.append(button);
-      actions.append(overviewLink("查看用量", "/admin/storage?" + new URLSearchParams({ owner: account.email })));
-      if (account.managed) {
-        const lifecycle = document.createElement("button");
-        lifecycle.type = "button";
-        lifecycle.className = "secondary";
-        lifecycle.textContent = "邮箱管理";
-        lifecycle.addEventListener("click", () => openMailboxLifecycle(account));
-        actions.append(lifecycle);
-      }
-    }
+    button.className = "admin-account-open";
+    button.dataset.email = account.email;
+    button.textContent = account.email;
+    button.setAttribute("aria-haspopup", "dialog");
+    button.addEventListener("click", () => {
+      selectedAccountEmail = account.email;
+      renderAccountSheet(account);
+      accountSheet.showModal();
+    });
+    row.insertCell().append(button);
+    row.insertCell().textContent = accountRoleLabels[accountRoleOf(account)];
+    const status = document.createElement("span");
+    status.className = "admin-account-state";
+    status.dataset.state = accountStatusOf(account);
+    status.textContent = accountStatusLabels[status.dataset.state];
+    row.insertCell().append(status);
     content.append(row);
   }
-  adminElement("admin-accounts").replaceChildren(content);
+  accountList.replaceChildren(content);
   adminElement("admin-empty").hidden = matching.length !== 0;
+  adminElement("admin-account-count").textContent = matching.length === accounts.length
+    ? "共 " + accounts.length + " 个账号"
+    : "显示 " + matching.length + " / " + accounts.length + " 个账号";
+  if (accountSheet.open) {
+    const account = accounts.find(item => item.email === selectedAccountEmail);
+    if (account) renderAccountSheet(account);
+    else accountSheet.close();
+  }
 }
 
 function renderDomains(domains) {
@@ -192,6 +240,63 @@ function setOnboardingHidden(hidden) {
 onboardingHide.addEventListener("click", () => setOnboardingHidden(true));
 onboardingShow.addEventListener("click", () => setOnboardingHidden(false));
 
+
+function passwordConfirmationError(password, confirmation) {
+  if (password.value !== confirmation.value) {
+    confirmation.focus();
+    return "两次输入的新密码不一致。";
+  }
+  const length = new TextEncoder().encode(password.value).length;
+  if (length < 12 || length > 72) {
+    password.focus();
+    return "新密码长度须为 12 至 72 字节。";
+  }
+  return "";
+}
+
+{
+  const dialog = adminElement("admin-password-dialog");
+  const form = adminElement("admin-password-form");
+  const status = adminElement("admin-password-error");
+  const { password, newPassword, confirmPassword } = form.elements;
+  let busy = false;
+  adminElement("admin-password-open").addEventListener("click", () => dialog.showModal());
+  adminElement("admin-password-close").addEventListener("click", () => dialog.close());
+  dialog.addEventListener("cancel", event => {
+    if (busy) event.preventDefault();
+  });
+  dialog.addEventListener("close", () => {
+    form.reset();
+    status.textContent = "";
+  });
+  form.addEventListener("submit", async event => {
+    event.preventDefault();
+    if (busy) return;
+    status.textContent = passwordConfirmationError(newPassword, confirmPassword);
+    if (status.textContent) return;
+    const data = { password: password.value, newPassword: newPassword.value };
+    password.value = "";
+    busy = form.inert = true;
+    try {
+      const response = await fetch("/api/admin/password", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data)
+      });
+      if (response.ok || response.status === 401) {
+        form.reset();
+        location.replace("/");
+        return;
+      }
+      const result = await response.json();
+      status.textContent = result.error || "暂时无法修改密码，请重试。";
+    } catch {
+      status.textContent = "未收到操作结果。请核对登录状态后再试。";
+    } finally {
+      busy = form.inert = false;
+      if (status.textContent) password.focus();
+    }
+  });
+}
+
 const accessDialog = adminElement("admin-access-dialog");
 const accessForm = adminElement("admin-access-form");
 const accessClose = adminElement("admin-access-close");
@@ -203,7 +308,7 @@ const accessNewPassword = accessForm.elements.newPassword;
 const accessConfirmPassword = accessForm.elements.confirmPassword;
 const accessLabels = {
   sessions: "撤销网页登录会话", app_passwords: "撤销应用密码", suspend: "停用账号登录", restore: "恢复账号登录",
-  password_reset: "重置主邮箱密码", account_create: "创建邮箱账号", storage_alert: "更新容量预警", storage_quota: "更新邮箱硬配额",
+  password_reset: "重置主邮箱密码", password_change: "修改自己的密码", admin_grant: "设为全站管理员", admin_revoke: "撤销全站管理员权限", outbound_limit: "更新外发额度", account_create: "创建邮箱账号", storage_alert: "更新容量预警", storage_quota: "更新邮箱硬配额",
   mailbox_retire: "回收邮箱", mailbox_restore: "恢复已回收邮箱", mailbox_purge: "清除邮箱数据", mailbox_rename: "迁移邮箱地址"
 };
 let accessTarget = "";
@@ -216,7 +321,9 @@ function updateAccessImpact() {
     app_passwords: "已撤销的应用密码会在下次连接认证时失效。",
     suspend: "撤销网页会话和应用密码，并阻止新的登录。邮箱内容和收信继续保留。",
     restore: "允许使用主邮箱密码重新登录。恢复后需要重新生成应用密码。",
-    password_reset: "新密码须为 12 至 72 字节。重置会撤销旧网页会话和应用密码，已停用账号需单独恢复登录。"
+    password_reset: "新密码须为 12 至 72 字节。重置会撤销旧网页会话和应用密码，已停用账号需单独恢复登录。",
+    admin_grant: "该账号将能管理全站域名、邮箱和投递。现有网页登录会话会退出。",
+    admin_revoke: "撤销全站管理权限，现有网页登录会话会退出。邮箱和邮件保留。"
   };
   const resetting = accessScope.value === "password_reset";
   adminElement("admin-access-new-password").hidden = !resetting;
@@ -268,12 +375,13 @@ async function loadAccountAccess(message) {
     const scopes = data.suspended ? ["restore"] : ["sessions", "app_passwords"];
     if (!data.suspended && data.canSuspend) scopes.push("suspend");
     if (data.canSuspend) scopes.push("password_reset");
+    if (data.canManageRole && (data.administrator || !data.suspended)) scopes.push(data.administrator ? "admin_revoke" : "admin_grant");
     accessScope.replaceChildren(...scopes.map(scope => new Option(accessLabels[scope], scope)));
     if (scopes.includes(selected)) accessScope.value = selected;
     updateAccessImpact();
     const audit = data.audit.map(record => {
       const item = document.createElement("li");
-      const affected = ["sessions", "app_passwords", "suspend", "password_reset"].includes(record.action) ? "（撤销 " + record.affected + " 条记录）" : "";
+      const affected = ["sessions", "app_passwords", "suspend", "password_reset", "password_change", "admin_grant", "admin_revoke"].includes(record.action) ? "（撤销 " + record.affected + " 条记录）" : "";
       item.textContent = queueTime(record.stamp) + " · " + record.actor + " · " + accessLabels[record.action] + affected;
       return item;
     });
@@ -302,18 +410,11 @@ accessForm.addEventListener("submit", async event => {
   if (accessBusy || accessControls.hidden) return;
   const data = { scope: accessScope.value, password: accessPassword.value };
   const resetting = data.scope === "password_reset";
+  const changingRole = data.scope === "admin_grant" || data.scope === "admin_revoke";
+  if (changingRole) data.admin = data.scope === "admin_grant";
   if (resetting) {
-    if (accessNewPassword.value !== accessConfirmPassword.value) {
-      accessStatus.textContent = "两次输入的新密码不一致。";
-      accessConfirmPassword.focus();
-      return;
-    }
-    const length = new TextEncoder().encode(accessNewPassword.value).length;
-    if (length < 12 || length > 72) {
-      accessStatus.textContent = "新密码长度须为 12 至 72 字节。";
-      accessNewPassword.focus();
-      return;
-    }
+    accessStatus.textContent = passwordConfirmationError(accessNewPassword, accessConfirmPassword);
+    if (accessStatus.textContent) return;
     data.newPassword = accessNewPassword.value;
     accessNewPassword.value = accessConfirmPassword.value = "";
   }
@@ -321,7 +422,7 @@ accessForm.addEventListener("submit", async event => {
   accessBusy = accessClose.disabled = accessControls.disabled = true;
   accessStatus.textContent = "正在执行操作…";
   try {
-    const response = await fetch("/api/admin/accounts/" + encodeURIComponent(accessTarget) + (resetting ? "/password" : "/access"), {
+    const response = await fetch("/api/admin/accounts/" + encodeURIComponent(accessTarget) + (changingRole ? "/role" : resetting ? "/password" : "/access"), {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data)
     });
     if (response.status === 401) {
@@ -338,7 +439,8 @@ accessForm.addEventListener("submit", async event => {
       location.replace("/");
       return;
     }
-    const message = data.scope === "restore" ? "已恢复账号登录。" :
+    if (changingRole) void loadOverview();
+    const message = changingRole ? (result.admin ? "已设为全站管理员。" : "已撤销全站管理员权限。") : data.scope === "restore" ? "已恢复账号登录。" :
       (resetting ? "已重置密码，撤销 " : data.scope === "suspend" ? "已停用账号登录，撤销 " : "已撤销 ") +
       result.affected + " 条记录。";
     await loadAccountAccess(message);
@@ -664,7 +766,19 @@ accountDomain.addEventListener("change", renderAccounts);
 accountRole.addEventListener("change", renderAccounts);
 accountStatus.addEventListener("change", renderAccounts);
 find.addEventListener("input", renderAccounts);
-const loadPage = showQuarantine ? setupAdminQuarantine() : showStorage ? setupAdminStorage() : showSecurity ? setupAdminSecurity() : showRuntime ? setupAdminRuntime() : showAliases ? setupAdminAliases() :
+if (showAccounts) {
+  adminElement("admin-account-sheet-close").addEventListener("click", () => accountSheet.close());
+  accountSheet.addEventListener("close", () => {
+    const trigger = accountList.querySelector("[data-email=" + CSS.escape(selectedAccountEmail) + "]");
+    (trigger || find).focus({ preventScroll: true });
+  });
+  accountSheetAccess.addEventListener("click", () => openAccountAccess(selectedAccountEmail));
+  accountSheetLifecycle.addEventListener("click", () => {
+    const account = accounts.find(item => item.email === selectedAccountEmail);
+    if (account) openMailboxLifecycle(account);
+  });
+}
+const loadPage = showDelivery ? setupAdminDeliveryTools() : showDMARC ? setupAdminDMARC() : showQuarantine ? setupAdminQuarantine() : showStorage ? setupAdminStorage() : showSecurity ? setupAdminSecurity() : showRuntime ? setupAdminRuntime() : showAliases ? setupAdminAliases() :
   showAudit ? setupAdminAudit() : showQueue ? () => loadDeliveryQueue() : loadOverview;
 refresh.addEventListener("click", loadPage);
 logout.addEventListener("click", async () => {
@@ -681,14 +795,23 @@ logout.addEventListener("click", async () => {
 window.addEventListener("pageshow", event => {
   if (event.persisted) {
     if (accessDialog.open) accessDialog.close();
+    if (accountSheet.open) accountSheet.close();
+    adminMenu.close();
+    void refreshAdminTheme();
     activePanel.hidden = true;
     void loadPage();
   }
 });
 if (showQueue) setupDeliveryQueue();
+if (showDelivery || showDMARC) {
+  void fetch("/api/session").then(response => response.ok ? response.json() : null).then(session => {
+    if (session?.email) adminElement("admin-identity").textContent = session.email;
+  }).catch(() => {});
+}
 const openAccountCreate = showAccounts ? setupAdminAccountCreate() : null;
 const openDNSPlan = showDomains ? setupDNSPlan() : null;
 const openDomainEditor = showDomains ? setupAdminDomains() : null;
 const openDKIMEditor = showDomains && !domainAdminOnly ? setupAdminDKIM() : null;
 if (showAccounts && !domainAdminOnly) setupMailboxLifecycle();
+void refreshAdminTheme();
 void loadPage();

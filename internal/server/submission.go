@@ -154,6 +154,9 @@ func (s *submission) Data(r io.Reader) error {
 	}
 	m.recipients = &envelope.Recipients
 	if err := s.app.storeSubmission(m, raw, envelope); err != nil {
+		if errors.Is(err, errOutboundLimit) {
+			return &smtp.SMTPError{Code: 452, EnhancedCode: smtp.EnhancedCode{4, 7, 0}, Message: "Daily outbound recipient limit reached"}
+		}
 		if isQuotaExceeded(err) {
 			return smtpQuotaExceeded()
 		}
@@ -233,7 +236,11 @@ func (a *app) storeSubmission(m letter, raw []byte, envelope webEnvelope) error 
 			return err
 		}
 	}
-	if len(envelope.externalAddresses()) != 0 {
+	external := len(envelope.externalAddresses())
+	if err := consumeOutboundLimit(ctx, tx, m.From, external, time.Now()); err != nil {
+		return err
+	}
+	if external != 0 {
 		id, err := enqueueLetter(tx, m, raw)
 		if err != nil {
 			return err

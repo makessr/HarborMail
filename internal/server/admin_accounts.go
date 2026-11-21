@@ -34,14 +34,18 @@ func (a *app) adminAccountList(w http.ResponseWriter, r *http.Request, actor str
 	if letterError(w, err) {
 		return
 	}
-	if !a.admins[actor] {
+	admins, err := a.adminRoleSet(ctx)
+	if letterError(w, err) {
+		return
+	}
+	if !admins[actor] {
 		for name := range names {
-			if a.admins[name] || !a.canManageDomain(actor, emailDomain(name)) {
+			if admins[name] || !a.domainAdmins[actor][emailDomain(name)] {
 				delete(names, name)
 			}
 		}
 		for alias, owner := range aliases {
-			if !a.canManageDomainAlias(actor, alias, owner) {
+			if !a.canManageDomainAlias(actor, alias, owner, admins) {
 				delete(aliases, alias)
 			}
 		}
@@ -51,11 +55,11 @@ func (a *app) adminAccountList(w http.ResponseWriter, r *http.Request, actor str
 		return
 	}
 	reply(w, http.StatusOK, map[string]any{
-		"email": actor, "accounts": a.adminAccounts(names, suspended, retired, aliases), "domains": a.scopedDomains(actor, domains),
+		"email": actor, "accounts": a.adminAccounts(names, suspended, retired, admins, aliases), "domains": a.scopedDomains(actor, domains, admins[actor]),
 	})
 }
 
-func (a *app) adminAccountAccess(w http.ResponseWriter, r *http.Request, _ string) {
+func (a *app) adminAccountAccess(w http.ResponseWriter, r *http.Request, actor string) {
 	target := r.PathValue("email")
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
@@ -72,6 +76,10 @@ func (a *app) adminAccountAccess(w http.ResponseWriter, r *http.Request, _ strin
 		(SELECT COUNT(*) FROM app_passwords WHERE owner=? AND credential=? AND (expires=0 OR expires>?)),
 		EXISTS(SELECT 1 FROM account_access WHERE owner=? AND suspended=TRUE)`,
 		target, webCredential[:], now, target, credential[:], now, target).Scan(&sessions, &passwords, &suspended)
+	if letterError(w, err) {
+		return
+	}
+	administrator, err := a.isGlobalAdmin(ctx, a.db, target)
 	if letterError(w, err) {
 		return
 	}
@@ -92,7 +100,8 @@ func (a *app) adminAccountAccess(w http.ResponseWriter, r *http.Request, _ strin
 	if !letterError(w, rows.Err()) {
 		reply(w, http.StatusOK, map[string]any{
 			"sessions": sessions, "appPasswords": passwords, "audit": audit,
-			"suspended": suspended, "canSuspend": !a.admins[target],
+			"suspended": suspended, "canSuspend": !administrator,
+			"administrator": administrator, "canManageRole": a.admins[actor] && !a.admins[target],
 		})
 	}
 }
@@ -113,10 +122,6 @@ func (a *app) adminChangeAccountAccess(w http.ResponseWriter, r *http.Request, a
 	case "sessions", "app_passwords", "suspend", "restore":
 	default:
 		fail(w, http.StatusBadRequest, "请选择账号访问操作")
-		return
-	}
-	if input.Scope == "suspend" && a.admins[target] {
-		fail(w, http.StatusForbidden, "后台不能停用管理员账号")
 		return
 	}
 	if _, err := a.authenticate(actor, input.Password); err != nil {
@@ -146,6 +151,16 @@ func (a *app) adminChangeAccountAccess(w http.ResponseWriter, r *http.Request, a
 	if retired {
 		fail(w, http.StatusConflict, "邮箱已回收，请先通过邮箱管理恢复")
 		return
+	}
+	if input.Scope == "suspend" {
+		administrator, err := a.isGlobalAdmin(ctx, tx, target)
+		if letterError(w, err) {
+			return
+		}
+		if administrator {
+			fail(w, http.StatusForbidden, "请先撤销管理员权限，再停用账号")
+			return
+		}
 	}
 	if input.Scope == "suspend" || input.Scope == "restore" {
 		suspended, err := a.lockAccountAccess(ctx, tx, target)

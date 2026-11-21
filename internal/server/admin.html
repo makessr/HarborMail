@@ -3,12 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f7f9">
   <title>管理后台 · Harbor Mail</title>
   <link rel="icon" type="image/png" sizes="96x96" href="/harbor-mail-logo.png">
   <link rel="stylesheet" href="/notosanssc-v41/font.css">
   <link rel="stylesheet" href="/style.css">
   <link rel="stylesheet" href="/admin.css">
+  <script src="/app-shell.js" defer></script>
   <script src="/admin-audit.js" defer></script>
+  <script src="/admin-delivery-tools.js" defer></script>
   <script src="/admin-aliases.js" defer></script>
   <script src="/admin-overview.js" defer></script>
   <script src="/admin-runtime.js" defer></script>
@@ -23,17 +26,23 @@
 </head>
 <body class="admin">
   <header class="admin-bar">
-    <a class="brand" href="/?view=mail"><img src="/harbor-mail-logo.png" alt="" width="48" height="48"> Harbor Mail</a>
+    <div class="admin-brand-group">
+      <button class="icon admin-menu-toggle" id="admin-menu-toggle" type="button" aria-label="打开管理菜单" aria-haspopup="dialog" aria-controls="admin-menu-drawer" aria-expanded="false">
+        <svg class="glyph" aria-hidden="true"><use href="/icons.svg#menu-line"></use></svg>
+      </button>
+      <a class="brand" href="/?view=mail"><img src="/harbor-mail-logo.png" alt="" width="48" height="48"> Harbor Mail</a>
+    </div>
     <nav aria-label="账号操作">
       <span id="admin-recovery-mode" hidden>恢复校验模式</span>
       <span id="admin-identity"></span>
       <a href="/?view=mail">我的邮箱</a>
-      <a class="icon" href="https://github.com/makessr/HarborMail" target="_blank" rel="noopener noreferrer" aria-label="Harbor Mail 的 GitHub 仓库（在新标签页打开）" title="GitHub"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#github-fill"></use></svg></a>
+      <button class="secondary admin-password-link" id="admin-password-open" type="button" aria-haspopup="dialog">修改密码</button>
+      <div class="project-links" aria-label="项目与作者"><a class="project-link" href="https://github.com/makessr/HarborMail" target="_blank" rel="noopener noreferrer" aria-label="在 GitHub 打开 Harbor Mail（新标签页）"><svg class="glyph" aria-hidden="true"><use href="/icons.svg#github-fill"></use></svg> GitHub</a><a class="project-author" href="https://github.com/makessr" target="_blank" rel="noopener noreferrer">作者 <strong>MakeSSR</strong></a></div>
       <button class="secondary" id="admin-logout" type="button">退出</button>
     </nav>
   </header>
-  <main class="admin-main">
-    <nav class="admin-nav" aria-label="管理导航">
+  <aside class="admin-sidebar" id="admin-sidebar">
+    <nav class="admin-nav" id="admin-nav" aria-label="管理导航">
       <a id="admin-overview-link" href="/admin"><svg class="glyph nav-glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#layout-dashboard"></use></svg>概览</a>
       <a id="admin-accounts-link" href="/admin/accounts"><svg class="glyph nav-glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#users"></use></svg>账号</a>
       <a id="admin-aliases-link" href="/admin/aliases"><svg class="glyph nav-glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#contact-book"></use></svg>别名</a>
@@ -45,13 +54,71 @@
       <a id="admin-security-link" href="/admin/security"><svg class="glyph nav-glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#shield"></use></svg>安全</a>
       <a id="admin-audit-link" href="/admin/audit"><svg class="glyph nav-glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#list-checks"></use></svg>审计</a>
     </nav>
+  </aside>
+  <main class="admin-main">
     <div class="admin-heading">
       <h1 id="admin-title">管理后台</h1>
+      <a class="admin-related-page" id="admin-related-page" hidden></a>
       <button class="secondary admin-refresh" id="admin-refresh" type="button">
         <svg class="glyph" aria-hidden="true"><use href="/icons.svg#refresh-line"></use></svg> 刷新
       </button>
     </div>
     <p id="admin-status" role="status" aria-live="polite"></p>
+
+    <section id="admin-delivery-tools" class="admin-panel" hidden>
+      <details class="admin-panel admin-tool-options">
+        <summary>外发额度</summary>
+        <form id="admin-outbound-limit-form" class="admin-tool-form" method="post">
+          <label>范围<select name="scope"><option value="account">邮箱账号</option><option value="domain">邮件域名</option></select></label>
+          <label>目标<input name="target" placeholder="输入主邮箱地址或域名" maxlength="254" required></label>
+          <label>每日外部收件人数<input name="limit" type="number" min="0" max="1000000" step="1" required></label>
+          <label>管理员密码<input name="password" type="password" autocomplete="current-password" maxlength="72" required></label>
+          <button class="primary" type="submit">保存额度</button>
+        </form>
+        <p class="admin-note">每天 UTC 00:00 重置，填 0 可移除限制。账号和所在域的规则同时生效。</p>
+        <p id="admin-limit-status" role="status"></p>
+        <div class="admin-table"><table>
+          <thead><tr><th scope="col">范围</th><th scope="col">目标</th><th scope="col">今日已用</th><th scope="col">每日额度</th></tr></thead>
+          <tbody id="admin-limit-items"></tbody>
+        </table></div>
+      </details>
+      <form id="admin-delivery-log-form" class="admin-tool-form">
+        <label>发件邮箱<input name="owner" type="email" maxlength="254"></label>
+        <label>收件人<input name="recipient" type="email" maxlength="254"></label>
+        <label>事件<select name="state" id="admin-delivery-log-state"><option value="">全部事件</option></select></label>
+        <button class="secondary" type="submit">筛选</button>
+      </form>
+      <p id="admin-delivery-log-status" role="status"></p>
+      <div class="admin-table"><table>
+        <thead><tr><th scope="col">时间</th><th scope="col">投递编号</th><th scope="col">发件邮箱</th><th scope="col">收件人</th><th scope="col">事件</th><th scope="col">SMTP</th></tr></thead>
+        <tbody id="admin-delivery-log-items"></tbody>
+      </table></div>
+      <button class="secondary" id="admin-delivery-log-more" type="button" hidden>下一页</button>
+    </section>
+    <section id="admin-dmarc-tools" class="admin-panel" hidden>
+      <div class="admin-tool-bar">
+        <form id="admin-dmarc-filter" class="admin-tool-form">
+          <label>邮件域名<input name="domain" maxlength="253"></label>
+          <button class="secondary" type="submit">筛选</button>
+        </form>
+        <form id="admin-dmarc-upload" class="admin-tool-form" method="post">
+          <label>报告附件<input name="report" type="file" accept=".xml,.gz,.gzip,.zip" required></label>
+          <button class="primary" type="submit">导入</button>
+        </form>
+      </div>
+      <p id="admin-dmarc-status" role="status"></p>
+      <div class="admin-table"><table>
+        <thead><tr><th scope="col">域名</th><th scope="col">报告组织</th><th scope="col">周期（UTC）</th><th scope="col">邮件数</th><th scope="col">DMARC 通过</th><th scope="col">来源</th></tr></thead>
+        <tbody id="admin-dmarc-items"></tbody>
+      </table></div>
+      <div id="admin-dmarc-sources" hidden>
+        <h2 id="admin-dmarc-sources-title">发信来源</h2>
+        <div class="admin-table"><table>
+          <thead><tr><th scope="col">发信 IP</th><th scope="col">邮件数</th><th scope="col">DKIM 对齐</th><th scope="col">SPF 对齐</th><th scope="col">处置</th></tr></thead>
+          <tbody id="admin-dmarc-source-items"></tbody>
+        </table></div>
+      </div>
+    </section>
     <section id="admin-quarantine-view" class="admin-panel" hidden>
       <div class="admin-table"><table><thead><tr><th>时间</th><th>发件地址</th><th>原收件地址</th><th>大小</th><th>操作</th></tr></thead><tbody id="admin-quarantine-items"></tbody></table></div>
       <button type="button" class="secondary" id="admin-quarantine-more" hidden>下一页</button>
@@ -63,6 +130,7 @@
       </form></dialog>
     </section>
     <div id="admin-overview" hidden>
+      <dl class="admin-kpis" id="admin-kpis" aria-label="关键指标"></dl>
       <button type="button" class="secondary admin-onboarding-show" id="admin-onboarding-show" aria-controls="admin-onboarding" hidden>显示设置指南</button>
       <section class="admin-panel admin-onboarding" id="admin-onboarding" aria-labelledby="admin-onboarding-title">
         <div class="admin-heading"><h2 id="admin-onboarding-title">首次设置</h2><button type="button" class="secondary" id="admin-onboarding-hide" aria-controls="admin-onboarding">隐藏</button></div>
@@ -77,7 +145,6 @@
           <dt>域名服务商</dt><dd>发布 A、MX、SPF、DKIM 和 DMARC。</dd>
         </dl>
       </section>
-      <dl class="admin-kpis" id="admin-kpis" aria-label="关键指标"></dl>
       <div class="admin-overview-grid">
         <section class="admin-panel" aria-labelledby="admin-trend-title">
           <div class="admin-heading">
@@ -152,31 +219,34 @@
       </div>
     </div>
     <div id="admin-account-view" hidden>
-      <section class="admin-panel" aria-labelledby="admin-accounts-title">
-        <div class="admin-heading">
-          <div>
-            <h2 id="admin-accounts-title">邮箱账号</h2>
-          </div>
-          <div class="admin-filters">
-            <select id="admin-account-domain" aria-label="按域名筛选账号"></select>
-            <select id="admin-account-role" aria-label="按角色筛选账号">
-              <option value="">全部角色</option><option value="admin">管理员</option><option value="user">普通用户</option>
-            </select>
-            <select id="admin-account-status" aria-label="按状态筛选账号">
-              <option value="">全部状态</option><option value="active">启用</option><option value="suspended">已停用</option><option value="retired">已回收</option>
-            </select>
+      <section class="admin-account-directory" aria-labelledby="admin-title">
+        <div class="admin-filters admin-account-toolbar">
+          <div class="admin-account-search">
+            <svg class="glyph" aria-hidden="true"><use href="/icons.svg#search-line"></use></svg>
             <input id="admin-find" type="search" aria-label="搜索邮箱或别名" placeholder="搜索邮箱或别名" autocomplete="off">
-            <button type="button" class="primary" id="admin-account-add">新建账号</button>
           </div>
-        </div>
-        <div class="admin-table">
-          <table>
-            <thead><tr><th scope="col">主邮箱</th><th scope="col">角色</th><th scope="col">状态</th><th scope="col">来源</th><th scope="col">别名</th><th scope="col">操作</th></tr></thead>
-            <tbody id="admin-accounts"></tbody>
-          </table>
-          <p id="admin-empty" hidden>没有匹配的邮箱账号。</p>
+          <select id="admin-account-domain" aria-label="按域名筛选账号"></select>
+          <select id="admin-account-role" aria-label="按角色筛选账号">
+            <option value="">全部角色</option><option value="admin">全站管理员</option><option value="domain_admin">域管理员</option><option value="user">普通用户</option>
+          </select>
+          <select id="admin-account-status" aria-label="按状态筛选账号">
+            <option value="">全部状态</option><option value="active">启用</option><option value="suspended">已停用</option><option value="retired">已回收</option>
+          </select>
+          <button type="button" class="primary" id="admin-account-add">
+            <svg class="glyph" aria-hidden="true"><use href="/icons.svg#add-line"></use></svg> 新建账号
+          </button>
         </div>
         <p id="admin-account-created" role="status"></p>
+        <div class="admin-account-list">
+          <div class="admin-table">
+            <table>
+              <thead><tr><th scope="col">主邮箱</th><th scope="col">角色</th><th scope="col">状态</th></tr></thead>
+              <tbody id="admin-accounts"></tbody>
+            </table>
+          </div>
+          <p id="admin-empty" hidden>没有匹配的邮箱账号。</p>
+          <p class="admin-account-count" id="admin-account-count" role="status"></p>
+        </div>
       </section>
     </div>
     <div id="admin-domains" hidden>
@@ -346,6 +416,31 @@
       </section>
     </div>
   </main>
+  <dialog class="app-drawer" id="admin-menu-drawer" aria-labelledby="admin-menu-title">
+    <header class="app-drawer-heading">
+      <h2 id="admin-menu-title">管理菜单</h2>
+      <button class="icon" id="admin-menu-close" type="button" aria-label="关闭管理菜单" autofocus>
+        <svg class="glyph" aria-hidden="true"><use href="/icons.svg#close-line"></use></svg>
+      </button>
+    </header>
+  </dialog>
+  <dialog class="admin-account-sheet" id="admin-account-sheet" aria-labelledby="admin-account-sheet-title">
+    <header class="admin-account-sheet-heading">
+      <h2 id="admin-account-sheet-title">账号详情</h2>
+      <button class="icon" id="admin-account-sheet-close" type="button" aria-label="关闭账号详情" autofocus>
+        <svg class="glyph" aria-hidden="true"><use href="/icons.svg#close-line"></use></svg>
+      </button>
+    </header>
+    <div class="admin-account-sheet-body">
+      <p id="admin-account-sheet-email" class="admin-account-sheet-email"></p>
+      <dl id="admin-account-sheet-details"></dl>
+      <div class="admin-account-sheet-actions" id="admin-account-sheet-actions">
+        <button class="secondary" type="button" id="admin-account-sheet-access">权限与访问</button>
+        <a class="secondary" id="admin-account-sheet-storage">查看用量</a>
+        <button class="secondary" type="button" id="admin-account-sheet-lifecycle">邮箱管理</button>
+      </div>
+    </div>
+  </dialog>
   <dialog id="admin-mailbox-lifecycle" aria-labelledby="admin-mailbox-lifecycle-title">
     <form class="editor" id="admin-mailbox-lifecycle-form" method="post">
       <header class="heading">
@@ -402,7 +497,10 @@
       <p class="admin-note" id="admin-domain-impact"></p>
       <label>你的管理员主邮箱密码<input name="password" type="password" maxlength="72" autocomplete="current-password" required></label>
       <p id="admin-domain-error" role="status"></p>
-      <footer><button class="primary" id="admin-domain-save" type="submit">新增域名</button></footer>
+      <footer>
+        <button class="secondary" id="admin-domain-cancel" type="button" hidden>取消</button>
+        <button class="primary" id="admin-domain-save" type="submit">新增域名</button>
+      </footer>
     </form>
   </dialog>
   <dialog id="admin-dkim-dialog" aria-labelledby="admin-dkim-title">
@@ -488,10 +586,24 @@
       <footer><button class="primary" id="admin-alias-save" type="submit">保存别名</button></footer>
     </form>
   </dialog>
+  <dialog id="admin-password-dialog" aria-labelledby="admin-password-title">
+    <form class="editor" id="admin-password-form" method="post">
+      <header class="heading">
+        <h2 id="admin-password-title">修改密码</h2>
+        <button class="icon" id="admin-password-close" type="button" aria-label="关闭"><svg class="glyph" aria-hidden="true"><use href="/icons.svg#close-line"></use></svg></button>
+      </header>
+      <label>当前密码<input name="password" type="password" autocomplete="current-password" maxlength="72" required autofocus></label>
+      <label>新密码<input name="newPassword" type="password" autocomplete="new-password" maxlength="72" aria-describedby="admin-password-requirements" required></label>
+      <label>确认新密码<input name="confirmPassword" type="password" autocomplete="new-password" maxlength="72" required></label>
+      <p class="admin-note" id="admin-password-requirements">新密码须为 12 至 72 字节。修改后需重新登录，已生成的应用密码会撤销。</p>
+      <p class="error" id="admin-password-error" role="alert"></p>
+      <footer><button class="primary" type="submit">保存新密码</button></footer>
+    </form>
+  </dialog>
   <dialog id="admin-access-dialog" aria-labelledby="admin-access-title">
     <form class="editor" id="admin-access-form" method="post">
       <header class="heading">
-        <h2 id="admin-access-title">管理账号访问</h2>
+        <h2 id="admin-access-title">权限与访问</h2>
         <button class="icon" id="admin-access-close" type="button" aria-label="关闭"><svg class="glyph" aria-hidden="true"><use href="/icons.svg#close-line"></use></svg></button>
       </header>
       <p class="admin-access-target" id="admin-access-target"></p>

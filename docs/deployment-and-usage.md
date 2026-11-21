@@ -79,7 +79,7 @@ git clone --depth 1 https://github.com/makessr/HarborMail.git
 cd HarborMail
 ```
 
-初始化时输入 12–72 字节的邮箱密码。脚本会创建 `.env` 和凭据文件，管理员账号是 `hello@harbor.test`。Web 默认使用 8080，SMTP 收信默认使用 2525，两个端口均绑定本机回环。端口被占用时，先改 `.env` 再启动。
+初始化时输入真实域名下的管理员邮箱，再设置 12–72 字节的邮箱密码。脚本会创建 `.env` 和凭据文件，并使用 `mail.你的域名` 作为默认邮件主机名。只在体验时将管理员邮箱留空，使用 `hello@harbor.test`。Web 默认使用 8080，SMTP 收信默认使用 2525，两个端口均绑定本机回环。端口被占用时，先调整 Compose 文件或 `.env` 中的端口设置。
 
 ### 全量版
 
@@ -89,7 +89,13 @@ bash ops/init-docker.sh full &&
   docker compose up -d --no-build --wait --wait-timeout 900
 ```
 
-`COMPOSE_FILE=compose.yaml:compose.mysql.yaml:compose.registry.yaml:compose.mail-scan.yaml`。首次启动需加载 ClamAV 病毒库，可能需要数分钟。Compose 也会启动独立的 `rspamd-redis`，供扫描组件使用。默认隔离病毒邮件，扫描暂时不可用时让发件服务器重试。 [扫描、隔离和自管组件](spam-and-antivirus.md)
+全量版只用 [compose.full.yaml](../compose.full.yaml) 一份 Compose 文件。Redis 和 Rspamd 的配置直接写在文件里。初始化脚本会把 MySQL 凭据和邮箱密码哈希放在 `secrets/` 下。需要指定 Harbor Mail 镜像时可设置 `HARBOR_IMAGE`，默认使用 GHCR 的 `latest`。
+
+在 1Panel 创建 Compose 项目时使用 `compose.full.yaml` 的内容，并把已有或生成的 `secrets/` 放在 Compose 文件所在目录。Compose 插件需要 2.23.1 或更新版本。Web 反代地址默认是 `127.0.0.1:8080`。公网收信和本机外发请按[接入真实域名](#接入真实域名)配置。 [Docker 内联配置要求](https://docs.docker.com/reference/compose-file/configs/)
+
+首次启动需加载 ClamAV 病毒库，可能需要数分钟。Compose 同时启动独立的 `rspamd-redis` 供扫描组件使用。默认隔离病毒邮件，扫描暂时不可用时让发件服务器重试。 [扫描、隔离和自管组件](spam-and-antivirus.md)
+
+已有全量部署可沿用原项目名、凭据和数据卷，将 `.env` 中基础的四个 Compose 文件改为 `compose.full.yaml`，并保留实际使用的证书或服务器覆盖文件。先运行 `docker compose config --quiet`，核对端口与挂载后再升级。
 
 ### 标准版（默认）
 
@@ -99,7 +105,7 @@ bash ops/init-docker.sh standard &&
   docker compose up -d --no-build --wait
 ```
 
-`COMPOSE_FILE=compose.yaml:compose.mysql.yaml:compose.registry.yaml`。MySQL 保存邮件数据，Redis 用于后台缓存。
+标准版使用 [compose.standard.yaml](../compose.standard.yaml)。MySQL 保存邮件数据，Redis 用于后台缓存。
 
 ### 极简版
 
@@ -109,23 +115,23 @@ bash ops/init-docker.sh minimal &&
   docker compose up -d --no-build --wait
 ```
 
-`COMPOSE_FILE=compose.yaml:compose.registry.yaml`。只有 `harbor` 容器，SQLite 保存在 `harbor_data` 数据卷。
+极简版使用 [compose.minimal.yaml](../compose.minimal.yaml)。只有 `harbor` 容器，SQLite 保存在 `harbor_data` 数据卷。
 
 ### 启动后验收
 
 1. 执行 `docker compose ps`。极简版应看到 `harbor`，标准版应另外看到 `mysql` 和 `redis`，全量版还应看到 `rspamd`、`clamav` 和 `rspamd-redis`。各服务应显示 `healthy`。
-2. 打开 [网页邮箱](http://127.0.0.1:8080/) 或 [管理后台](http://127.0.0.1:8080/admin)，用 `hello@harbor.test` 和刚输入的密码登录。给自己发一封邮件，在收件箱确认收到。
+2. 打开 [网页邮箱](http://127.0.0.1:8080/) 或 [管理后台](http://127.0.0.1:8080/admin)，用初始化时选择的管理员邮箱和密码登录。给自己发一封邮件，在收件箱确认收到。
 3. 远程部署时，在**自己电脑的终端**执行 `ssh -N -L 8080:127.0.0.1:8080 用户名@服务器地址`，保持该终端开启，再打开上面的链接。若改了服务器 Web 端口，SSH 命令中第二个 `8080` 也要改。
 
 开通公网访问见 [Cloudflare 自动证书](#cloudflare-dns-01)和 [公网邮件收发](#接入真实域名)。更换 MySQL 地址或账号前，先运行 [MySQL 预检](../ops/README.md#mysql-预检)。
 
 ### 已有安装添加邮件扫描
 
-已有标准版时，保留凭据，在 `.env` 的 `COMPOSE_FILE` 末尾追加 `:compose.mail-scan.yaml`。执行 `docker compose up -d --no-build --wait --wait-timeout 900` 即可启用。已有 SQLite 邮件数据需要切换到 MySQL 时，先按[迁移文档](#从-sqlite-迁移到-mysql)操作。
+已有标准版时，保留项目名和凭据，将 `.env` 中的 `compose.standard.yaml` 换成 `compose.full.yaml`。继续使用旧分层方案的安装也可以追加 `:compose.mail-scan.yaml`。执行 `docker compose up -d --no-build --wait --wait-timeout 900` 即可启用。已有 SQLite 邮件数据需要切换到 MySQL 时，先按[迁移文档](#从-sqlite-迁移到-mysql)操作。
 
 ### 配置宿主机端口
 
-端口被占用时，修改 `.env` 中已有的端口值，再运行 `docker compose up -d --no-build --wait`。浏览器和客户端也改用新端口。部署失败可先看 `docker compose logs --tail=80`。
+端口被占用时，可在 `.env` 设置对应变量，也可以直接修改 `compose.full.yaml` 中的默认值。然后运行 `docker compose up -d --no-build --wait`。浏览器和客户端也改用新端口。部署失败可先看 `docker compose logs --tail=80`。
 
 | 用途 | `.env` 变量 | 默认宿主机端口 |
 | --- | --- | --- |
@@ -163,7 +169,7 @@ MySQL 的 `3306`、两个 Redis 的 `6379` 和扫描组件端口均留在 Compos
 
 收到 `SIGTERM` 或 `Ctrl+C` 后，Harbor 停止监听和领取新任务，最多等待两分钟，让当前 Web 请求、SMTP 会话和已领取的外发任务收尾。已连接的 SMTP 客户端仍可完成当前事务，新事务会收到 `421`。IMAP、POP3 和网页 SSE 连接会断开，客户端可在服务回来后重连。Compose 为 Harbor 容器保留 125 秒的停止时间。
 
-需要从源码构建时，省略 `compose.registry.yaml`，启动时使用 `--build`。构建主机可通过 `HARBOR_GO_PROXY` 和 `HARBOR_GO_SUMDB` 设置 Go 模块代理与校验服务。
+需要从源码构建时，使用原来的分层 Compose 文件组合，省略 `compose.registry.yaml`，启动时使用 `--build`。构建主机可通过 `HARBOR_GO_PROXY` 和 `HARBOR_GO_SUMDB` 设置 Go 模块代理与校验服务。
 
 - **TLS** 证书放在 `tls/fullchain.pem` 和 `tls/privkey.pem`，可用 `HARBOR_TLS_DIR` 指定其他目录。证书须覆盖客户端使用的邮件主机名，挂载目录和证书文件须能被容器 UID `10001` 读取。私钥应通过受限的属主或组权限提供。 [轮换 PEM 证书](#轮换-pem-证书)
 - **中继认证** 在 `.env` 中填写 `HARBOR_RELAY` 和 `HARBOR_RELAY_USER`，把密码存入 `secrets/relay-password` 并加载对应 Compose 文件。默认使用 STARTTLS；465 模式通常设置 `HARBOR_RELAY_TLS=implicit`。
@@ -217,7 +223,7 @@ MySQL 的 `3306`、两个 Redis 的 `6379` 和扫描组件端口均留在 Compos
 | `HARBOR_RSPAMD_TRAIN_URL` | 可选，可信私有 Rspamd 控制器的 HTTP(S) 基础地址，例如 `http://127.0.0.1:11334`。留空关闭训练 |
 | `HARBOR_RSPAMD_TRAIN_ACCOUNTS` | 开启训练时必填。用逗号分隔获准提交反馈的主账号地址 |
 | `HARBOR_RSPAMD_TRAIN_PASSWORD` / `HARBOR_RSPAMD_TRAIN_PASSWORD_FILE` | 训练所用控制器权限密码，二选一。文件仅存放实际密码 |
-| `HARBOR_DIRECT_MX` | 启用原生直投，默认 `false` |
+| `HARBOR_DIRECT_MX` | 启用原生直投，默认 `true`。仅站内投递可显式设置为 `false` 并清空中继配置 |
 | `HARBOR_DIRECT_MX_HELO` | 直投的 SMTP 主机名，默认使用 `HARBOR_DOMAIN` |
 | `HARBOR_DIRECT_MX_TLS` | 默认 `required`。设为 `opportunistic` 可连接未提供 STARTTLS 的服务器 |
 | `HARBOR_RELAY` | 可选的外部发信中继地址，如 `smtp.provider.example:587` |
@@ -268,7 +274,7 @@ docker run --rm -it --log-driver=none ghcr.io/makessr/harbormail:latest generate
 
 升级共享 MySQL 的部署时，将所有实例更新至支持共享限速的版本。程序启动时会自动创建限速表。
 
-「域名」位于 `/admin/domains`，显示后台登记的域名，以及由已有主邮箱和别名汇总出的域名。管理员登记域名后，后台会立即打开「DNS 记录」，给出可复制的名称和值。域名列表也可重新打开清单。添加记录后，再运行「检查 DNS」、查看关联账号或创建邮箱。新增和移除须重新验证管理员主邮箱密码，域名登记与审计随 SQLite 或 MySQL 保存。后台只允许移除没有主邮箱和别名的登记。新增域名后，公网收发仍需按[接入真实域名](#接入真实域名)完成 DNS 和中继配置。
+「域名」位于 `/admin/domains`，显示后台登记的域名，以及由已有主邮箱和别名汇总出的域名。管理员登记域名后，后台会立即打开「DNS 记录」，给出可复制的名称和值。域名列表也可重新打开清单。添加记录后，再运行「检查 DNS」、查看关联账号或创建邮箱。新增和移除须重新验证管理员主邮箱密码，域名登记与审计随 SQLite 或 MySQL 保存。没有主邮箱和别名的登记可在列表点击「删除域名」。由主邮箱或别名汇总出的域名，在最后一个关联地址移除后自动消失。部署配置中定义的账号需先迁移或调整部署配置。公网收发还需按[接入真实域名](#接入真实域名)完成 DNS 配置。
 
 可用 `HARBOR_DOMAIN_ADMINS` 或 `HARBOR_DOMAIN_ADMINS_FILE` 分配域管理员，例如 `{"operator@example.com":["team.example.com"]}`。账号须来自启动配置。域管理员可以在授权域创建普通邮箱、管理同时位于授权范围的别名和目标邮箱、检查 DNS。全站安全、投递队列、审计与管理员账号操作仍由全站管理员负责。可为域管理员同样配置 TOTP。
 
@@ -312,9 +318,11 @@ docker run --rm -it --log-driver=none ghcr.io/makessr/harbormail:latest generate
 
 停用状态保存在 SQLite 或 MySQL，共享 MySQL 的实例应同步升级。后台不能停用当前具备管理员角色的账号，提升已停用的账号为管理员前应先恢复其登录。
 
-管理员可通过「管理访问」为普通账号重置主邮箱密码，需重新验证管理员自己的密码。新密码对 Web、SMTP 提交、IMAP 和 POP3 的后续认证生效。旧网页会话和应用密码会与重置一起撤销；已建立的邮件客户端连接可持续到断开。操作记入审计，数据库只保存新密码的 bcrypt 哈希。管理员密码通过服务器配置维护。
+管理员可通过「管理访问」为普通账号重置主邮箱密码，需重新验证管理员自己的密码。新密码对 Web、SMTP 提交、IMAP 和 POP3 的后续认证生效。旧网页会话和应用密码会与重置一起撤销；已建立的邮件客户端连接可持续到断开。操作记入审计，数据库只保存新密码的 bcrypt 哈希。管理员可从后台页首选择「修改密码」，验证当前主邮箱密码后设置新密码并重新登录。其他管理员无权替你修改。
 
-后台重置绑定到当时的服务器账号哈希。以新的 `HARBOR_ACCOUNTS` 哈希替换账号配置时，以新配置为准。恢复旧配置和数据库备份前须核对密码变更及撤销状态。
+在「账号 → 权限与访问」中，部署配置指定的全站管理员可选择「设为全站管理员」或「撤销全站管理员权限」。调整时验证操作者的当前密码，并撤销目标的网页登录会话，目标重新登录后获得对应角色。部署配置中的管理员可在页面修改密码，其角色由 `HARBOR_ADMINS` 维护。后台授权记入审计和数据库备份。需要为新管理员启用 TOTP 时，可预先配置该主邮箱的 MFA。
+
+后台修改和重置绑定到当时的服务器账号哈希。以新的 `HARBOR_ACCOUNTS` 哈希替换账号配置时，以新配置为准。恢复旧配置和数据库备份前须核对密码变更及撤销状态。
 
 「别名」位于 `/admin/aliases`。管理员可选择目标主邮箱，重新输入自己的主邮箱密码后添加或移除后台别名。变更保存在 SQLite 或 MySQL，并在后续投递时生效。账号页、域名页和个人邮箱「收信地址」都会读取生效的别名。新域需要配置其 MX。登录使用主邮箱。别名默认用于收信。在对应行选择「授权发信」或「撤销发信」，重新验证管理员密码即可同时修改网页和 SMTP Submission 的权限。
 
@@ -405,20 +413,25 @@ DNS 后台若要求相对名称，在 `example.com` 区域中分别填 `mail`、
 
 ### 原生 MX 直投
 
-服务器能访问公网 TCP 25 时，在 Docker 的 `.env` 或单二进制环境文件中设置：
+原生 MX 直投默认开启，需要服务器能访问公网 TCP 25。按需在 Docker 的 `.env` 或单二进制环境文件中指定发信主机名：
 
 ```dotenv
-HARBOR_DIRECT_MX=true
 HARBOR_DIRECT_MX_HELO=mail.example.com
 ```
 
 HELO 主机名的 A 或 AAAA 记录应匹配实际发信公网 IP，公网 IP 的 PTR 应指回同一主机名。发布 SPF，启用内置 DKIM，并核对 DMARC。Docker 应用配置后运行 `docker compose up -d --no-deps --no-build --wait harbor`。systemd 部署重启 Harbor Mail 服务即可。
 
-站内邮件继续直接入箱。外部邮件按发件域依次选择按域中继、全局中继和原生直投。要让所有外部邮件都由本机直投，可清空中继配置并启用直投。关闭直投且没有中继时，应用只接受站内投递。
+站内邮件继续直接入箱。外部邮件按发件域依次选择按域中继、全局中继和原生直投。要让所有外部邮件都由本机直投，清空中继配置并确保直投已开启。关闭直投且没有中继时，应用只接受站内投递。
 
 直投按收件域的 MX 优先级连接 TCP 25。未发布 MX 时查询该域的 A 或 AAAA。默认需要证书校验通过的 STARTTLS。设置 `HARBOR_DIRECT_MX_TLS=opportunistic` 后允许向未提供 STARTTLS 的主机明文发送。已提供 STARTTLS 的主机仍须通过 TLS 校验。明确拒收会记录 SMTP 状态。发送完邮件后连接中断且未收到最终响应时，发件箱显示「结果待确认」。
 
 运行 `docker compose exec -T harbor harbormail mx-check gmail.com` 可以验证 MX 解析和 SMTP 握手。检查不会投递邮件。再向自己的外部邮箱发一封测试邮件，查看收件方的 SPF、DKIM 和 DMARC 结果。
+
+### 投递日志、外发额度与 DMARC 报告
+
+- 「投递队列 → 投递日志与额度」按发件邮箱、收件人或结果筛选最近 90 天的出站投递事件。事件包含时间、投递编号和 SMTP 状态码。
+- 外发额度可以按主邮箱或其所属域设置。Web、草稿定时发送和 SMTP 提交都在成功入队时按外部收件人数计数，UTC 00:00 重置。站内收件人和自动重试不占额度。取消定时发送后已消耗的额度保留。填写 0 可移除规则。
+- 「域名 → DMARC 报告」可导入从报告邮箱收到的 XML、GZIP 或单 XML 的 ZIP，按域名查看最近 100 份报告及其来源 IP、通过数和处置。报告由管理员上传，同一域名、报告方和报告编号只保存一次。
 
 ## 轮换 PEM 证书
 
@@ -440,10 +453,10 @@ chgrp 10001 secrets/acme-cloudflare-token
 chmod 0640 secrets/acme-cloudflare-token
 ```
 
-3. 在 `.env` 现有 `COMPOSE_FILE` 末尾追加 `:compose.acme-cloudflare.yaml`。下面以标准版为例。将示例主机名改为自己的域名，阅读并同意 CA 条款后设置 `HARBOR_ACME_ACCEPT_TOS=true`。
+3. 在 `.env` 现有 `COMPOSE_FILE` 末尾追加 `:compose.acme-cloudflare.yaml`。下面以单文件标准版为例。将示例主机名改为自己的域名，阅读并同意 CA 条款后设置 `HARBOR_ACME_ACCEPT_TOS=true`。
 
 ```dotenv
-COMPOSE_FILE=compose.yaml:compose.mysql.yaml:compose.registry.yaml:compose.acme-cloudflare.yaml
+COMPOSE_FILE=compose.standard.yaml:compose.acme-cloudflare.yaml
 HARBOR_ACME_HOSTS=mail.example.com
 HARBOR_ACME_ACCEPT_TOS=true
 ```

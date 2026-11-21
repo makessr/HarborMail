@@ -1,0 +1,259 @@
+# Harbor Mail 全量版。此文件可独立启动，首次部署请先生成 secrets/ 下的凭据。
+# 在 1Panel 使用已发布镜像时，可在此修改默认值，或在项目环境变量中覆盖。
+name: harbor-mail
+
+services:
+  harbor:
+    image: ${HARBOR_IMAGE:-ghcr.io/makessr/harbormail:latest}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rspamd:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 125s
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    environment:
+      HARBOR_TRANSLATOR_KEY: ${HARBOR_TRANSLATOR_KEY:-}
+      HARBOR_TRANSLATOR_REGION: ${HARBOR_TRANSLATOR_REGION:-}
+      HARBOR_DEEPL_FREE_KEY: ${HARBOR_DEEPL_FREE_KEY:-}
+      HARBOR_GOOGLE_TRANSLATE_KEY: ${HARBOR_GOOGLE_TRANSLATE_KEY:-}
+      HARBOR_LIBRETRANSLATE_URL: ${HARBOR_LIBRETRANSLATE_URL:-}
+      HARBOR_LIBRETRANSLATE_KEY: ${HARBOR_LIBRETRANSLATE_KEY:-}
+      HARBOR_DOMAIN: ${HARBOR_DOMAIN:-harbor.test}
+      HARBOR_DB_DRIVER: mysql
+      HARBOR_MYSQL_DSN_FILE: /run/secrets/mysql_dsn
+      HARBOR_REDIS_URL: redis://redis:6379/0
+      HARBOR_REDIS_NAMESPACE: ${HARBOR_REDIS_NAMESPACE:-bundled}
+      HARBOR_RECOVERY_MODE: ${HARBOR_RECOVERY_MODE:-false}
+      HARBOR_PAUSE_OUTBOX: ${HARBOR_PAUSE_OUTBOX:-false}
+      HARBOR_CONTENT_INDEX: ${HARBOR_CONTENT_INDEX:-false}
+      HARBOR_HARD_QUOTA: ${HARBOR_HARD_QUOTA:-false}
+      HARBOR_MAX_MESSAGE_MIB: ${HARBOR_MAX_MESSAGE_MIB:-10}
+      HARBOR_MAX_ATTACHMENTS_MIB: ${HARBOR_MAX_ATTACHMENTS_MIB:-6}
+      HARBOR_ACCOUNTS_FILE: /run/secrets/accounts_json
+      HARBOR_ADMINS: ${HARBOR_ADMINS:-}
+      HARBOR_DOMAIN_ADMINS: ${HARBOR_DOMAIN_ADMINS:-}
+      HARBOR_DOMAIN_DEFAULT_QUOTAS: ${HARBOR_DOMAIN_DEFAULT_QUOTAS:-}
+      HARBOR_ALIASES: ${HARBOR_ALIASES:-}
+      HARBOR_SEND_AS_ALIASES: ${HARBOR_SEND_AS_ALIASES:-}
+      HARBOR_CLIENT_HOST: ${HARBOR_CLIENT_HOST:-}
+      HARBOR_PUBLIC_HTTPS_HOST: ${HARBOR_PUBLIC_HTTPS_HOST:-}
+      HARBOR_PUBLIC_HTTPS_PORT: ${HARBOR_PUBLIC_HTTPS_PORT:-443}
+      HARBOR_SUBMISSION_PORT: ${HARBOR_SUBMISSION_PORT:-587}
+      HARBOR_SMTPS_PORT: ${HARBOR_SMTPS_PORT:-465}
+      HARBOR_IMAPS_PORT: ${HARBOR_IMAPS_PORT:-993}
+      HARBOR_POP3S_PORT: ${HARBOR_POP3S_PORT:-995}
+      HARBOR_WEB_TLS: "${HARBOR_WEB_TLS:-off}"
+      HARBOR_SECURE_COOKIE: ${HARBOR_SECURE_COOKIE:-false}
+      HARBOR_LOGIN_AUDIT_DAYS: ${HARBOR_LOGIN_AUDIT_DAYS:-30}
+      HARBOR_TRUSTED_PROXIES: ${HARBOR_TRUSTED_PROXIES:-}
+      HARBOR_DIRECT_MX: ${HARBOR_DIRECT_MX:-true}
+      HARBOR_DIRECT_MX_HELO: ${HARBOR_DIRECT_MX_HELO:-}
+      HARBOR_DIRECT_MX_TLS: ${HARBOR_DIRECT_MX_TLS:-required}
+      HARBOR_RELAY: ${HARBOR_RELAY:-}
+      HARBOR_RELAY_TLS: ${HARBOR_RELAY_TLS:-}
+      HARBOR_RELAY_USER: ${HARBOR_RELAY_USER:-}
+      HARBOR_RSPAMD_URL: http://rspamd:11333/checkv2
+      HARBOR_RSPAMD_TIMEOUT_SECONDS: ${HARBOR_RSPAMD_TIMEOUT_SECONDS:-15}
+      HARBOR_SCAN_FAILURE: ${HARBOR_SCAN_FAILURE:-defer}
+      HARBOR_SPAM_ACTION: ${HARBOR_SPAM_ACTION:-junk}
+      HARBOR_VIRUS_ACTION: ${HARBOR_VIRUS_ACTION:-quarantine}
+    ports:
+      # Web 邮箱和管理后台
+      - target: 8080
+        published: "${HARBOR_WEB_PORT:-8080}"
+        host_ip: "${HARBOR_WEB_BIND:-127.0.0.1}"
+      # SMTP 服务器收信。直接接收公网邮件时，发布 TCP 25 或由公网 TCP 25 转发。
+      - target: 2525
+        published: "${HARBOR_SMTP_PORT:-2525}"
+        host_ip: "${HARBOR_SMTP_BIND:-127.0.0.1}"
+      # 客户端 SMTP 465/587、IMAPS 993、POP3S 995 由 compose.tls.yaml
+      # 或 compose.acme.yaml 发布。按证书来源选择其一。
+    volumes:
+      - harbor_data:/var/lib/harbormail
+    networks:
+      - default
+      - admin_cache
+      - mail_scan
+    secrets:
+      - accounts_json
+      - mysql_dsn
+
+  mysql:
+    image: mysql:8.4
+    command: ["--max-allowed-packet=64M"]
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: harbor_mail
+      MYSQL_USER: harbor
+      MYSQL_PASSWORD_FILE: /run/secrets/mysql_password
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mysql_root_password
+    volumes:
+      - mysql_data:/var/lib/mysql
+    secrets:
+      - mysql_password
+      - mysql_root_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
+      interval: 5s
+      timeout: 4s
+      retries: 18
+      start_period: 30s
+
+  redis:
+    image: redis:8.10.3-alpine
+    restart: unless-stopped
+    user: redis
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    tmpfs:
+      - /data
+    # Redis 保持只读。通过启动参数配置内部监听、缓存限额和命令权限。
+    command:
+      - redis-server
+      - --bind
+      - 0.0.0.0
+      - --protected-mode
+      - "no"
+      - --port
+      - "6379"
+      - --daemonize
+      - "no"
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      - --maxmemory
+      - 64mb
+      - --maxmemory-policy
+      - allkeys-lru
+      - --user
+      - default
+      - reset
+      - "on"
+      - nopass
+      - "~harbor-mail:*"
+      - "-@all"
+      - "+hello"
+      - "+ping"
+      - "+get"
+      - "+set"
+      - "+client|setinfo"
+    networks:
+      - admin_cache
+    healthcheck:
+      test: ["CMD", "redis-cli", "-e", "--raw", "PING"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  rspamd:
+    image: rspamd/rspamd:4
+    restart: unless-stopped
+    depends_on:
+      clamav:
+        condition: service_healthy
+      rspamd-redis:
+        condition: service_healthy
+    configs:
+      - source: rspamd_antivirus
+        target: /etc/rspamd/local.d/antivirus.conf
+      - source: rspamd_redis
+        target: /etc/rspamd/local.d/redis.conf
+      - source: rspamd_options
+        target: /etc/rspamd/local.d/options.inc
+      - source: rspamd_controller
+        target: /etc/rspamd/local.d/worker-controller.inc
+    volumes:
+      - rspamd_data:/var/lib/rspamd
+    networks:
+      - mail_scan
+      - scanner_backend
+      - scanner_updates
+
+  clamav:
+    image: clamav/clamav:1.4
+    restart: unless-stopped
+    volumes:
+      - clamav_signatures:/var/lib/clamav
+    networks:
+      - scanner_backend
+      - scanner_updates
+    healthcheck:
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10m
+
+  rspamd-redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - rspamd_redis:/data
+    networks:
+      - scanner_backend
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  harbor_data:
+  mysql_data:
+  rspamd_data:
+  rspamd_redis:
+  clamav_signatures:
+
+networks:
+  admin_cache:
+    internal: true
+  mail_scan:
+    internal: true
+  scanner_backend:
+    internal: true
+  scanner_updates:
+
+configs:
+  rspamd_antivirus:
+    content: |
+      clamav {
+        type = "clamav";
+        servers = "clamav:3310";
+        symbol = "CLAM_VIRUS";
+        action = "reject";
+        scan_mime_parts = false;
+        no_cache = true;
+        timeout = 8;
+        retransmits = 0;
+      }
+  rspamd_redis:
+    content: |
+      servers = "rspamd-redis";
+  rspamd_options:
+    content: |
+      task_timeout = 12s;
+  rspamd_controller:
+    content: |
+      bind_socket = "127.0.0.1:11334";
+
+secrets:
+  accounts_json:
+    file: "${HARBOR_SECRETS_DIR:-./secrets}/accounts.json"
+  mysql_dsn:
+    file: "${HARBOR_SECRETS_DIR:-./secrets}/mysql-dsn"
+  mysql_password:
+    file: "${HARBOR_SECRETS_DIR:-./secrets}/mysql-password"
+  mysql_root_password:
+    file: "${HARBOR_SECRETS_DIR:-./secrets}/mysql-root-password"

@@ -105,7 +105,7 @@ func (a *app) adminCreateAccount(w http.ResponseWriter, r *http.Request, actor s
 		fail(w, 400, "初始密码须为 12 至 72 字节，且不能含换行或空字符")
 		return
 	}
-	if !a.canManageDomain(actor, emailDomain(email)) {
+	if !a.canManageDomain(r.Context(), actor, emailDomain(email)) {
 		fail(w, http.StatusForbidden, "当前账号无权在该域名创建邮箱")
 		return
 	}

@@ -178,7 +178,7 @@ func (a *app) domainHasAddresses(ctx context.Context, tx folderQueryer, domain s
 }
 
 func (a *app) checkAdminDNSDomain(w http.ResponseWriter, ctx context.Context, actor, domain string) bool {
-	if !a.canManageDomain(actor, domain) {
+	if !a.canManageDomain(ctx, actor, domain) {
 		fail(w, http.StatusForbidden, "当前账号无权管理此域名")
 		return false
 	}
@@ -194,7 +194,7 @@ func (a *app) checkAdminDNSDomain(w http.ResponseWriter, ctx context.Context, ac
 	if letterError(w, err) {
 		return false
 	}
-	if !slices.ContainsFunc(a.scopedDomains(actor, domains), func(item adminDomain) bool { return item.Name == domain }) {
+	if !slices.ContainsFunc(domains, func(item adminDomain) bool { return item.Name == domain }) {
 		fail(w, http.StatusNotFound, "未配置这个邮件域名")
 		return false
 	}
@@ -233,9 +233,15 @@ func (a *app) adminDomainDNS(w http.ResponseWriter, r *http.Request, actor strin
 		return
 	}
 
-	if r.URL.Query().Get("readiness") == "1" && a.admins[actor] {
-		reply(w, http.StatusOK, a.checkDomainReadiness(ctx, domain, selector))
-		return
+	if r.URL.Query().Get("readiness") == "1" {
+		administrator, err := a.isGlobalAdmin(ctx, a.db, actor)
+		if letterError(w, err) {
+			return
+		}
+		if administrator {
+			reply(w, http.StatusOK, a.checkDomainReadiness(ctx, domain, selector))
+			return
+		}
 	}
 	reply(w, http.StatusOK, lookupDomainDNS(ctx, net.DefaultResolver, domain, selector))
 }

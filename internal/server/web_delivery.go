@@ -77,6 +77,13 @@ func (a *app) submitWebMail(w http.ResponseWriter, ctx context.Context, tx *sql.
 			return
 		}
 	}
+	external := len(envelope.externalAddresses())
+	if err := consumeOutboundLimit(ctx, tx, m.From, external, time.Now()); errors.Is(err, errOutboundLimit) {
+		fail(w, http.StatusTooManyRequests, "今日外发收件人额度已用完（按 UTC 午夜重置）")
+		return
+	} else if letterError(w, err) {
+		return
+	}
 	if plan.deferred() {
 		scheduled, err := scheduleDelivery(ctx, tx, m, raw, "", &envelope, plan)
 		if !letterError(w, err) && !letterError(w, a.commitOutbox(tx, m.From)) {
@@ -84,7 +91,7 @@ func (a *app) submitWebMail(w http.ResponseWriter, ctx context.Context, tx *sql.
 		}
 		return
 	}
-	if len(envelope.externalAddresses()) != 0 {
+	if external != 0 {
 		id, err := enqueueLetter(tx, m, raw)
 		if letterError(w, err) || letterError(w, saveWebEnvelope(ctx, tx, id, envelope)) ||
 			letterError(w, a.commitOutbox(tx, m.From)) {

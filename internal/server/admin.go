@@ -29,9 +29,13 @@ func parseAdmins(setting string, accounts map[string][]byte) (map[string]bool, e
 	return admins, nil
 }
 
-func (a *app) replySession(w http.ResponseWriter, owner string) {
+func (a *app) replySession(w http.ResponseWriter, r *http.Request, owner string) {
+	administrator, err := a.isGlobalAdmin(r.Context(), a.db, owner)
+	if letterError(w, err) {
+		return
+	}
 	role := "user"
-	if a.admins[owner] {
+	if administrator {
 		role = "admin"
 	} else if len(a.domainAdmins[owner]) > 0 {
 		role = "domain_admin"
@@ -62,7 +66,12 @@ func (a *app) adminPage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
-	scoped := !a.admins[session.owner]
+	administrator, err := a.isGlobalAdmin(r.Context(), a.db, session.owner)
+	if err != nil {
+		http.Error(w, "无法读取管理员权限", http.StatusServiceUnavailable)
+		return
+	}
+	scoped := !administrator
 	if scoped {
 		if len(a.domainAdmins[session.owner]) == 0 {
 			http.Redirect(w, r, "/?notice=admin-forbidden", http.StatusSeeOther)
@@ -92,7 +101,11 @@ func (a *app) adminPage(w http.ResponseWriter, r *http.Request) {
 
 func (a *app) adminOnly(handler authorized) http.HandlerFunc {
 	return a.auth(func(w http.ResponseWriter, r *http.Request, owner string) {
-		if !a.admins[owner] {
+		administrator, err := a.isGlobalAdmin(r.Context(), a.db, owner)
+		if letterError(w, err) {
+			return
+		}
+		if !administrator {
 			fail(w, http.StatusForbidden, "当前账号没有管理权限")
 			return
 		}
@@ -101,15 +114,16 @@ func (a *app) adminOnly(handler authorized) http.HandlerFunc {
 }
 
 type adminAccount struct {
-	Email     string   `json:"email"`
-	Admin     bool     `json:"admin"`
-	Aliases   []string `json:"aliases"`
-	Suspended bool     `json:"suspended"`
-	Managed   bool     `json:"managed"`
-	Retired   bool     `json:"retired"`
+	Email       string   `json:"email"`
+	Admin       bool     `json:"admin"`
+	DomainAdmin bool     `json:"domainAdmin"`
+	Aliases     []string `json:"aliases"`
+	Suspended   bool     `json:"suspended"`
+	Managed     bool     `json:"managed"`
+	Retired     bool     `json:"retired"`
 }
 
-func (a *app) adminAccounts(names, suspended, retired map[string]bool, effectiveAliases map[string]string) []adminAccount {
+func (a *app) adminAccounts(names, suspended, retired, admins map[string]bool, effectiveAliases map[string]string) []adminAccount {
 	aliases := make(map[string][]string)
 	for alias, target := range effectiveAliases {
 		aliases[target] = append(aliases[target], alias)
@@ -120,7 +134,7 @@ func (a *app) adminAccounts(names, suspended, retired map[string]bool, effective
 		slices.Sort(addresses)
 		_, configured := a.accounts[email]
 		accounts = append(accounts, adminAccount{
-			Email: email, Admin: a.admins[email], Aliases: addresses, Suspended: suspended[email], Managed: !configured, Retired: retired[email],
+			Email: email, Admin: admins[email], DomainAdmin: len(a.domainAdmins[email]) > 0, Aliases: addresses, Suspended: suspended[email], Managed: !configured, Retired: retired[email],
 		})
 	}
 	slices.SortFunc(accounts, func(left, right adminAccount) int { return strings.Compare(left.Email, right.Email) })
@@ -216,8 +230,12 @@ func (a *app) adminOverview(w http.ResponseWriter, r *http.Request, owner string
 		WHERE state IN ('queued','scheduled','undo') AND due>0 AND due<=?`, now.Unix()).Scan(&oldestDue); letterError(w, err) {
 		return
 	}
+	admins, err := a.adminRoleSet(ctx)
+	if letterError(w, err) {
+		return
+	}
 	snapshot := adminOverviewSnapshot{
-		Accounts: a.adminAccounts(names, suspended, retired, aliases), Queue: queue, Domains: domains,
+		Accounts: a.adminAccounts(names, suspended, retired, admins, aliases), Queue: queue, Domains: domains,
 		Trend: trend, Recent: recent, GeneratedAt: now.Unix(), OldestDue: oldestDue,
 	}
 	if reachable {

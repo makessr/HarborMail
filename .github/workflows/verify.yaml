@@ -88,8 +88,12 @@ jobs:
           set -Eeuo pipefail
           find web -name '*.js' -print0 | xargs -0 -n 1 node --check
           bash -n ops/backup.sh
+          bash -n ops/init-docker.sh
           export HARBOR_DATA_PATH=/tmp/harbor-data HARBOR_MYSQL_DATA_PATH=/tmp/harbor-mysql
           export HARBOR_ACME_HOSTS=mail.harbor.test
+          for edition in minimal standard full; do
+            docker compose -f "compose.$edition.yaml" config --quiet
+          done
           docker compose -f compose.yaml -f compose.ops.yaml config --quiet
           docker compose -f compose.yaml -f compose.mysql.yaml -f compose.registry.yaml \
             -f compose.ops.yaml -f compose.mysql.ops.yaml config --quiet

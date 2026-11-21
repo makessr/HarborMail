@@ -67,13 +67,19 @@ type directMX struct {
 
 func (a *app) loadDirectMX() error {
 	switch os.Getenv("HARBOR_DIRECT_MX") {
-	case "", "false":
+	case "false":
 		return nil
-	case "true":
+	case "", "true":
 	default:
 		return errors.New("HARBOR_DIRECT_MX must be true or false")
 	}
-	helo := strings.TrimSuffix(strings.ToLower(env("HARBOR_DIRECT_MX_HELO", a.domain)), ".")
+	// Some existing installs use a single-label SMTP banner. Keep it valid
+	// for inbound mail and use a fully qualified placeholder for direct MX.
+	fallback := a.domain
+	if !strings.Contains(fallback, ".") || !validDNSName(fallback) || net.ParseIP(fallback) != nil {
+		fallback = "harbor.test"
+	}
+	helo := strings.TrimSuffix(strings.ToLower(env("HARBOR_DIRECT_MX_HELO", fallback)), ".")
 	if !strings.Contains(helo, ".") || !validDNSName(helo) || net.ParseIP(helo) != nil {
 		return errors.New("HARBOR_DIRECT_MX_HELO must be a fully qualified hostname")
 	}

@@ -47,7 +47,7 @@ func parseAdminAuditFilter(params url.Values) (adminAuditFilter, error) {
 		return filter, errors.New("审计筛选条件过长")
 	}
 	switch filter.Action {
-	case "", "sessions", "app_passwords", "suspend", "restore", "retry", "alias_add", "alias_remove", "alias_send_grant", "alias_send_revoke", "password_reset", "account_create",
+	case "", "sessions", "app_passwords", "suspend", "restore", "retry", "alias_add", "alias_remove", "alias_send_grant", "alias_send_revoke", "password_reset", "password_change", "admin_grant", "admin_revoke", "outbound_limit", "account_create",
 		"domain_add", "domain_remove", "dkim_generate", "dkim_enable", "dkim_disable", "storage_alert", "storage_quota", "delivery_confirmed", "delivery_rejected",
 		"mailbox_retire", "mailbox_restore", "mailbox_purge", "mailbox_rename", "recipient_confirmed", "recipient_rejected", "quarantine_release", "quarantine_discard":
 	default:

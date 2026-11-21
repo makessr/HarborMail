@@ -243,14 +243,7 @@ func Run() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	privileged := make(map[string]bool, len(a.admins)+len(a.domainAdmins))
-	for owner := range a.admins {
-		privileged[owner] = true
-	}
-	for owner := range a.domainAdmins {
-		privileged[owner] = true
-	}
-	a.adminMFA, err = parseAdminMFA(mfaJSON, privileged)
+	a.adminMFA, err = parseAdminMFA(mfaJSON)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -340,7 +333,16 @@ func Run() {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	err = a.removeStaleAdminSessions(ctx, privileged)
+	privileged, err := a.adminRoleSet(ctx)
+	if err == nil {
+		for owner := range a.domainAdmins {
+			privileged[owner] = true
+		}
+		for owner := range a.adminMFA {
+			privileged[owner] = true
+		}
+		err = a.removeStaleAdminSessions(ctx, privileged)
+	}
 	cancel()
 	if err != nil {
 		log.Fatal("invalidate outdated administrator sessions: ", err)
@@ -551,7 +553,7 @@ func (a *app) login(w http.ResponseWriter, r *http.Request) {
 	}
 	a.recordLogin(source, owner, "success", "web")
 	a.cookie(w, value, int(sessionAge.Seconds()))
-	a.replySession(w, owner)
+	a.replySession(w, r, owner)
 }
 
 var (
@@ -617,6 +619,8 @@ func (a *app) routes() http.Handler {
 	mux.HandleFunc("GET /admin/domains", a.adminPage)
 	mux.HandleFunc("GET /admin/accounts", a.adminPage)
 	mux.HandleFunc("GET /admin/queue", a.adminPage)
+	mux.HandleFunc("GET /admin/delivery", a.adminPage)
+	mux.HandleFunc("GET /admin/dmarc", a.adminPage)
 	mux.HandleFunc("GET /admin/audit", a.adminPage)
 	mux.HandleFunc("GET /admin/aliases", a.adminPage)
 	mux.HandleFunc("GET /admin/runtime", a.adminPage)
@@ -635,6 +639,8 @@ func (a *app) routes() http.Handler {
 	mux.HandleFunc("POST /api/admin/accounts/{email}/revoke", a.adminOnly(a.adminChangeAccountAccess))
 	mux.HandleFunc("POST /api/admin/accounts/{email}/access", a.adminOnly(a.adminChangeAccountAccess))
 	mux.HandleFunc("POST /api/admin/accounts/{email}/password", a.adminOnly(a.adminResetPassword))
+	mux.HandleFunc("POST /api/admin/accounts/{email}/role", a.adminOnly(a.adminChangeRole))
+	mux.HandleFunc("POST /api/admin/password", a.domainAdminOnly(a.adminChangeOwnPassword))
 	mux.HandleFunc("POST /api/admin/accounts/{email}/lifecycle", a.adminOnly(a.adminMailboxLifecycle))
 	mux.HandleFunc("GET /api/admin/domains/{domain}/dns", a.domainAdminOnly(a.adminDomainDNS))
 	mux.HandleFunc("GET /api/admin/domains/{domain}/dns-plan", a.domainAdminOnly(a.adminDomainDNSPlan))
@@ -644,6 +650,11 @@ func (a *app) routes() http.Handler {
 	mux.HandleFunc("POST /api/admin/domains/{domain}/dkim", a.adminOnly(a.adminChangeDKIM))
 	mux.HandleFunc("POST /api/admin/domains/{domain}/dkim/prepare", a.adminOnly(a.adminPrepareDKIM))
 	mux.HandleFunc("GET /api/admin/queue", a.adminOnly(a.adminQueue))
+	mux.HandleFunc("GET /api/admin/delivery-logs", a.adminOnly(a.adminDeliveryLogs))
+	mux.HandleFunc("GET /api/admin/outbound-limits", a.adminOnly(a.adminOutboundLimits))
+	mux.HandleFunc("POST /api/admin/outbound-limits", a.adminOnly(a.adminSetOutboundLimit))
+	mux.HandleFunc("GET /api/admin/dmarc-reports", a.adminOnly(a.adminDMARCReports))
+	mux.HandleFunc("POST /api/admin/dmarc-reports", a.adminOnly(a.adminImportDMARCReport))
 	mux.HandleFunc("POST /api/admin/queue/{id}/retry", a.adminOnly(a.adminRetryDelivery))
 	mux.HandleFunc("POST /api/admin/queue/{id}/resolve", a.adminOnly(a.adminResolveDelivery))
 	mux.HandleFunc("GET /api/admin/audit", a.adminOnly(a.adminAudit))
@@ -654,7 +665,7 @@ func (a *app) routes() http.Handler {
 	mux.HandleFunc("GET /api/admin/security", a.adminOnly(a.adminSecurity))
 	mux.HandleFunc("POST /api/login", a.login)
 	mux.HandleFunc("GET /api/session", a.auth(func(w http.ResponseWriter, r *http.Request, owner string) {
-		a.replySession(w, owner)
+		a.replySession(w, r, owner)
 	}))
 	mux.HandleFunc("POST /api/logout", a.auth(a.logout))
 	mux.HandleFunc("GET /api/events", a.auth(a.streamMailboxEvents))

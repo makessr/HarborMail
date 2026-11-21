@@ -1,0 +1,79 @@
+# Harbor Mail 极简版。使用 SQLite；首次部署请先生成 secrets/accounts.json。
+name: harbor-mail
+
+services:
+  harbor:
+    image: ${HARBOR_IMAGE:-ghcr.io/makessr/harbormail:latest}
+    restart: unless-stopped
+    stop_grace_period: 125s
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    environment:
+      HARBOR_TRANSLATOR_KEY: ${HARBOR_TRANSLATOR_KEY:-}
+      HARBOR_TRANSLATOR_REGION: ${HARBOR_TRANSLATOR_REGION:-}
+      HARBOR_DEEPL_FREE_KEY: ${HARBOR_DEEPL_FREE_KEY:-}
+      HARBOR_GOOGLE_TRANSLATE_KEY: ${HARBOR_GOOGLE_TRANSLATE_KEY:-}
+      HARBOR_LIBRETRANSLATE_URL: ${HARBOR_LIBRETRANSLATE_URL:-}
+      HARBOR_LIBRETRANSLATE_KEY: ${HARBOR_LIBRETRANSLATE_KEY:-}
+      HARBOR_DOMAIN: ${HARBOR_DOMAIN:-harbor.test}
+      HARBOR_DB_DRIVER: sqlite
+      HARBOR_RECOVERY_MODE: ${HARBOR_RECOVERY_MODE:-false}
+      HARBOR_PAUSE_OUTBOX: ${HARBOR_PAUSE_OUTBOX:-false}
+      HARBOR_CONTENT_INDEX: ${HARBOR_CONTENT_INDEX:-false}
+      HARBOR_HARD_QUOTA: ${HARBOR_HARD_QUOTA:-false}
+      HARBOR_MAX_MESSAGE_MIB: ${HARBOR_MAX_MESSAGE_MIB:-10}
+      HARBOR_MAX_ATTACHMENTS_MIB: ${HARBOR_MAX_ATTACHMENTS_MIB:-6}
+      HARBOR_ACCOUNTS_FILE: /run/secrets/accounts_json
+      HARBOR_ADMINS: ${HARBOR_ADMINS:-}
+      HARBOR_DOMAIN_ADMINS: ${HARBOR_DOMAIN_ADMINS:-}
+      HARBOR_DOMAIN_DEFAULT_QUOTAS: ${HARBOR_DOMAIN_DEFAULT_QUOTAS:-}
+      HARBOR_ALIASES: ${HARBOR_ALIASES:-}
+      HARBOR_SEND_AS_ALIASES: ${HARBOR_SEND_AS_ALIASES:-}
+      HARBOR_CLIENT_HOST: ${HARBOR_CLIENT_HOST:-}
+      HARBOR_PUBLIC_HTTPS_HOST: ${HARBOR_PUBLIC_HTTPS_HOST:-}
+      HARBOR_PUBLIC_HTTPS_PORT: ${HARBOR_PUBLIC_HTTPS_PORT:-443}
+      HARBOR_SUBMISSION_PORT: ${HARBOR_SUBMISSION_PORT:-587}
+      HARBOR_SMTPS_PORT: ${HARBOR_SMTPS_PORT:-465}
+      HARBOR_IMAPS_PORT: ${HARBOR_IMAPS_PORT:-993}
+      HARBOR_POP3S_PORT: ${HARBOR_POP3S_PORT:-995}
+      HARBOR_WEB_TLS: "${HARBOR_WEB_TLS:-off}"
+      HARBOR_SECURE_COOKIE: ${HARBOR_SECURE_COOKIE:-false}
+      HARBOR_LOGIN_AUDIT_DAYS: ${HARBOR_LOGIN_AUDIT_DAYS:-30}
+      HARBOR_TRUSTED_PROXIES: ${HARBOR_TRUSTED_PROXIES:-}
+      HARBOR_DIRECT_MX: ${HARBOR_DIRECT_MX:-true}
+      HARBOR_DIRECT_MX_HELO: ${HARBOR_DIRECT_MX_HELO:-}
+      HARBOR_DIRECT_MX_TLS: ${HARBOR_DIRECT_MX_TLS:-required}
+      HARBOR_RELAY: ${HARBOR_RELAY:-}
+      HARBOR_RELAY_TLS: ${HARBOR_RELAY_TLS:-}
+      HARBOR_RELAY_USER: ${HARBOR_RELAY_USER:-}
+      HARBOR_RSPAMD_URL: ${HARBOR_RSPAMD_URL:-}
+      HARBOR_RSPAMD_TIMEOUT_SECONDS: ${HARBOR_RSPAMD_TIMEOUT_SECONDS:-4}
+      HARBOR_SCAN_FAILURE: ${HARBOR_SCAN_FAILURE:-deliver}
+      HARBOR_SPAM_ACTION: ${HARBOR_SPAM_ACTION:-junk}
+      HARBOR_VIRUS_ACTION: ${HARBOR_VIRUS_ACTION:-junk}
+    ports:
+      # Web 邮箱和管理后台
+      - target: 8080
+        published: "${HARBOR_WEB_PORT:-8080}"
+        host_ip: "${HARBOR_WEB_BIND:-127.0.0.1}"
+      # SMTP 服务器收信。直接接收公网邮件时，发布 TCP 25 或由公网 TCP 25 转发。
+      - target: 2525
+        published: "${HARBOR_SMTP_PORT:-2525}"
+        host_ip: "${HARBOR_SMTP_BIND:-127.0.0.1}"
+      # 客户端 SMTP 465/587、IMAPS 993、POP3S 995 由 compose.tls.yaml
+      # 或 compose.acme.yaml 发布。按证书来源选择其一。
+    volumes:
+      - harbor_data:/var/lib/harbormail
+    secrets:
+      - accounts_json
+
+volumes:
+  harbor_data:
+
+secrets:
+  accounts_json:
+    file: "${HARBOR_SECRETS_DIR:-./secrets}/accounts.json"

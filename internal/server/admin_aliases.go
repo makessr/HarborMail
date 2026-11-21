@@ -29,14 +29,18 @@ func (a *app) adminAliasList(w http.ResponseWriter, r *http.Request, actor strin
 	if letterError(w, err) {
 		return
 	}
+	admins, err := a.adminRoleSet(ctx)
+	if letterError(w, err) {
+		return
+	}
 	items := make([]adminAlias, 0, len(managed)+len(a.aliases))
 	for alias, owner := range a.aliases {
-		if a.canManageDomainAlias(actor, alias, owner) {
+		if a.canManageDomainAlias(actor, alias, owner, admins) {
 			items = append(items, adminAlias{Alias: alias, Owner: owner, State: "active"})
 		}
 	}
 	for alias, owner := range managed {
-		if !a.canManageDomainAlias(actor, alias, owner) {
+		if !a.canManageDomainAlias(actor, alias, owner, admins) {
 			continue
 		}
 		state := "active"
@@ -62,7 +66,7 @@ func (a *app) adminAliasList(w http.ResponseWriter, r *http.Request, actor strin
 	slices.SortFunc(items, func(left, right adminAlias) int { return strings.Compare(left.Alias, right.Alias) })
 	owners := make([]string, 0, len(names))
 	for owner := range names {
-		if a.admins[actor] || (!a.admins[owner] && a.canManageDomain(actor, emailDomain(owner))) {
+		if admins[actor] || (!admins[owner] && a.domainAdmins[actor][emailDomain(owner)]) {
 			owners = append(owners, owner)
 		}
 	}
@@ -80,10 +84,6 @@ func (a *app) adminAliasChange(w http.ResponseWriter, r *http.Request, actor str
 	canonical, err := address(alias)
 	if err != nil || canonical != alias || (input.Action != "alias_add" && input.Action != "alias_remove" && input.Action != "alias_send_grant" && input.Action != "alias_send_revoke") {
 		fail(w, 400, "请输入有效的别名地址")
-		return
-	}
-	if !a.canManageDomainAlias(actor, alias, owner) {
-		fail(w, http.StatusForbidden, "当前账号无权管理此别名或目标邮箱")
 		return
 	}
 	if _, err := a.authenticate(actor, input.Password); err != nil {
@@ -105,6 +105,20 @@ func (a *app) adminAliasChange(w http.ResponseWriter, r *http.Request, actor str
 	if letterError(w, lockIMAPUIDs(ctx, tx)) ||
 		browserSessionError(w, a.lockBrowserSession(ctx, tx, actor, browserSessionDigest(r))) {
 		return
+	}
+	actorAdmin, err := a.isGlobalAdmin(ctx, tx, actor)
+	if letterError(w, err) {
+		return
+	}
+	if !actorAdmin {
+		targetAdmin, err := a.isGlobalAdmin(ctx, tx, owner)
+		if letterError(w, err) {
+			return
+		}
+		if targetAdmin || !a.domainAdmins[actor][emailDomain(alias)] || !a.domainAdmins[actor][emailDomain(owner)] {
+			fail(w, http.StatusForbidden, "当前账号无权管理此别名或目标邮箱")
+			return
+		}
 	}
 	var previous string
 	err = tx.QueryRowContext(ctx, `SELECT owner FROM managed_aliases WHERE alias=?`, alias).Scan(&previous)

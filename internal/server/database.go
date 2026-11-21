@@ -130,6 +130,19 @@ var sqliteSchema = []string{
 	`CREATE TABLE IF NOT EXISTS account_password_overrides (
 		owner TEXT NOT NULL PRIMARY KEY, base_digest BLOB NOT NULL, password_hash BLOB NOT NULL
 	)`,
+	`CREATE TABLE IF NOT EXISTS managed_admin_roles (
+		owner TEXT NOT NULL PRIMARY KEY, base_digest BLOB NOT NULL
+	)`,
+	`CREATE TABLE IF NOT EXISTS outbound_limits (
+		scope TEXT NOT NULL, target TEXT NOT NULL, daily_limit INTEGER NOT NULL,
+		day INTEGER NOT NULL, used INTEGER NOT NULL, PRIMARY KEY(scope,target)
+	)`,
+	`CREATE TABLE IF NOT EXISTS dmarc_reports (
+		report_key TEXT NOT NULL PRIMARY KEY, domain TEXT NOT NULL, reporter TEXT NOT NULL,
+		report_id TEXT NOT NULL, period_start INTEGER NOT NULL, period_end INTEGER NOT NULL,
+		total INTEGER NOT NULL, aligned INTEGER NOT NULL, details TEXT NOT NULL
+	)`,
+	`CREATE INDEX IF NOT EXISTS dmarc_reports_date ON dmarc_reports(period_end,report_key)`,
 	`CREATE TABLE IF NOT EXISTS managed_aliases (alias TEXT NOT NULL PRIMARY KEY, owner TEXT NOT NULL)`,
 	`CREATE INDEX IF NOT EXISTS managed_aliases_owner ON managed_aliases(owner)`,
 	`CREATE TABLE IF NOT EXISTS admin_alias_actions (
@@ -330,6 +343,19 @@ var mysqlSchema = []string{
 		owner VARCHAR(254) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
 		base_digest BINARY(32) NOT NULL, password_hash VARBINARY(72) NOT NULL
 	) ENGINE=InnoDB`,
+	`CREATE TABLE IF NOT EXISTS managed_admin_roles (
+		owner VARCHAR(254) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY, base_digest BINARY(32) NOT NULL
+	) ENGINE=InnoDB`,
+	`CREATE TABLE IF NOT EXISTS outbound_limits (
+		scope VARCHAR(12) NOT NULL, target VARCHAR(254) NOT NULL, daily_limit INT NOT NULL,
+		day BIGINT NOT NULL, used INT NOT NULL, PRIMARY KEY(scope,target)
+	) ENGINE=InnoDB DEFAULT CHARSET=ascii COLLATE=ascii_bin`,
+	`CREATE TABLE IF NOT EXISTS dmarc_reports (
+		report_key CHAR(64) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+		domain VARCHAR(253) NOT NULL, reporter VARCHAR(254) NOT NULL, report_id VARCHAR(254) NOT NULL,
+		period_start BIGINT NOT NULL, period_end BIGINT NOT NULL, total BIGINT NOT NULL, aligned BIGINT NOT NULL,
+		details MEDIUMTEXT NOT NULL, KEY dmarc_reports_date (period_end,report_key)
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin`,
 	`CREATE TABLE IF NOT EXISTS managed_aliases (
 		alias VARCHAR(254) NOT NULL PRIMARY KEY, owner VARCHAR(254) NOT NULL, KEY managed_aliases_owner (owner)
 	)
