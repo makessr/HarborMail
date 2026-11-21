@@ -41,6 +41,8 @@ Harbor Mail 是面向 Linux 部署的自建域名邮箱，提供中文 Web 邮�
 - **SQLite 面向单实例。** 多实例部署使用共享 MySQL，Redis 用于后台统计缓存。邮箱容量、并发和备份耗时需要按部署环境实测。[生产运行手册](ops/README.md)
 - **公网环境仍需现场验收。** 仓库中的回归和隔离演练已覆盖数据库及核心流程。实际域名的公网收发、证书续签和异地灾难恢复需要在部署环境验证。[生产运行手册](ops/README.md)
 
+[第一次部署 Harbor Mail · Docker 和 Linux 单二进制入门](docs/quick-start.md)
+
 ## Docker 快速部署
 
 | 安装方案 | 包含组件 |
