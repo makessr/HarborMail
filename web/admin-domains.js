@@ -31,23 +31,13 @@ function renderDomainRows(domains) {
       dkim.setAttribute("aria-label", "管理 " + name + " 的 DKIM");
       dkim.addEventListener("click", () => openDKIMEditor(name));
       actions.append(dkim);
-    }
-    if (!domainAdminOnly) {
-      if (managed && accounts === 0 && aliases === 0) {
-        const remove = document.createElement("button");
-        remove.type = "button";
-        remove.className = "secondary admin-domain-remove";
-        remove.textContent = "删除域名";
-        remove.setAttribute("aria-label", "删除域名 " + name);
-        remove.addEventListener("click", () => openDomainEditor(name));
-        actions.append(remove);
-      } else {
-        const note = document.createElement("span");
-        note.className = "admin-domain-remove-note";
-        const addresses = [accounts ? accounts + " 个邮箱" : "", aliases ? aliases + " 个别名" : ""].filter(Boolean);
-        note.textContent = managed ? "删除前先处理 " + addresses.join("、") : "由邮箱或别名生成";
-        actions.append(note);
-      }
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "secondary admin-domain-remove";
+      remove.textContent = "删除域名";
+      remove.setAttribute("aria-label", "删除域名 " + name);
+      remove.addEventListener("click", () => openDomainEditor({ name, accounts, aliases, managed }));
+      actions.append(remove);
     }
     cell.append(actions);
     content.append(row);
@@ -132,8 +122,11 @@ function setupAdminDKIM() {
     status.textContent = "";
     try {
       await request(data);
+      if (action === "enable") void adminFeedback("DKIM 签名已启用。");
+      if (action === "disable") void adminFeedback("DKIM 签名已停用。");
+      if (action === "generate") void adminFeedback("已生成待启用的 DKIM 密钥。");
     } catch (error) {
-      status.textContent = error.message;
+      void adminFeedback(error.message, "error");
     } finally {
       busy(false);
     }
@@ -163,27 +156,37 @@ function setupAdminDomains() {
   const close = adminElement("admin-domain-close");
   const cancel = adminElement("admin-domain-cancel");
   const save = adminElement("admin-domain-save");
-  const errorOutput = adminElement("admin-domain-error");
-  const status = adminElement("admin-domain-status");
+  const mailboxLink = adminElement("admin-domain-mailboxes");
+  const aliasLink = adminElement("admin-domain-aliases");
   const { domain, password } = form.elements;
   let removing = false;
 
-  function open(name = "") {
+  function open(entry) {
     form.reset();
-    removing = Boolean(name);
-    domain.value = name;
+    removing = Boolean(entry);
+    const blocked = removing && (!entry.managed || entry.accounts > 0 || entry.aliases > 0);
+    domain.value = entry?.name || "";
     domain.readOnly = removing;
     const title = removing ? "删除域名" : "新增域名";
     adminElement("admin-domain-dialog-title").textContent = title;
-    adminElement("admin-domain-impact").textContent = removing
-      ? "将从 Harbor Mail 删除此域名及内置 DKIM 密钥。公网 DNS 由域名服务商管理。"
+    const remaining = [entry?.accounts && entry.accounts + " 个邮箱", entry?.aliases && entry.aliases + " 个别名"].filter(Boolean).join("和");
+    adminElement("admin-domain-impact").textContent = blocked
+      ? "此域名还有" + remaining + "。请先迁移或清除这些地址。" + (entry.managed ? "" : "处理完后，自动生成的域名会从列表消失。")
+      : removing ? "将从 Harbor Mail 删除此域名及内置 DKIM 密钥。公网 DNS 由域名服务商管理。"
       : "登记后会显示收发邮件所需的 DNS 记录。";
     save.toggleAttribute("data-destructive", removing);
     cancel.hidden = !removing;
+    cancel.textContent = blocked ? "关闭" : "取消";
     save.textContent = title;
-    errorOutput.textContent = "";
+    save.hidden = password.disabled = blocked;
+    adminElement("admin-domain-password").hidden = blocked;
+    mailboxLink.hidden = !blocked || !entry.accounts;
+    aliasLink.hidden = !blocked || !entry.aliases;
+    mailboxLink.href = "/admin/accounts?" + new URLSearchParams({ domain: domain.value });
+    aliasLink.href = "/admin/aliases?" + new URLSearchParams({ search: "@" + domain.value });
     dialog.showModal();
-    (removing ? password : domain).focus();
+    if (blocked) (mailboxLink.hidden ? aliasLink : mailboxLink).focus();
+    else (removing ? password : domain).focus();
   }
 
   adminElement("admin-domain-add").addEventListener("click", () => open());
@@ -195,12 +198,11 @@ function setupAdminDomains() {
 
   form.addEventListener("submit", async event => {
     event.preventDefault();
-    if (save.disabled) return;
+    if (save.disabled || save.hidden) return;
     const remove = removing;
     const data = { domain: domain.value.trim(), password: password.value, action: remove ? "domain_remove" : "domain_add" };
     password.value = "";
     close.disabled = cancel.disabled = save.disabled = true;
-    errorOutput.textContent = "";
     try {
       const response = await fetch("/api/admin/domains", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data)
@@ -211,16 +213,16 @@ function setupAdminDomains() {
       }
       if (!response.ok) {
         const result = await response.json().catch(() => null);
-        errorOutput.textContent = result?.error || "无法保存域名，请重试。";
+        void adminFeedback(result?.error || "无法保存域名，请重试。", "error");
         return;
       }
       const name = remove ? data.domain : (await response.json()).name;
       dialog.close();
-      status.textContent = (remove ? "已删除 " : "已登记 ") + name + "。";
       await loadOverview();
+      await adminFeedback((remove ? "已删除 " : "已登记 ") + name + "。");
       if (!remove) void openDNSPlan(name);
     } catch {
-      errorOutput.textContent = "未收到保存结果，请关闭窗口并刷新域名列表核对。";
+      void adminFeedback("未收到保存结果，请刷新域名列表核对。", "error");
     } finally {
       close.disabled = cancel.disabled = save.disabled = false;
     }

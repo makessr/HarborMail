@@ -78,9 +78,9 @@ function setupAdminDeliveryTools() {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data)
       });
       await loadLimits();
-      limitStatus.textContent = data.limit ? "额度已保存。" : "额度已移除。";
+      void adminFeedback(data.limit ? "额度已保存。" : "额度已移除。");
     } catch (error) {
-      limitStatus.textContent = error.message;
+      void adminFeedback(error.message, "error");
     } finally {
       button.disabled = false;
     }
@@ -153,9 +153,9 @@ function setupAdminDMARC() {
       await adminMailRequest("dmarc-reports", { method: "POST", body: file });
       upload.reset();
       await load();
-      if (rows.children.length) status.textContent = "报告已导入。";
+      void adminFeedback("报告已导入。");
     } catch (error) {
-      status.textContent = error.message;
+      void adminFeedback(error.message, "error");
     } finally {
       button.disabled = false;
     }

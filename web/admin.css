@@ -49,8 +49,18 @@ body.admin { display: grid; grid-template: auto 1fr / 208px minmax(0, 1fr); }
 .admin-bar .admin-menu-toggle { width: 44px; height: 44px; }
 #admin-menu-drawer .admin-nav { width: 100%; position: static; min-height: 0; overflow: auto; padding-block: 10px; }
 #admin-menu-drawer .admin-nav a { min-height: 44px; }
-.admin-bar .project-link { color: var(--ink); }
-.admin-bar .project-author { color: var(--muted); }
+.admin-about-content { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: start; gap: 16px 24px; margin-top: 14px; }
+.admin-about-project { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.admin-about-project img { flex: none; }
+.admin-about-project p { margin-bottom: 4px; font-size: 14px; }
+.admin-about-project strong { color: var(--ink); }
+.admin-about-updates { min-width: 0; font-size: 13px; }
+.admin-about-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.admin-about-actions button { padding: 5px 10px; min-height: 34px; }
+#admin-update-status:empty { display: none; }
+@media (max-width: 540px) {
+  .admin-about-updates { width: 100%; border-top: 1px solid var(--line); padding-top: 12px; }
+}
 .admin-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .admin h1 { margin: 0; font-size: clamp(23px, 3vw, 30px); }
 .admin h2 { margin: 0; font-size: 18px; }
@@ -71,7 +81,6 @@ body.admin { display: grid; grid-template: auto 1fr / 208px minmax(0, 1fr); }
 .admin-sparkline { display: block; width: 100%; height: 168px; }
 .admin-alias-filters { margin-top: 14px; }
 #admin-alias-items .secondary { white-space: nowrap; padding: 5px 8px; }
-#admin-alias-error { color: var(--danger); }
 .admin-kpis {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -139,7 +148,7 @@ body.admin { display: grid; grid-template: auto 1fr / 208px minmax(0, 1fr); }
 .admin-dns-form { margin-top: 14px; }
 .admin-dns-form label { display: grid; gap: 5px; min-width: 0; }
 .admin-note, #admin-dns-status { color: var(--muted); font-size: 14px; }
-.admin-filters :is(input, select), .admin-dns-form :is(input, select) {
+.admin-filters input, .admin-dns-form input {
   max-width: 100%;
   padding: 7px 10px;
   min-height: var(--control-height);
@@ -161,8 +170,6 @@ body.admin { display: grid; grid-template: auto 1fr / 208px minmax(0, 1fr); }
 .admin-account-search { position: relative; flex: 1 1 230px; min-width: 0; }
 .admin-account-search .glyph { position: absolute; inset-inline-start: 12px; inset-block-start: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
 .admin-account-search input { width: 100%; min-height: 38px; padding-inline-start: 35px; }
-#admin-account-created { margin: 0 0 12px; color: var(--accent-ink); font-size: 13px; }
-#admin-account-created:empty { display: none; }
 
 .admin-account-list { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-panel); overflow: hidden; }
 .admin-account-list .admin-table { margin: 0; }
@@ -259,12 +266,10 @@ dialog.admin-account-sheet {
 #admin-storage-alert-meter::-webkit-progress-bar { background: var(--line); }
 #admin-storage-alert-meter::-webkit-progress-value { background: var(--alert-fill); }
 #admin-storage-alert-meter::-moz-progress-bar { background: var(--alert-fill); }
-#admin-storage-alert-error { color: var(--danger); }
 .admin-domain-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
 .admin-domain-actions :is(a, button) { white-space: nowrap; }
 .admin-domain-actions button { padding: 4px 8px; }
 .admin-domain-remove { color: var(--danger); }
-.admin-domain-remove-note { color: var(--muted); font-size: 12px; }
 #admin-domain-save[data-destructive] { background: var(--danger-fill); }
 #admin-domain-save[data-destructive]:hover { filter: brightness(.92); }
 .admin-dns-plan { width: min(860px, calc(100% - 24px)); }
@@ -335,7 +340,6 @@ dialog.admin-account-sheet {
 #admin-dkim-copy-status:empty, #admin-dkim-status:empty { display: none; }
 #admin-dkim-title { overflow-wrap: anywhere; }
 #admin-dkim-controls { min-width: 0; }
-#admin-domain-error { color: var(--danger); }
 #admin-accounts .secondary { white-space: nowrap; padding: 5px 8px; }
 .admin-access-target { overflow-wrap: anywhere; }
 .admin-access-counts { display: grid; grid-template-columns: 1fr auto; gap: 5px 18px; margin: 0; }
@@ -353,7 +357,6 @@ dialog.admin-account-sheet {
 .admin-heading .admin-related-page { margin-inline-start: auto; font-size: 13px; }
 .admin-tool-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; margin-block: 10px; }
 .admin-tool-form label { min-width: 0; }
-.admin-tool-form select { padding: 10px; border: 1px solid var(--control-line); border-radius: 8px; background: var(--paper); color: var(--ink); }
 .admin-tool-form button { padding: 7px 10px; font-size: 13px; }
 .admin-tool-bar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 12px; }
 .admin-tool-options { margin-bottom: 14px; }

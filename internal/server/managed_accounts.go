@@ -13,11 +13,24 @@ import (
 
 func (a *app) baseAccountHash(ctx context.Context, db folderQueryer, email string) ([]byte, error) {
 	if hash, exists := a.accounts[email]; exists {
+		removed, err := configuredMailboxRemoved(ctx, db, email)
+		if err != nil {
+			return nil, err
+		}
+		if removed {
+			return nil, sql.ErrNoRows
+		}
 		return hash, nil
 	}
 	var hash []byte
 	err := db.QueryRowContext(ctx, `SELECT password_hash FROM managed_accounts WHERE email=?`, email).Scan(&hash)
 	return hash, err
+}
+
+func configuredMailboxRemoved(ctx context.Context, db folderQueryer, email string) (bool, error) {
+	var removed bool
+	err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM configured_mailbox_removals WHERE owner=?)`, email).Scan(&removed)
+	return removed, err
 }
 
 func (a *app) baseAccountDigest(ctx context.Context, db folderQueryer, email string) ([sha256.Size]byte, error) {
@@ -30,17 +43,23 @@ func (a *app) allAccountNames(ctx context.Context) (map[string]bool, error) {
 	for email := range a.accounts {
 		names[email] = true
 	}
-	rows, err := a.db.QueryContext(ctx, `SELECT email FROM managed_accounts`)
+	rows, err := a.db.QueryContext(ctx, `SELECT email,FALSE FROM managed_accounts
+		UNION ALL SELECT owner,TRUE FROM configured_mailbox_removals`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var email string
-		if err := rows.Scan(&email); err != nil {
+		var removed bool
+		if err := rows.Scan(&email, &removed); err != nil {
 			return nil, err
 		}
-		names[email] = true
+		if removed {
+			delete(names, email)
+		} else {
+			names[email] = true
+		}
 	}
 	return names, rows.Err()
 }

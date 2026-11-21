@@ -1,0 +1,575 @@
+/* Rebuild web/harbor-ui.css with npm run build:ui.
+   Keep Preflight out so native form and dialog behavior stays intact. */
+@layer theme, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+
+@theme inline {
+  --color-harbor-text: var(--ink);
+  --color-harbor-muted: var(--muted);
+  --color-harbor-surface: var(--surface);
+  --color-harbor-recess: var(--paper);
+  --color-harbor-line: var(--line);
+  --color-harbor-active: var(--selected);
+  --color-harbor-link: var(--accent-ink);
+  --radius-harbor: var(--radius-panel);
+  --radius-harbor-control: var(--radius-control);
+}
+
+:root {
+  color-scheme: light;
+  --radius-control: 8px;
+  --radius-panel: 12px;
+  --control-height: 38px;
+  --ink: #172336;
+  --muted: #526079;
+  --canvas: #f2f5fa;
+  --rail: #eaf0f8;
+  --surface: #fff;
+  --paper: #f5f8fc;
+  --line: #d9e2ee;
+  --control-line: #818da2;
+  --accent: #3562c4;
+  --action: #2e56b8;
+  --action-hover: #244598;
+  --accent-ink: #204b9b;
+  --selected: #e6efff;
+  --hover: #edf2fa;
+  --danger: #a12e42;
+  --danger-fill: #a12e42;
+  --overlay: #17233680;
+  --shadow: 0 8px 28px #1b345724;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ink: #eaf0fc;
+  --muted: #b0bed4;
+  --canvas: #111826;
+  --rail: #172133;
+  --surface: #1c2638;
+  --paper: #202d42;
+  --line: #35445b;
+  --control-line: #7d8da8;
+  --accent: #a2bfff;
+  --action: #355cc2;
+  --action-hover: #2b4ea9;
+  --accent-ink: #b7cdff;
+  --selected: #273f68;
+  --hover: #26344a;
+  --danger: #ffb1bc;
+  --danger-fill: #943448;
+  --overlay: #060d19a6;
+  --shadow: 0 12px 32px #060d1966;
+}
+
+/* Shared controls. Native controls retain their semantics and validation. */
+:focus-visible { outline-color: var(--accent); }
+.primary, .secondary {
+  @apply rounded-harbor-control text-sm font-semibold;
+  transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+.primary {
+  min-height: var(--control-height);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--action) 87%, #fff), var(--action));
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--action) 30%, transparent), inset 0 0 0 1px #fff2;
+}
+.primary:hover { background: var(--action-hover); }
+.primary:active { box-shadow: inset 0 1px 2px #0003; }
+.secondary { @apply bg-harbor-recess text-harbor-text; }
+.secondary:hover { background: var(--hover); border-color: var(--control-line); }
+.secondary:active { background: var(--selected); }
+.icon, .toolbar > button, .compose-tool {
+  @apply rounded-harbor-control;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+:is(.icon, .toolbar > button, .compose-tool):active { background: var(--selected); color: var(--accent-ink); }
+input:is([type="checkbox"], [type="radio"]) { accent-color: var(--action); }
+input::file-selector-button {
+  padding: .375rem .625rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--paper);
+  color: var(--ink);
+  font-weight: 600;
+  cursor: pointer;
+}
+input::file-selector-button:hover { background: var(--hover); }
+:where(.login-form, .editor, .admin-filters, .admin-dns-form, .admin-tool-form) :is(input, select, textarea):focus-visible {
+  outline-offset: 2px;
+}
+.login-form input, .editor label input:where(:not([type="checkbox"], [type="radio"], [type="file"])),
+.editor textarea, #compose-recipient {
+  @apply rounded-harbor-control bg-harbor-surface px-3;
+  border-color: var(--line);
+  box-shadow: inset 0 1px 1px color-mix(in srgb, var(--ink) 4%, transparent);
+}
+.login-form input, .editor label input:where(:not([type="checkbox"], [type="radio"], [type="file"])) {
+  min-height: var(--control-height);
+}
+:where(.login-form, .editor) :is(input, textarea)::placeholder { color: var(--muted); }
+:where(.login-form, .editor) :is(input, textarea):focus { border-color: var(--accent); }
+select:not([multiple], [size]) {
+  appearance: none;
+  min-height: var(--control-height);
+  max-width: 100%;
+  padding: .4375rem 2rem .4375rem .75rem;
+  border: 1px solid var(--control-line);
+  border-radius: var(--radius-control);
+  color: var(--ink);
+  background-color: var(--surface);
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-repeat: no-repeat;
+  background-size: .3rem .3rem;
+  background-position: right .94rem center, right .66rem center;
+  font-weight: 500;
+}
+select:not([multiple], [size]):hover:not(:disabled) { border-color: var(--accent); }
+select:not([multiple], [size]):disabled { opacity: .65; }
+
+@supports (appearance: base-select) and selector(::picker(select)) {
+  select:not([multiple], [size]), select:not([multiple], [size])::picker(select) { appearance: base-select; }
+  select:not([multiple], [size]) {
+    align-items: center;
+    gap: .5rem;
+    padding-inline-end: .75rem;
+    background-image: none;
+  }
+  select:not([multiple], [size])::picker-icon {
+    color: var(--accent-ink);
+    font-size: .875rem;
+  }
+  select:not([multiple], [size])::picker(select) {
+    padding: .375rem;
+    margin-block-start: .375rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-panel);
+    background: var(--surface);
+    color: var(--ink);
+    box-shadow: var(--shadow);
+  }
+  select:not([multiple], [size]) option {
+    min-height: 2.25rem;
+    padding: .375rem .625rem;
+    border-radius: calc(var(--radius-control) - 2px);
+    gap: .5rem;
+    font-weight: 500;
+  }
+  select:not([multiple], [size]) option:checked { background: var(--selected); color: var(--accent-ink); font-weight: 650; }
+  select:not([multiple], [size]) option:is(:hover, :focus-visible):not(:disabled) { background: var(--hover); }
+  select:not([multiple], [size]) option::checkmark { color: var(--accent-ink); }
+}
+@media (forced-colors: active) {
+  select:not([multiple], [size]) {
+    appearance: auto;
+    padding-inline-end: .75rem;
+    background-image: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .primary, .secondary, .icon, .toolbar > button, .compose-tool { transition: none; }
+}
+.rail nav [aria-current="true"], .admin-nav a[aria-current="page"] {
+  box-shadow: inset 2px 0 var(--accent);
+}
+
+/* Login, mailbox list and reader. */
+.login > .login-form {
+  @apply gap-4 rounded-harbor border-harbor-line bg-harbor-surface;
+  padding: clamp(1.25rem, 5vw, 2rem);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--ink) 7%, transparent);
+}
+.login-form .brand { @apply gap-2; margin-bottom: .5rem; }
+.login-form input { @apply bg-harbor-surface; }
+.login-project { @apply gap-3; }
+.index-header { @apply px-5; }
+.index-header h1 { font-size: 1.25rem; letter-spacing: -.025em; }
+.search { @apply rounded-harbor-control bg-harbor-recess px-3; }
+.search:focus-within { @apply bg-harbor-surface; }
+.search input::placeholder { color: var(--muted); }
+.row { @apply px-5 py-3; border-bottom-color: var(--line); }
+.row[aria-current="true"], .row[aria-pressed="true"] { @apply bg-harbor-active; }
+.letter { padding: clamp(1.25rem, 3.4vw, 2.75rem); }
+.letter-heading { @apply gap-3; }
+.letter h2 { letter-spacing: -.025em; }
+.letter-byline { @apply gap-x-3; }
+.sender-avatar { @apply bg-harbor-active text-harbor-link; }
+.letter-body { padding-top: 1.25rem; }
+#editor .compose-line:focus-within { border-bottom-color: var(--accent); }
+#editor textarea#compose-body {
+  width: auto;
+  margin-block: .75rem;
+  padding: .875rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--paper);
+}
+#editor textarea#compose-body:focus { background: var(--surface); border-color: var(--accent); }
+#editor .compose-footer { background: var(--paper); }
+
+#admin-access-form { @apply gap-4; }
+#admin-access-status:empty { display: none; }
+#admin-access-target { @apply text-sm font-semibold text-harbor-link; }
+#admin-access-counts { @apply rounded-harbor-control bg-harbor-recess px-3 py-2; gap: .25rem 1rem; }
+#admin-access-counts :is(dt, dd) { padding-block: .25rem; }
+#admin-access-counts dd { text-align: end; font-variant-numeric: tabular-nums; font-weight: 600; }
+#admin-access-controls {
+  @apply gap-3 rounded-harbor border-harbor-line bg-harbor-recess;
+  margin: 0;
+  padding: .875rem;
+}
+#admin-access-controls legend { padding-inline: .375rem; font-weight: 650; font-size: .875rem; }
+#admin-access-controls select { width: 100%; }
+#admin-access-controls footer { margin: 0; padding-top: .75rem; }
+#admin-access-impact:not(:empty) {
+  @apply rounded-harbor-control bg-harbor-surface px-3 py-2 text-sm;
+  border-inline-start: 2px solid var(--accent);
+}
+#admin-access-revoke[data-intent="caution"] {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 9%, var(--surface));
+  border-color: color-mix(in srgb, var(--danger) 25%, var(--line));
+}
+#admin-access-revoke[data-intent="caution"]:hover {
+  background: color-mix(in srgb, var(--danger) 16%, var(--surface));
+}
+
+@media (min-width: 761px) {
+  .mailbox { background: var(--canvas); padding-block: .75rem; padding-inline-end: .75rem; }
+  .mailbox > .rail { padding-inline: .875rem; }
+  .index, .reading { background: var(--surface); }
+}
+@media (max-width: 760px) {
+  .index-header, .row { @apply px-4; }
+  .mail-topbar { @apply gap-2 px-3; }
+}
+
+/* Management navigation, panels and data tools. */
+.admin-bar { @apply gap-3 border-harbor-line bg-harbor-surface; padding-block: .625rem; }
+.admin-main > .admin-heading h1 { letter-spacing: -.035em; }
+.admin-nav { @apply gap-1 px-3; }
+.admin-nav a { @apply gap-2.5 rounded-harbor-control; }
+.admin-panel, .admin-kpis {
+  @apply rounded-harbor border-harbor-line bg-harbor-surface;
+  padding: clamp(1rem, 2vw, 1.375rem);
+}
+.admin-heading h2 { font-size: 1rem; letter-spacing: -.015em; }
+.admin-directory, .admin-onboarding { margin-block-start: 1rem; }
+.admin-kpis { @apply gap-x-5 gap-y-2; }
+.admin-kpis dd { color: var(--accent-ink); }
+.admin-table th { @apply bg-harbor-recess text-harbor-muted; }
+.admin-table td { font-size: .875rem; }
+.admin-table tbody tr:hover { background: var(--paper); }
+.admin-filters, .admin-dns-form, .admin-tool-form { @apply gap-3; }
+.admin-filters :is(input, select), .admin-dns-form :is(input, select), .admin-tool-form select {
+  @apply rounded-harbor-control bg-harbor-surface;
+  border-color: var(--control-line);
+}
+.admin-search-control { position: relative; min-width: 0; }
+.admin-search-control > .glyph { position: absolute; inset-inline-start: .75rem; inset-block-start: 50%; transform: translateY(-50%); color: var(--muted); }
+.admin-filters .admin-search-control input { @apply w-full bg-harbor-recess; padding-inline-start: 2.25rem; border-color: var(--line); }
+.admin-filters .admin-search-control input:focus { @apply bg-harbor-surface; border-color: var(--accent); }
+.admin-alias-filters .admin-search-control { width: min(100%,23rem); }
+.admin-account-toolbar :is(select, .primary, .admin-search-control input) { min-height: var(--control-height); }
+.admin-filters select:hover, .admin-dns-form select:hover { border-color: var(--muted); }
+@media (max-width: 760px) {
+  .admin-account-toolbar { @apply grid grid-cols-2 items-stretch gap-2; }
+  .admin-account-toolbar .admin-account-search { grid-column: 1 / -1; }
+  .admin-account-toolbar .primary { margin: 0; }
+}
+
+:root {
+  --chart-blue: #3465d5;
+  --chart-teal: #098280;
+  --chart-amber: #ad650c;
+}
+:root[data-theme="dark"] {
+  --chart-blue: #85a9ff;
+  --chart-teal: #51c9c0;
+  --chart-amber: #f0af64;
+}
+.chart-account { --chart-color: var(--chart-blue); }
+.chart-aliases { --chart-color: var(--chart-teal); }
+.chart-retry { --chart-color: var(--chart-amber); }
+.chart-alert { --chart-color: var(--danger); }
+.admin-chart-legend span::before { border-radius: 50%; }
+.admin-trend-frame {
+  --trend-plot-height: 7.5rem;
+  @apply grid gap-2;
+  grid-template-columns: minmax(1.5rem, auto) minmax(0, 1fr);
+}
+.admin-trend-axis {
+  @apply grid text-xs text-harbor-muted;
+  grid-template-rows: repeat(5, 25%);
+  height: var(--trend-plot-height);
+  padding: 0;
+  margin: 1.25rem 0 0;
+  list-style: none;
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+.admin-trend-axis li { align-self: start; transform: translateY(-50%); }
+.admin-trend {
+  position: relative;
+  isolation: isolate;
+  gap: clamp(.25rem, .9vw, .5rem);
+  font-variant-numeric: tabular-nums;
+}
+.admin-trend::before {
+  content: "";
+  position: absolute;
+  inset: 1.25rem 0 auto;
+  z-index: -1;
+  height: var(--trend-plot-height);
+  border-bottom: 1px solid var(--line);
+  background: repeating-linear-gradient(to bottom, var(--line) 0 1px, transparent 1px 25%);
+}
+.admin-trend li { @apply grid justify-items-center gap-0; grid-template-rows: 1.25rem var(--trend-plot-height) 1.5rem; }
+.admin-trend li time { align-self: end; }
+.admin-trend-stack {
+  width: min(58%, 2.25rem);
+  height: 100%;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  border-radius: .4rem .4rem 0 0;
+  overflow: hidden;
+}
+.admin-trend-stack span:last-child { border-radius: .4rem .4rem 0 0; }
+.admin-bars { @apply gap-3; }
+#admin-queue a { @apply text-harbor-text; text-decoration: none; }
+#admin-queue a:hover { @apply text-harbor-link; text-decoration: underline; }
+.admin-bars li > span { @apply font-semibold text-harbor-text; }
+.admin-bar-track { height: .5rem; background: var(--paper); border: 1px solid var(--line); }
+.admin-sparkline { @apply rounded-harbor-control bg-harbor-recess; }
+#admin-alias-view .admin-table table { min-width: 40rem; }
+#admin-alias-view .admin-table th:nth-child(-n+2) { width: 23%; }
+.admin-about-content { @apply gap-x-6 gap-y-4; }
+
+/* Dialogs and form groups. */
+dialog:not(.app-drawer, .admin-account-sheet, #editor) {
+  border-radius: calc(var(--radius-panel) + 4px);
+  scrollbar-gutter: stable both-edges;
+}
+.editor:not(#editor-form) {
+  --form-inset: clamp(1rem, 3.5vw, 1.5rem);
+  @apply gap-4;
+  padding: var(--form-inset);
+}
+.editor:not(#editor-form) .heading {
+  min-height: var(--control-height);
+  padding-block-end: .625rem;
+  border-block-end: 1px solid var(--line);
+}
+.editor .heading h2 { @apply text-lg font-semibold; letter-spacing: -.02em; }
+.editor .heading .icon { @apply bg-harbor-recess; }
+.editor .heading .icon:hover { @apply bg-harbor-active text-harbor-link; }
+.editor footer:not(.compose-actions) { @apply gap-2 pt-3; margin-block-start: .25rem; }
+.editor footer:not(.compose-actions) > :is(.primary, .secondary) { min-height: var(--control-height); }
+.editor label:has(> input:is([type="checkbox"], [type="radio"])) {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  cursor: pointer;
+}
+.editor label:has(> input:is([type="checkbox"], [type="radio"])) input {
+  flex: none;
+  inline-size: 1rem;
+  block-size: 1rem;
+  margin: 0;
+  padding: 0;
+}
+.editor :is(.forward-options label, .density-options label, .theme-option):has(input:checked) {
+  @apply bg-harbor-active text-harbor-link;
+}
+.editor .theme-option { @apply rounded-harbor-control border-harbor-line; }
+.editor .theme-option:has(input:checked) { border-color: var(--accent); }
+.editor .theme-option:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.editor :is(.forward-options label, .density-options label):has(input) {
+  @apply rounded-harbor-control px-3 py-2;
+}
+.editor .density-options { @apply gap-1 p-1; }
+.editor .preference-read { justify-self: start; min-height: 2rem; }
+.preference-read + .preference-send-delay {
+  @apply border-t border-harbor-line pt-3;
+}
+.editor :is(.schedule-fields, .signature-fields, .signature-defaults, .app-protocols, .saved-search-summary, .template-preview) {
+  @apply rounded-harbor-control border-harbor-line bg-harbor-recess;
+}
+.editor .mail-transfer-form, .editor .contact-form {
+  @apply rounded-harbor border border-harbor-line bg-harbor-recess p-3;
+}
+.editor .mail-transfer-form + .mail-transfer-form { @apply pt-3; }
+.editor :is(#client-settings-values, .addresses-data) { @apply rounded-harbor-control bg-harbor-recess p-3; }
+.editor :is(input, textarea)[readonly] { @apply bg-harbor-recess; }
+.editor :is(input, select, textarea):disabled { cursor: not-allowed; }
+.editor .error:not(:empty) {
+  @apply rounded-harbor-control px-3 py-2;
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface));
+  border-inline-start: 2px solid var(--danger);
+}
+:is(.primary, .secondary):disabled { box-shadow: none; cursor: not-allowed; }
+
+/* Mailbox navigation, actions, and message surfaces. */
+.rail { @apply border-e border-harbor-line; }
+.rail .compose {
+  @apply justify-start px-3;
+  background: var(--action);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--action) 28%, transparent);
+}
+.rail .compose:hover { background: var(--action-hover); }
+.mail-tools :is(button, summary), .batch-tools .heading button {
+  @apply rounded-harbor-control font-medium;
+  min-height: 2rem;
+}
+.mail-tools button[aria-expanded="true"], .mail-tools summary:hover { @apply bg-harbor-active text-harbor-link; }
+.batch-tools { @apply border-y border-harbor-line bg-harbor-recess; }
+.batch-form select { min-width: 0; }
+.search input { min-height: var(--control-height); }
+.messages .row:focus-within { border-bottom-color: var(--accent); }
+.messages .row:hover { @apply bg-harbor-recess; }
+.messages .row:is([aria-current="true"], [aria-pressed="true"]) { @apply bg-harbor-active; }
+.list-status:not(:empty) {
+  @apply rounded-harbor-control border border-dashed border-harbor-line bg-harbor-recess p-3;
+}
+button.more { @apply rounded-harbor-control border border-harbor-line bg-harbor-recess px-3 py-2; }
+.disclosure-panel, .recipient-options {
+  @apply rounded-harbor border-harbor-line bg-harbor-surface;
+  box-shadow: var(--shadow);
+}
+.disclosure-panel :is(button, a):not(.primary) { border-radius: var(--radius-control); }
+.disclosure-panel :is(button, a):not(.primary):hover, .recipient-options [aria-selected="true"] {
+  @apply bg-harbor-active text-harbor-link;
+}
+.sender-details > summary, .letter-folder { @apply rounded-harbor-control bg-harbor-recess; }
+.sender-details > summary:hover { @apply bg-harbor-active text-harbor-link; }
+.letter-response button, .letter-response a { @apply rounded-harbor-control; }
+.letter-response .secondary { @apply bg-harbor-surface; }
+.letter-response .secondary:hover { @apply bg-harbor-active text-harbor-link; }
+.letter-translation, .delivery-status { @apply rounded-harbor bg-harbor-recess; border-inline-start: 3px solid var(--accent); }
+.file-list li { @apply rounded-harbor-control bg-harbor-recess px-3 py-2; }
+.file-list :is(a, button) { @apply font-medium text-harbor-link; }
+.toast, .undo-send-notice { @apply rounded-harbor border border-harbor-line; }
+.toast { @apply bg-harbor-surface text-harbor-text; box-shadow: var(--shadow), inset 3px 0 var(--accent); }
+:is(.rules-list, .contact-list, .app-passwords-list, .web-sessions-list, .conversation-list):not(:empty) {
+  @apply rounded-harbor border border-harbor-line;
+}
+:is(.rules-list, .contact-list, .app-passwords-list, .web-sessions-list) li { @apply px-3 py-3; }
+:is(.rules-list, .contact-list, .app-passwords-list, .web-sessions-list) li:first-child { border-top: 0; }
+:is(.rules-list, .contact-list, .app-passwords-list, .web-sessions-list) li:last-child { border-bottom: 0; }
+.contact-search { @apply rounded-harbor-control border border-harbor-line bg-harbor-surface px-3; min-height: var(--control-height); }
+#commands-dialog { @apply rounded-harbor; }
+.command-input { @apply rounded-harbor-control border-harbor-line bg-harbor-recess; }
+.command-keys { @apply border-t border-harbor-line bg-harbor-recess; }
+.command-keys kbd { @apply rounded-sm bg-harbor-surface text-harbor-link; }
+.compose-heading { @apply bg-harbor-recess; }
+.compose-footer .compose-tool { @apply text-harbor-text; }
+.compose-footer .compose-tool:is(:hover, [aria-expanded="true"]) { @apply bg-harbor-active text-harbor-link; }
+.compose-format-actions { @apply gap-1 rounded-harbor-control border border-harbor-line bg-harbor-surface; }
+.compose-format-actions > label { white-space: nowrap; }
+.compose-format-actions button { @apply px-2; }
+
+/* Administration tables and tools share one visual hierarchy. */
+.admin-main > .admin-heading { padding-block-end: .75rem; border-block-end: 1px solid var(--line); }
+.admin-main > .admin-heading h1 { font-size: clamp(1.5rem, 3vw, 2rem); }
+.admin-panel > .admin-heading { @apply gap-2; margin-block-end: .5rem; }
+.admin-heading :is(a, .admin-related-page) { text-underline-offset: .2em; }
+.admin-table {
+  @apply rounded-harbor-control border border-harbor-line bg-harbor-surface;
+}
+.admin-account-list .admin-table { border: 0; border-radius: 0; }
+.admin-table th {
+  @apply px-3 py-2.5 font-semibold;
+  white-space: nowrap;
+}
+.admin-table td { @apply px-3 py-2.5; }
+.admin-table tr:last-child td { border-bottom: 0; }
+.admin-table tbody tr:nth-child(even) { @apply bg-harbor-recess; }
+.admin-table tbody tr:hover, .admin-table tbody tr:focus-within { @apply bg-harbor-active; }
+.admin-table td .secondary { min-height: 1.875rem; font-size: .8125rem; padding-block: .25rem; }
+.admin-table .admin-dns-record-field .secondary { min-height: 1.625rem; font-size: .75rem; padding-block: .125rem; }
+.admin-account-count { @apply border-t border-harbor-line bg-harbor-recess; }
+.admin-account-state, .admin-security-badge {
+  @apply rounded-full bg-harbor-recess px-2 py-0.5 text-xs font-medium;
+}
+.admin-account-state[data-state="active"], .admin-security-badge[data-result="success"] {
+  @apply bg-harbor-active text-harbor-link;
+}
+.admin-security-badge:is([data-result="blocked"], [data-result="error"]) {
+  background: color-mix(in srgb, var(--danger) 9%, var(--surface));
+}
+.admin-account-sheet-heading, .app-drawer-heading { @apply bg-harbor-recess; }
+.admin-account-sheet-body dl { @apply rounded-harbor border border-harbor-line bg-harbor-recess p-3; }
+.admin-account-sheet-actions { @apply gap-2; }
+.admin-filters :is(label, .admin-search-control), .admin-dns-form label { min-width: 0; }
+.admin-filters label :is(select, input), .admin-dns-form label :is(select, input) { max-width: 100%; }
+.admin-tool-bar { @apply rounded-harbor border border-harbor-line bg-harbor-recess px-3; }
+.admin-tool-bar .admin-tool-form { margin-block: .625rem; }
+.admin-onboarding-steps a, .admin-onboarding-steps li { @apply rounded-harbor-control; }
+.admin-onboarding-steps a:hover { @apply bg-harbor-active; }
+.admin-kpis > :is(dt, dd) {
+  @apply bg-harbor-recess px-3;
+  border-inline-start: 2px solid var(--line);
+}
+.admin-kpis { row-gap: 0; }
+.admin-kpis > dt { padding-block: .625rem .2rem; border-start-start-radius: var(--radius-control); border-start-end-radius: var(--radius-control); }
+.admin-kpis > dd { padding-block-end: .625rem; border-end-start-radius: var(--radius-control); border-end-end-radius: var(--radius-control); font-variant-numeric: tabular-nums; }
+.admin-bars li:has(a:focus-visible) .admin-bar-track, .admin-bars li:hover .admin-bar-track { border-color: var(--accent); }
+.admin-dns-plan-inputs { @apply gap-3; }
+.admin-dns-plan .admin-spf-receive-only { white-space: nowrap; }
+.admin-dns-plan .admin-table table { min-width: 0; }
+.admin-dns-plan .admin-table :is(th, td) { padding: .5rem; }
+.admin-dns-plan .admin-table td { font-size: .8125rem; }
+.admin-dns-plan .admin-table :is(td, code) { overflow-wrap: anywhere; }
+.admin-domain-remove, .admin-table .admin-domain-remove { color: var(--danger); }
+.admin-domain-remove:hover { background: color-mix(in srgb, var(--danger) 8%, var(--surface)); }
+
+/* Action results sit above the page or the form that triggered them. */
+dialog.admin-feedback {
+  --feedback-ink: var(--accent-ink);
+  inline-size: min(24rem, calc(100% - 2rem));
+  scrollbar-gutter: auto;
+}
+.admin-feedback[data-kind="error"] { --feedback-ink: var(--danger); }
+.admin-feedback[data-kind="confirm"] { --feedback-ink: var(--chart-amber); }
+.admin-feedback::backdrop { background: color-mix(in srgb, var(--overlay) 70%, transparent); }
+.admin-feedback form { @apply grid justify-items-center gap-3 p-6 text-center; }
+.admin-feedback-icon {
+  @apply grid size-10 place-items-center rounded-harbor-control;
+  color: var(--feedback-ink);
+  background: color-mix(in srgb, var(--feedback-ink) 10%, var(--surface));
+}
+.admin-feedback-icon .glyph { font-size: 1.25rem; }
+.admin-feedback h2 { @apply text-lg font-semibold; }
+.admin-feedback p { @apply text-sm text-harbor-muted; overflow-wrap: anywhere; }
+.admin-feedback-actions { @apply flex flex-wrap justify-center gap-2 pt-2; }
+.admin-feedback-actions button { min-width: 5.25rem; }
+#admin-domain-form footer a { display: inline-flex; align-items: center; text-decoration: none; }
+#admin-mailbox-lifecycle-form [data-destructive] { background: var(--danger-fill); }
+
+#toast {
+  inset: 50% auto auto 50%;
+  z-index: 3;
+  width: max-content;
+  max-width: min(26rem, calc(100vw - 2rem));
+  transform: translate(-50%, -50%);
+  text-align: center;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+
+@media (max-width: 760px) {
+  .rail { border-inline-end: 0; }
+  .admin-main > .admin-heading { padding-block-end: .5rem; }
+  .admin-tool-bar .admin-tool-form { flex: 1 1 100%; }
+}
+@media (max-width: 480px) {
+  .editor:not(#editor-form) { gap: .875rem; }
+  .editor .heading h2 { font-size: 1rem; }
+  .admin-kpis > :is(dt, dd) { padding-inline: .5rem; }
+  .admin-dns-plan#admin-dns-plan-dialog { scrollbar-width: thin; }
+  .admin-dns-plan .admin-table :is(th, td) { padding-inline: .3125rem; }
+  .admin-dns-plan .admin-table th:first-child { width: 22%; }
+  .admin-dns-plan .admin-table th:nth-child(2) { width: 38%; }
+  .admin-dns-record-field code { flex-basis: 100%; }
+}

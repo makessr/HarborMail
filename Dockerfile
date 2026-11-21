@@ -4,6 +4,7 @@ ARG TARGETOS=linux
 ARG TARGETARCH
 ARG HARBOR_GO_PROXY=https://proxy.golang.org,direct
 ARG HARBOR_GO_SUMDB=sum.golang.org
+ARG HARBOR_BUILD_VERSION=dev
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN GOPROXY="$HARBOR_GO_PROXY" GOSUMDB="$HARBOR_GO_SUMDB" go mod download
@@ -12,7 +13,7 @@ COPY internal/ internal/
 COPY web/ web/
 RUN CGO_ENABLED=0 GOOS="$TARGETOS" GOARCH="$TARGETARCH" \
     GOPROXY="$HARBOR_GO_PROXY" GOSUMDB="$HARBOR_GO_SUMDB" \
-    go build -trimpath -ldflags="-s -w" -o /out/harbormail ./cmd/harbormail
+    go build -trimpath -ldflags="-s -w -X harbormail/internal/server.buildVersion=${HARBOR_BUILD_VERSION}" -o /out/harbormail ./cmd/harbormail
 
 FROM alpine:3.23
 RUN apk add --no-cache ca-certificates \

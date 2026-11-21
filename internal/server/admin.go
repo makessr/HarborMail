@@ -114,13 +114,14 @@ func (a *app) adminOnly(handler authorized) http.HandlerFunc {
 }
 
 type adminAccount struct {
-	Email       string   `json:"email"`
-	Admin       bool     `json:"admin"`
-	DomainAdmin bool     `json:"domainAdmin"`
-	Aliases     []string `json:"aliases"`
-	Suspended   bool     `json:"suspended"`
-	Managed     bool     `json:"managed"`
-	Retired     bool     `json:"retired"`
+	Email           string   `json:"email"`
+	Admin           bool     `json:"admin"`
+	DomainAdmin     bool     `json:"domainAdmin"`
+	Aliases         []string `json:"aliases"`
+	Suspended       bool     `json:"suspended"`
+	Managed         bool     `json:"managed"`
+	ConfiguredAdmin bool     `json:"configuredAdmin,omitempty"`
+	Retired         bool     `json:"retired"`
 }
 
 func (a *app) adminAccounts(names, suspended, retired, admins map[string]bool, effectiveAliases map[string]string) []adminAccount {
@@ -134,7 +135,8 @@ func (a *app) adminAccounts(names, suspended, retired, admins map[string]bool, e
 		slices.Sort(addresses)
 		_, configured := a.accounts[email]
 		accounts = append(accounts, adminAccount{
-			Email: email, Admin: admins[email], DomainAdmin: len(a.domainAdmins[email]) > 0, Aliases: addresses, Suspended: suspended[email], Managed: !configured, Retired: retired[email],
+			Email: email, Admin: admins[email], DomainAdmin: len(a.domainAdmins[email]) > 0, Aliases: addresses,
+			Suspended: suspended[email], Managed: !configured, ConfiguredAdmin: a.admins[email], Retired: retired[email],
 		})
 	}
 	slices.SortFunc(accounts, func(left, right adminAccount) int { return strings.Compare(left.Email, right.Email) })
@@ -160,7 +162,8 @@ func (a *app) replyOverview(w http.ResponseWriter, owner string, snapshot adminO
 		DirectMX        bool   `json:"directMX"`
 		RelayConfigured bool   `json:"relayConfigured"`
 		SpamScanning    bool   `json:"spamScanning"`
-	}{snapshot, owner, a.domain, a.dbDriver, a.directMX != nil && a.relay.Address == "", a.relay.Address != "" || len(a.domainRelays) > 0, a.spamScanner != nil})
+		Version         string `json:"version"`
+	}{snapshot, owner, a.domain, a.dbDriver, a.directMX != nil && a.relay.Address == "", a.relay.Address != "" || len(a.domainRelays) > 0, a.spamScanner != nil, currentBuildVersion()})
 }
 
 func (a *app) adminOverview(w http.ResponseWriter, r *http.Request, owner string) {
@@ -230,7 +233,7 @@ func (a *app) adminOverview(w http.ResponseWriter, r *http.Request, owner string
 		WHERE state IN ('queued','scheduled','undo') AND due>0 AND due<=?`, now.Unix()).Scan(&oldestDue); letterError(w, err) {
 		return
 	}
-	admins, err := a.adminRoleSet(ctx)
+	admins, err := a.adminRoleSet(ctx, a.db)
 	if letterError(w, err) {
 		return
 	}

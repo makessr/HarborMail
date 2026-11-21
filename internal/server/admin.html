@@ -9,7 +9,9 @@
   <link rel="stylesheet" href="/notosanssc-v41/font.css">
   <link rel="stylesheet" href="/style.css">
   <link rel="stylesheet" href="/admin.css">
+  <link rel="stylesheet" href="/harbor-ui.css">
   <script src="/app-shell.js" defer></script>
+  <script src="/admin-feedback.js" defer></script>
   <script src="/admin-audit.js" defer></script>
   <script src="/admin-delivery-tools.js" defer></script>
   <script src="/admin-aliases.js" defer></script>
@@ -37,7 +39,6 @@
       <span id="admin-identity"></span>
       <a href="/?view=mail">我的邮箱</a>
       <button class="secondary admin-password-link" id="admin-password-open" type="button" aria-haspopup="dialog">修改密码</button>
-      <div class="project-links" aria-label="项目与作者"><a class="project-link" href="https://github.com/makessr/HarborMail" target="_blank" rel="noopener noreferrer" aria-label="在 GitHub 打开 Harbor Mail（新标签页）"><svg class="glyph" aria-hidden="true"><use href="/icons.svg#github-fill"></use></svg> GitHub</a><a class="project-author" href="https://github.com/makessr" target="_blank" rel="noopener noreferrer">作者 <strong>MakeSSR</strong></a></div>
       <button class="secondary" id="admin-logout" type="button">退出</button>
     </nav>
   </header>
@@ -125,7 +126,6 @@
       <dialog id="admin-quarantine-dialog"><form class="editor" id="admin-quarantine-form">
         <h2 id="admin-quarantine-action"></h2>
         <label>管理员密码<input name="password" type="password" autocomplete="current-password" required></label>
-        <p id="admin-quarantine-error" role="status"></p>
         <footer><button type="button" class="secondary" id="admin-quarantine-cancel">取消</button><button type="submit" class="primary">确认</button></footer>
       </form></dialog>
     </section>
@@ -154,7 +154,10 @@
           <div class="admin-chart-legend" aria-hidden="true">
             <span class="chart-account">账号与域名</span><span class="chart-aliases">别名变更</span><span class="chart-retry">投递重试</span>
           </div>
-          <ol class="admin-trend" id="admin-trend" aria-label="每日管理操作（UTC）"></ol>
+          <div class="admin-trend-frame">
+            <ul class="admin-trend-axis" id="admin-trend-axis" aria-hidden="true"></ul>
+            <ol class="admin-trend" id="admin-trend" aria-label="每日管理操作（UTC）"></ol>
+          </div>
         </section>
         <section class="admin-panel" aria-labelledby="admin-queue-title">
           <div class="admin-heading"><h2 id="admin-queue-title">当前队列分布</h2><a href="/admin/queue">查看队列</a></div>
@@ -175,6 +178,29 @@
         <div class="admin-heading"><h2 id="admin-service-title">服务配置</h2><a href="/admin/runtime">运行监控</a></div>
         <p class="admin-note" id="admin-overview-updated"></p>
         <dl id="admin-service"></dl>
+      </section>
+      <section class="admin-panel admin-directory admin-about" aria-labelledby="admin-about-title">
+        <div class="admin-heading"><h2 id="admin-about-title">关于 Harbor Mail</h2></div>
+        <div class="admin-about-content">
+          <div class="admin-about-project">
+            <img src="/harbor-mail-logo.png" alt="" width="42" height="42">
+            <div>
+              <p>当前版本 <strong id="admin-build-version">—</strong></p>
+              <div class="project-links" aria-label="项目与作者">
+                <a class="project-author" href="https://github.com/makessr" target="_blank" rel="noopener noreferrer">作者 <strong>MakeSSR</strong></a>
+                <a class="project-link" href="https://github.com/makessr/HarborMail" target="_blank" rel="noopener noreferrer"><svg class="glyph" aria-hidden="true"><use href="/icons.svg#github-fill"></use></svg> GitHub</a>
+              </div>
+            </div>
+          </div>
+          <div class="admin-about-updates">
+            <div class="admin-about-actions">
+              <button class="secondary" id="admin-check-update" type="button">检查更新</button>
+              <a href="https://github.com/makessr/HarborMail/blob/main/docs/quick-start.md#升级已有实例" target="_blank" rel="noopener noreferrer">升级指南</a>
+            </div>
+            <p class="admin-note" id="admin-update-status" role="status"></p>
+            <a id="admin-latest-release" target="_blank" rel="noopener noreferrer" hidden>查看发布说明</a>
+          </div>
+        </div>
       </section>
     </div>
     <div id="admin-storage-view" hidden>
@@ -221,7 +247,7 @@
     <div id="admin-account-view" hidden>
       <section class="admin-account-directory" aria-labelledby="admin-title">
         <div class="admin-filters admin-account-toolbar">
-          <div class="admin-account-search">
+          <div class="admin-account-search admin-search-control">
             <svg class="glyph" aria-hidden="true"><use href="/icons.svg#search-line"></use></svg>
             <input id="admin-find" type="search" aria-label="搜索邮箱或别名" placeholder="搜索邮箱或别名" autocomplete="off">
           </div>
@@ -236,7 +262,6 @@
             <svg class="glyph" aria-hidden="true"><use href="/icons.svg#add-line"></use></svg> 新建账号
           </button>
         </div>
-        <p id="admin-account-created" role="status"></p>
         <div class="admin-account-list">
           <div class="admin-table">
             <table>
@@ -261,7 +286,6 @@
             <tbody id="admin-domain-list"></tbody>
           </table>
         </div>
-        <p id="admin-domain-status" role="status"></p>
       </section>
       <section class="admin-panel admin-directory" aria-labelledby="admin-dns-title">
         <h2 id="admin-dns-title">域名上线检查</h2>
@@ -342,9 +366,11 @@
           <button class="secondary" id="admin-alias-add" type="button">添加别名</button>
         </div>
         <div class="admin-filters admin-alias-filters">
-          <input type="search" id="admin-alias-search" aria-label="搜索别名或主邮箱" placeholder="搜索别名或主邮箱" autocomplete="off">
+          <div class="admin-search-control">
+            <svg class="glyph" aria-hidden="true"><use href="/icons.svg#search-line"></use></svg>
+            <input type="search" id="admin-alias-search" aria-label="搜索别名或主邮箱" placeholder="搜索别名或主邮箱" autocomplete="off">
+          </div>
         </div>
-        <p id="admin-alias-status" role="status"></p>
         <div class="admin-table">
           <table>
             <thead><tr><th scope="col">别名</th><th scope="col">主邮箱</th><th scope="col">来源</th><th scope="col">状态</th><th scope="col">别名发信</th><th scope="col">操作</th></tr></thead>
@@ -453,7 +479,6 @@
       <label id="admin-mailbox-lifecycle-destination" hidden>新邮箱地址<input name="destination" type="email" maxlength="254" autocomplete="off"></label>
       <label id="admin-mailbox-lifecycle-confirm" hidden>输入完整原邮箱地址确认<input name="confirm" type="text" maxlength="254" autocomplete="off"></label>
       <label>你的管理员主邮箱密码<input name="password" type="password" maxlength="72" autocomplete="current-password" required></label>
-      <p id="admin-mailbox-lifecycle-error" role="status"></p>
       <footer><button class="primary" type="submit">确认操作</button></footer>
     </form>
   </dialog>
@@ -469,7 +494,6 @@
       </select></label>
       <p class="admin-note">请先核对收件方或投递记录。保存结果只结案，邮件不会重发。</p>
       <label>你的管理员主邮箱密码<input name="password" type="password" maxlength="72" autocomplete="current-password" required></label>
-      <p id="admin-delivery-resolution-error" role="status"></p>
       <footer><button class="primary" type="submit">确认结果</button></footer>
     </form>
   </dialog>
@@ -483,7 +507,6 @@
       <label><span id="admin-storage-alert-input-label">容量阈值（MiB）</span><input name="threshold" type="number" inputmode="numeric" min="0" max="1048576" step="1" aria-describedby="admin-storage-alert-help" required></label>
       <p class="admin-note" id="admin-storage-alert-help">达到 80% 和 100% 时在此页提示。填 0 关闭预警，收发照常。</p>
       <label>你的管理员主邮箱密码<input name="password" type="password" maxlength="72" autocomplete="current-password" required></label>
-      <p id="admin-storage-alert-error" role="status"></p>
       <footer><button class="primary" id="admin-storage-alert-save" type="submit">保存阈值</button></footer>
     </form>
   </dialog>
@@ -495,10 +518,11 @@
       </header>
       <label>域名<input name="domain" type="text" maxlength="253" placeholder="example.com" autocomplete="off" autocapitalize="off" spellcheck="false" required></label>
       <p class="admin-note" id="admin-domain-impact"></p>
-      <label>你的管理员主邮箱密码<input name="password" type="password" maxlength="72" autocomplete="current-password" required></label>
-      <p id="admin-domain-error" role="status"></p>
+      <label id="admin-domain-password">你的管理员主邮箱密码<input name="password" type="password" maxlength="72" autocomplete="current-password" required></label>
       <footer>
         <button class="secondary" id="admin-domain-cancel" type="button" hidden>取消</button>
+        <a class="secondary" id="admin-domain-mailboxes" hidden>管理邮箱</a>
+        <a class="secondary" id="admin-domain-aliases" hidden>管理别名</a>
         <button class="primary" id="admin-domain-save" type="submit">新增域名</button>
       </footer>
     </form>
@@ -582,7 +606,6 @@
       <label>投递到主邮箱<select name="owner" required></select></label>
       <p class="admin-note" id="admin-alias-impact" hidden>移除后，新邮件将无法通过此条配置投递。</p>
       <label>你的管理员主邮箱密码<input name="password" type="password" autocomplete="current-password" maxlength="72" required></label>
-      <p id="admin-alias-error" role="status"></p>
       <footer><button class="primary" id="admin-alias-save" type="submit">保存别名</button></footer>
     </form>
   </dialog>
@@ -596,7 +619,6 @@
       <label>新密码<input name="newPassword" type="password" autocomplete="new-password" maxlength="72" aria-describedby="admin-password-requirements" required></label>
       <label>确认新密码<input name="confirmPassword" type="password" autocomplete="new-password" maxlength="72" required></label>
       <p class="admin-note" id="admin-password-requirements">新密码须为 12 至 72 字节。修改后需重新登录，已生成的应用密码会撤销。</p>
-      <p class="error" id="admin-password-error" role="alert"></p>
       <footer><button class="primary" type="submit">保存新密码</button></footer>
     </form>
   </dialog>
@@ -633,6 +655,17 @@
         <p id="admin-access-empty" hidden>暂无账号操作记录。</p>
         <a id="admin-access-all" href="/admin/audit">查看账号审计</a>
       </details>
+    </form>
+  </dialog>
+  <dialog class="admin-feedback" id="admin-feedback" aria-labelledby="admin-feedback-title" aria-describedby="admin-feedback-message">
+    <form method="dialog">
+      <span class="admin-feedback-icon" aria-hidden="true"><svg class="glyph" focusable="false"><use></use></svg></span>
+      <h2 id="admin-feedback-title"></h2>
+      <p id="admin-feedback-message"></p>
+      <div class="admin-feedback-actions">
+        <button class="secondary" id="admin-feedback-cancel" value="cancel" hidden>取消</button>
+        <button class="primary" id="admin-feedback-ok" value="ok" autofocus>确定</button>
+      </div>
     </form>
   </dialog>
 </body>

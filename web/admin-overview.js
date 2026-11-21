@@ -8,6 +8,7 @@ function overviewLink(label, href) {
 }
 
 function renderAdminOverview(data) {
+  adminElement("admin-build-version").textContent = data.version === "dev" || !data.version ? "开发构建" : data.version;
   const queue = data.queue;
   const active = ["queued", "scheduled", "undo", "preparing", "sending"].reduce((sum, key) => sum + (queue[key] || 0), 0);
   const waiting = data.oldestDue ? Math.max(0, data.generatedAt - data.oldestDue) : 0;
@@ -59,7 +60,12 @@ function renderQueueBars(queue) {
 
 function renderAdminTrend(days) {
   const totals = days.map(day => day.account + day.aliases + day.retry);
-  const max = Math.max(1, ...totals);
+  const max = Math.max(4, Math.ceil(Math.max(...totals) / 4) * 4);
+  adminElement("admin-trend-axis").replaceChildren(...Array.from({ length: 5 }, (_, index) => {
+    const tick = document.createElement("li");
+    tick.textContent = max * (4 - index) / 4;
+    return tick;
+  }));
   const formatter = new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", timeZone: "UTC" });
   const rows = days.map((day, index) => {
     const item = document.createElement("li");
@@ -73,13 +79,14 @@ function renderAdminTrend(days) {
     plot.className = "admin-trend-stack";
     plot.setAttribute("aria-hidden", "true");
     for (const field of ["account", "aliases", "retry"]) {
+      if (!day[field]) continue;
       const part = document.createElement("span");
       part.className = "chart-" + field;
       part.style.height = (day[field] / max * 100) + "%";
       plot.append(part);
     }
     const total = document.createElement("span");
-    total.textContent = totals[index];
+    total.textContent = totals[index] || "";
     total.setAttribute("aria-hidden", "true");
     const time = document.createElement("time");
     time.textContent = date;

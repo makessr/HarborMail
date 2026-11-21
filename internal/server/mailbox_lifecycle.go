@@ -55,7 +55,15 @@ func (a *app) adminMailboxLifecycle(w http.ResponseWriter, r *http.Request, acto
 		fail(w, http.StatusBadRequest, "请输入完整邮箱地址确认清除")
 		return
 	}
-	if _, err := a.authenticate(actor, input.Password); err != nil {
+	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
+	defer cancel()
+	source := loginSource(r, a.webLogin.proxies)
+	if retry := a.webLogin.reserve(ctx, source, actor, true); retry > 0 {
+		a.rejectWebLoginRate(w, source, actor, retry)
+		return
+	}
+	_, verified, err := a.authenticatePrimary(ctx, actor, input.Password)
+	if err != nil {
 		if errors.Is(err, errLoginBusy) {
 			fail(w, http.StatusTooManyRequests, "验证请求过多，请稍后重试")
 		} else {
@@ -63,15 +71,19 @@ func (a *app) adminMailboxLifecycle(w http.ResponseWriter, r *http.Request, acto
 		}
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
-	defer cancel()
 	tx, err := a.db.BeginTx(ctx, nil)
 	if letterError(w, err) {
 		return
 	}
 	defer tx.Rollback()
 	if letterError(w, lockIMAPUIDs(ctx, tx)) ||
-		browserSessionError(w, a.lockBrowserSession(ctx, tx, actor, browserSessionDigest(r))) {
+		browserSessionError(w, a.lockBrowserSession(ctx, tx, actor, browserSessionDigest(r))) ||
+		letterError(w, a.checkPrimaryPassword(ctx, tx, actor, verified)) {
+		return
+	}
+	_, configured := a.accounts[owner]
+	if configured && input.Action == "mailbox_rename" {
+		fail(w, http.StatusConflict, "服务器配置的邮箱不能改名，可回收或永久删除")
 		return
 	}
 	administrator, err := a.isGlobalAdmin(ctx, tx, owner)
@@ -79,13 +91,22 @@ func (a *app) adminMailboxLifecycle(w http.ResponseWriter, r *http.Request, acto
 		return
 	}
 	if administrator {
-		fail(w, http.StatusForbidden, "请先撤销管理员权限，再管理邮箱生命周期")
-		return
+		if !a.admins[owner] || actor != owner || input.Action != "mailbox_retire" {
+			fail(w, http.StatusForbidden, "后台授权的管理员需先撤销权限，安装管理员须自行交接并回收")
+			return
+		}
+		successor, err := a.hasSignedInSuccessor(ctx, tx, owner)
+		if letterError(w, err) {
+			return
+		}
+		if !successor {
+			fail(w, http.StatusConflict, "请先授予另一邮箱全站管理员权限，并用该账号在另一浏览器登录后台")
+			return
+		}
 	}
-	var hash []byte
-	err = tx.QueryRowContext(ctx, `SELECT password_hash FROM managed_accounts WHERE email=?`, owner).Scan(&hash)
+	hash, err := a.baseAccountHash(ctx, tx, owner)
 	if errors.Is(err, sql.ErrNoRows) {
-		fail(w, http.StatusNotFound, "仅支持管理在后台创建的邮箱")
+		fail(w, http.StatusNotFound, "邮箱不存在或已永久删除")
 		return
 	}
 	if letterError(w, err) {
@@ -132,6 +153,9 @@ func (a *app) adminMailboxLifecycle(w http.ResponseWriter, r *http.Request, acto
 		}
 	case "mailbox_purge":
 		err = purgeRetiredMailbox(ctx, tx, owner)
+		if err == nil && configured {
+			_, err = tx.ExecContext(ctx, `INSERT INTO configured_mailbox_removals(owner) VALUES(?)`, owner)
+		}
 	case "mailbox_rename":
 		target, lookup := a.destination(ctx, tx, destination)
 		if errors.Is(lookup, errDestinationChanged) || (lookup == nil && target.owner != "") {

@@ -6,7 +6,6 @@ function setupAdminAccountCreate() {
   const close = adminElement("admin-account-add-close");
   const save = adminElement("admin-account-add-save");
   const errorOutput = adminElement("admin-account-add-error");
-  const status = adminElement("admin-account-created");
   const addressLabel = adminElement("admin-account-add-address-label");
   const suffix = adminElement("admin-account-add-domain");
   const fields = form.elements;
@@ -61,7 +60,7 @@ function setupAdminAccountCreate() {
       }
       const result = await response.json();
       if (!response.ok) {
-        errorOutput.textContent = result.error || "无法创建账号，请重试。";
+        void adminFeedback(result.error || "无法创建账号，请重试。", "error");
         return;
       }
       dialog.close();
@@ -69,10 +68,10 @@ function setupAdminAccountCreate() {
       accountRole.value = "";
       accountStatus.value = "";
       find.value = result.email;
-      status.textContent = "已创建 " + result.email + "。";
       await loadOverview();
+      void adminFeedback("已创建 " + result.email + "。");
     } catch {
-      errorOutput.textContent = "未收到创建结果，请关闭窗口并刷新账号列表核对。";
+      void adminFeedback("未收到创建结果，请刷新账号列表核对。", "error");
     } finally {
       close.disabled = save.disabled = false;
     }

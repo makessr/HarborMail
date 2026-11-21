@@ -123,6 +123,7 @@ var sqliteSchema = []string{
 	`CREATE TABLE IF NOT EXISTS mailbox_retirements (
 		owner TEXT NOT NULL PRIMARY KEY, retired_at INTEGER NOT NULL, previous_suspended BOOLEAN NOT NULL
 	)`,
+	`CREATE TABLE IF NOT EXISTS configured_mailbox_removals (owner TEXT NOT NULL PRIMARY KEY)`,
 	`CREATE TABLE IF NOT EXISTS managed_domains (name TEXT NOT NULL PRIMARY KEY)`,
 	`CREATE TABLE IF NOT EXISTS mailbox_storage_alerts (owner TEXT NOT NULL PRIMARY KEY, threshold_mib INTEGER NOT NULL)`,
 	`CREATE TABLE IF NOT EXISTS mailbox_quota (owner TEXT NOT NULL PRIMARY KEY, used_bytes INTEGER NOT NULL, limit_mib INTEGER NOT NULL)`,
@@ -338,6 +339,9 @@ var mysqlSchema = []string{
 	`CREATE TABLE IF NOT EXISTS mailbox_retirements (
 		owner VARCHAR(254) CHARACTER SET ascii COLLATE ascii_bin NOT NULL PRIMARY KEY,
 		retired_at BIGINT NOT NULL, previous_suspended BOOLEAN NOT NULL
+	) ENGINE=InnoDB`,
+	`CREATE TABLE IF NOT EXISTS configured_mailbox_removals (
+		owner VARCHAR(254) CHARACTER SET ascii COLLATE ascii_bin NOT NULL PRIMARY KEY
 	) ENGINE=InnoDB`,
 	`CREATE TABLE IF NOT EXISTS account_password_overrides (
 		owner VARCHAR(254) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,

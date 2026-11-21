@@ -26,14 +26,15 @@ function setupAdminRuntime() {
   };
 
   function draw() {
-    drawRuntimeChart(cpu, samples, [{ key: "cpu", color: "#3565c9" }], 1, "%");
+    drawRuntimeChart(cpu, samples, [{ key: "cpu", color: "--chart-blue" }], 1, "%");
     drawRuntimeChart(memory, samples, [
-      { key: "resident", color: "#3565c9" }, { key: "heap", color: "#087e86" }
+      { key: "resident", color: "--chart-blue" }, { key: "heap", color: "--chart-teal" }
     ], 1, " MiB");
   }
   const observer = new ResizeObserver(draw);
   observer.observe(cpu);
   observer.observe(memory);
+  new MutationObserver(draw).observe(document.documentElement, { attributeFilter: ["data-theme"] });
 
   function display(data) {
     const sameProcess = previous?.startedAt === data.startedAt;
@@ -140,6 +141,7 @@ function drawRuntimeChart(canvas, samples, series, minimum, unit) {
   ctx.strokeStyle = style.getPropertyValue("--line");
   ctx.fillStyle = style.getPropertyValue("--muted");
   ctx.font = "11px system-ui";
+  ctx.setLineDash([3, 4]);
   for (let step = 0; step <= 4; step++) {
     const y = top + (bottom - top) * step / 4;
     ctx.beginPath();
@@ -148,12 +150,14 @@ function drawRuntimeChart(canvas, samples, series, minimum, unit) {
     ctx.stroke();
     ctx.fillText(Number((ceiling * (1 - step / 4)).toFixed(1)) + unit, 2, y + 4);
   }
+  ctx.setLineDash([]);
   if (samples.length === 0) return;
   const end = samples.at(-1).at;
   const start = Math.min(end - runtimeRefreshMillis, samples[0].at);
   for (const line of series) {
-    ctx.strokeStyle = ctx.fillStyle = line.color;
+    ctx.strokeStyle = ctx.fillStyle = style.getPropertyValue(line.color).trim();
     ctx.lineWidth = 2;
+    ctx.lineCap = "round";
     let previous;
     for (const sample of samples) {
       const value = sample[line.key];

@@ -8,6 +8,7 @@
   <link rel="icon" type="image/png" sizes="96x96" href="/harbor-mail-logo.png">
   <link rel="stylesheet" href="/notosanssc-v41/font.css">
   <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/harbor-ui.css">
   <script src="/labels.js" defer></script>
   <script src="/forward.js" defer></script>
   <script src="/signatures.js" defer></script>
@@ -32,16 +33,14 @@
 <body>
   <main id="login" class="login" hidden>
     <form id="login-form" class="login-form">
-      <div class="login-heading">
-        <h1 class="brand"><img src="/harbor-mail-logo.png" alt="" width="64" height="64"> Harbor Mail</h1>
-        <div class="project-links" aria-label="项目与作者"><a class="project-link" href="https://github.com/makessr/HarborMail" target="_blank" rel="noopener noreferrer" aria-label="在 GitHub 打开 Harbor Mail（新标签页）"><svg class="glyph" aria-hidden="true"><use href="/icons.svg#github-fill"></use></svg> GitHub</a><a class="project-author" href="https://github.com/makessr" target="_blank" rel="noopener noreferrer">作者 <strong>MakeSSR</strong></a></div>
-      </div>
+      <h1 class="brand"><img src="/harbor-mail-logo.png" alt="" width="64" height="64"> Harbor Mail</h1>
       <label>邮箱<input name="email" type="email" autocomplete="username" required></label>
       <label>密码<input name="password" type="password" autocomplete="current-password" required></label>
       <label id="login-mfa-field" hidden>管理员验证码或恢复码<input name="code" type="text" autocomplete="one-time-code" maxlength="32" spellcheck="false"></label>
       <p id="login-error" class="error" role="alert"></p>
       <button class="primary" type="submit">登录</button>
     </form>
+    <nav class="project-links login-project" aria-label="项目与作者"><a class="project-link" href="https://github.com/makessr/HarborMail" target="_blank" rel="noopener noreferrer" aria-label="在 GitHub 打开 Harbor Mail（新标签页）"><svg class="glyph" aria-hidden="true"><use href="/icons.svg#github-fill"></use></svg> GitHub</a><a class="project-author" href="https://github.com/makessr" target="_blank" rel="noopener noreferrer">作者 <strong>MakeSSR</strong></a></nav>
   </main>
 
   <main id="mailbox" class="mailbox" hidden>

@@ -42,6 +42,10 @@ func env(key, fallback string) string {
 }
 
 func Run() {
+	if len(os.Args) == 2 && (os.Args[1] == "version" || os.Args[1] == "--version") {
+		fmt.Println(currentBuildVersion())
+		return
+	}
 	var importOptions *imapImportOptions
 	if len(os.Args) > 1 && os.Args[1] == "import-imap" {
 		options, err := parseIMAPImport(os.Args[2:])
@@ -333,7 +337,7 @@ func Run() {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	privileged, err := a.adminRoleSet(ctx)
+	privileged, err := a.adminRoleSet(ctx, a.db)
 	if err == nil {
 		for owner := range a.domainAdmins {
 			privileged[owner] = true
@@ -353,6 +357,10 @@ func Run() {
 		cancel()
 		if err != nil {
 			log.Fatal(err)
+		}
+		// A permanently removed configured mailbox may still be named in the deployment files.
+		for owner := range a.accounts {
+			names[owner] = true
 		}
 		a.spamTrainer, err = configureSpamTrainer(names)
 		if err != nil {
@@ -630,6 +638,7 @@ func (a *app) routes() http.Handler {
 	mux.HandleFunc("GET /api/admin/quarantine", a.adminOnly(a.adminQuarantine))
 	mux.HandleFunc("POST /api/admin/quarantine/{id}", a.adminOnly(a.adminChangeQuarantine))
 	mux.HandleFunc("GET /api/admin/overview", a.adminOnly(a.adminOverview))
+	mux.HandleFunc("GET /api/admin/about/update", a.adminOnly(a.adminCheckVersion))
 	mux.HandleFunc("GET /api/admin/accounts", a.domainAdminOnly(a.adminAccountList))
 	mux.HandleFunc("POST /api/admin/accounts", a.domainAdminOnly(a.adminCreateAccount))
 	mux.HandleFunc("GET /api/admin/accounts/{email}/access", a.adminOnly(a.adminAccountAccess))

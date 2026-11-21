@@ -1,0 +1,11 @@
+{
+  "name": "harbor-mail-ui",
+  "private": true,
+  "scripts": {
+    "build:ui": "tailwindcss -i ./ui/harbor.css -o ./web/harbor-ui.css --minify"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "4.3.5",
+    "tailwindcss": "4.3.5"
+  }
+}

@@ -79,7 +79,9 @@ curl -fsS http://127.0.0.1:8080/healthz
 
 从**你自己的电脑**终端运行 `ssh -N -L 8080:127.0.0.1:8080 用户名@服务器IP`，保持终端开启。打开浏览器访问 `http://127.0.0.1:8080/admin`，用刚设置的管理员登录。切换到「我的邮箱」，给自己发一封邮件，确认它出现在收件箱。
 
-安装时配置的管理员可在「账号 → 权限与访问」向其他主邮箱授予或撤销全站管理员权限。要更换安装时配置的管理员，先把替代主邮箱加入账号配置和 `HARBOR_ADMINS`，重启服务并用新账号登录 `/admin` 验证，再从名单移除旧管理员。只移除角色会保留旧邮箱登录和邮件。
+要移除安装时的默认管理员，先在「账号 → 权限与访问」把另一个邮箱设为全站管理员，并用该账号在另一浏览器登录后台。回到原管理员，在「账号」打开自己的邮箱，点击「交接并回收」。原账号会退出，邮件和设置仍保留。接手的管理员可在「账号 → 邮箱管理」恢复原账号，或输入完整邮箱地址和自己的主邮箱密码永久删除。交接后仍可在后台管理全站管理员权限。
+
+在「域名」点击「删除域名」。若还有主邮箱或别名，提示框会提供处理入口。地址处理完成后即可删除已登记的域名，自动生成的域名会随最后一个地址移除。公网 MX、SPF、DKIM 和其他 DNS 记录在域名服务商处维护。
 
 ## 接入公网
 
@@ -109,4 +111,11 @@ Docker 修改配置后执行 `docker compose up -d --no-deps --no-build --wait h
 | 重启 | `docker compose restart harbor` | `sudo systemctl restart harbormail.service` |
 | 停止 | `docker compose stop harbor` | `sudo systemctl stop harbormail.service` |
 
-升级前先备份数据库、配置和 DKIM 密钥。已有部署沿用原 Compose 项目名、数据卷和凭据；不要重新初始化。 [备份与恢复](../ops/README.md#备份)
+## 升级已有实例
+
+在「管理后台 → 概览 → 关于 Harbor Mail」点击「检查更新」。它会查询 GitHub 的最新稳定版。先阅读发布说明，再备份数据库、配置和 DKIM 密钥。保留原 Compose 项目名、数据卷和凭据。[备份与恢复](../ops/README.md#备份)
+
+- **Docker** 在原部署目录运行 `docker compose pull harbor`，再运行 `docker compose up -d --no-deps --no-build --wait harbor`。如果 Compose 使用固定镜像标签或摘要，先核对目标版本对应的镜像，再更新原有镜像引用。命令应沿用原来的 Compose 文件和项目名。
+- **Linux 单二进制** 从 GitHub Release 下载对应架构的文件并校验，停止服务，备份并替换原可执行文件，然后重新启动。 [单二进制升级命令](../ops/README.md#tls-与版本升级)
+
+升级后检查服务状态、`/healthz` 和后台显示的版本，再验证一封邮件的收发。

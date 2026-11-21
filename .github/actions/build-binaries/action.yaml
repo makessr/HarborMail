@@ -13,9 +13,16 @@ runs:
       run: |
         set -euo pipefail
         mkdir -p dist
-        GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/harbormail-linux-amd64 ./cmd/harbormail
-        GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o dist/harbormail-linux-arm64 ./cmd/harbormail
-        GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/harbormail-windows-amd64.exe ./cmd/harbormail
+        version=$(bash .github/scripts/release-version.sh)
+        if [[ ${GITHUB_REF_TYPE:-} == tag ]]; then
+          version=$GITHUB_REF_NAME
+          [[ $version =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+        fi
+        flags="-s -w -X harbormail/internal/server.buildVersion=${version:-dev}"
+        GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="$flags" -o dist/harbormail-linux-amd64 ./cmd/harbormail
+        GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="$flags" -o dist/harbormail-linux-arm64 ./cmd/harbormail
+        GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="$flags" -o dist/harbormail-windows-amd64.exe ./cmd/harbormail
+        test "$(dist/harbormail-linux-amd64 version)" = "${version:-dev}"
         tar -czf dist/harbormail-systemd.tar.gz ops/harbormail.service ops/harbormail.env.example \
           ops/backup.sh ops/harbor-backup.service ops/harbor-backup.timer ops/harbor-backup.env.example
         cp docs/licenses/go-qrcode.txt dist/go-qrcode-LICENSE.txt

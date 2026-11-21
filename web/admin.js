@@ -112,7 +112,9 @@ function renderAccountSheet(account) {
   ]);
   adminElement("admin-account-sheet-actions").hidden = domainAdminOnly;
   accountSheetAccess.hidden = account.retired;
-  accountSheetLifecycle.hidden = !account.managed || account.admin;
+  const ownInstallationAdmin = account.configuredAdmin && account.email === signedInAdmin;
+  accountSheetLifecycle.hidden = account.admin && !account.configuredAdmin;
+  accountSheetLifecycle.textContent = ownInstallationAdmin ? "交接并回收" : account.admin ? "交接与删除" : "邮箱管理";
   adminElement("admin-account-sheet-storage").href = "/admin/storage?" + new URLSearchParams({ owner: account.email });
 }
 
@@ -219,6 +221,34 @@ async function loadOverview() {
   }
 }
 
+const checkUpdate = adminElement("admin-check-update");
+checkUpdate.addEventListener("click", async () => {
+  const status = adminElement("admin-update-status");
+  const release = adminElement("admin-latest-release");
+  checkUpdate.disabled = true;
+  release.hidden = true;
+  release.removeAttribute("href");
+  status.textContent = "正在检查更新…";
+  try {
+    const response = await fetch("/api/admin/about/update");
+    if (!response.ok) throw new Error("Update check failed");
+    const result = await response.json();
+    const messages = {
+      available: "发现新版本 " + result.latest,
+      current: "已是最新稳定版 " + result.latest,
+      ahead: "当前版本高于已发布的稳定版 " + result.latest,
+      development: "最新稳定版 " + result.latest + "。开发构建无法判断是否需要升级。"
+    };
+    status.textContent = messages[result.status];
+    release.href = "https://github.com/makessr/HarborMail/releases/tag/" + encodeURIComponent(result.latest);
+    release.hidden = false;
+  } catch {
+    status.textContent = "暂时无法检查更新，请稍后重试。";
+  } finally {
+    checkUpdate.disabled = false;
+  }
+});
+
 const onboarding = adminElement("admin-onboarding");
 const onboardingShow = adminElement("admin-onboarding-show");
 const onboardingHide = adminElement("admin-onboarding-hide");
@@ -257,7 +287,6 @@ function passwordConfirmationError(password, confirmation) {
 {
   const dialog = adminElement("admin-password-dialog");
   const form = adminElement("admin-password-form");
-  const status = adminElement("admin-password-error");
   const { password, newPassword, confirmPassword } = form.elements;
   let busy = false;
   adminElement("admin-password-open").addEventListener("click", () => dialog.showModal());
@@ -267,13 +296,15 @@ function passwordConfirmationError(password, confirmation) {
   });
   dialog.addEventListener("close", () => {
     form.reset();
-    status.textContent = "";
   });
   form.addEventListener("submit", async event => {
     event.preventDefault();
     if (busy) return;
-    status.textContent = passwordConfirmationError(newPassword, confirmPassword);
-    if (status.textContent) return;
+    const validation = passwordConfirmationError(newPassword, confirmPassword);
+    if (validation) {
+      void adminFeedback(validation, "error");
+      return;
+    }
     const data = { password: password.value, newPassword: newPassword.value };
     password.value = "";
     busy = form.inert = true;
@@ -283,16 +314,16 @@ function passwordConfirmationError(password, confirmation) {
       });
       if (response.ok || response.status === 401) {
         form.reset();
+        if (response.ok) await adminFeedback("密码已修改，请用新密码登录。");
         location.replace("/");
         return;
       }
       const result = await response.json();
-      status.textContent = result.error || "暂时无法修改密码，请重试。";
+      void adminFeedback(result.error || "暂时无法修改密码，请重试。", "error");
     } catch {
-      status.textContent = "未收到操作结果。请核对登录状态后再试。";
+      void adminFeedback("未收到操作结果。请核对登录状态后再试。", "error");
     } finally {
       busy = form.inert = false;
-      if (status.textContent) password.focus();
     }
   });
 }
@@ -333,7 +364,9 @@ function updateAccessImpact() {
     if (!resetting) field.value = "";
   }
   adminElement("admin-access-impact").textContent = messages[accessScope.value] || "";
-  adminElement("admin-access-revoke").textContent = "确认" + accessLabels[accessScope.value];
+  const submit = adminElement("admin-access-revoke");
+  submit.textContent = "确认" + accessLabels[accessScope.value];
+  submit.dataset.intent = ["sessions", "app_passwords", "suspend", "admin_revoke", "password_reset"].includes(accessScope.value) ? "caution" : "normal";
 }
 
 function openAccountAccess(email) {
@@ -413,8 +446,11 @@ accessForm.addEventListener("submit", async event => {
   const changingRole = data.scope === "admin_grant" || data.scope === "admin_revoke";
   if (changingRole) data.admin = data.scope === "admin_grant";
   if (resetting) {
-    accessStatus.textContent = passwordConfirmationError(accessNewPassword, accessConfirmPassword);
-    if (accessStatus.textContent) return;
+    const validation = passwordConfirmationError(accessNewPassword, accessConfirmPassword);
+    if (validation) {
+      void adminFeedback(validation, "error");
+      return;
+    }
     data.newPassword = accessNewPassword.value;
     accessNewPassword.value = accessConfirmPassword.value = "";
   }
@@ -431,11 +467,13 @@ accessForm.addEventListener("submit", async event => {
     }
     const result = await response.json();
     if (!response.ok) {
-      if (response.status === 409) await loadAccountAccess(result.error);
-      else accessStatus.textContent = result.error || "无法更改账号访问状态，请重试。";
+      if (response.status === 409) await loadAccountAccess("正在读取账号访问状态…");
+      else accessStatus.textContent = "";
+      void adminFeedback(result.error || "无法更改账号访问状态，请重试。", "error");
       return;
     }
     if (result.signedOut) {
+      await adminFeedback("操作已完成，请重新登录。");
       location.replace("/");
       return;
     }
@@ -443,9 +481,11 @@ accessForm.addEventListener("submit", async event => {
     const message = changingRole ? (result.admin ? "已设为全站管理员。" : "已撤销全站管理员权限。") : data.scope === "restore" ? "已恢复账号登录。" :
       (resetting ? "已重置密码，撤销 " : data.scope === "suspend" ? "已停用账号登录，撤销 " : "已撤销 ") +
       result.affected + " 条记录。";
-    await loadAccountAccess(message);
+    await loadAccountAccess("正在读取账号访问状态…");
+    void adminFeedback(message);
   } catch {
-    await loadAccountAccess("未收到操作结果，请查看最近的账号操作记录。");
+    await loadAccountAccess("正在读取账号访问状态…");
+    void adminFeedback("未收到操作结果，请查看最近的账号操作记录。", "error");
   } finally {
     accessBusy = accessClose.disabled = accessControls.disabled = false;
   }
@@ -539,7 +579,7 @@ async function loadDeliveryQueue(before = "") {
 }
 
 async function retryDelivery(item) {
-  if (deliveryBusy || !confirm("将任务 #" + item.id + " 的重试时间提前到现在？")) return;
+  if (deliveryBusy || !await adminFeedback("将任务 #" + item.id + " 的重试时间提前到现在？", "confirm", "立即重试")) return;
   setDeliveryBusy(true);
   retryStatus.textContent = "正在安排重试…";
   let refreshQueue = false;
@@ -553,16 +593,17 @@ async function retryDelivery(item) {
       return;
     }
     if (response.status === 204) {
-      retryStatus.textContent = "已提前重试时间，等待投递进程处理。";
+      void adminFeedback("已提前重试时间，等待投递进程处理。");
       refreshQueue = true;
     } else {
       const data = await response.json();
-      retryStatus.textContent = data.error || "安排重试失败，请刷新重试。";
+      void adminFeedback(data.error || "安排重试失败，请刷新重试。", "error");
       refreshQueue = response.status === 409;
     }
   } catch {
-    retryStatus.textContent = "未收到重试结果，请刷新队列核对。";
+    void adminFeedback("未收到重试结果，请刷新队列核对。", "error");
   } finally {
+    retryStatus.textContent = "";
     setDeliveryBusy(false);
   }
   if (refreshQueue) await loadDeliveryQueue();
@@ -611,7 +652,6 @@ function openDeliveryResolution(item) {
   if (deliveryBusy) return;
   deliveryResolutionTarget = item;
   adminElement("admin-delivery-resolution-form").reset();
-  adminElement("admin-delivery-resolution-error").textContent = "";
   adminElement("admin-delivery-resolution-target").textContent = "任务 #" + item.id + " · " + item.sender;
   adminElement("admin-delivery-resolution").showModal();
 }
@@ -621,7 +661,6 @@ function setupDeliveryResolution() {
   const form = adminElement("admin-delivery-resolution-form");
   const close = adminElement("admin-delivery-resolution-close");
   const save = form.querySelector('[type="submit"]');
-  const output = adminElement("admin-delivery-resolution-error");
   close.addEventListener("click", () => dialog.close());
   dialog.addEventListener("close", () => form.reset());
   dialog.addEventListener("cancel", event => { if (save.disabled) event.preventDefault(); });
@@ -634,7 +673,6 @@ function setupDeliveryResolution() {
     const payload = { attempts, outcome: outcome.value, password: password.value };
     password.value = "";
     close.disabled = save.disabled = true;
-    output.textContent = "";
     try {
       const response = await fetch("/api/admin/queue/" + id + "/resolve", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
@@ -645,14 +683,14 @@ function setupDeliveryResolution() {
       }
       if (!response.ok) {
         const error = await response.json().catch(() => null);
-        output.textContent = error?.error || "无法保存投递结果，请稍后重试。";
+        void adminFeedback(error?.error || "无法保存投递结果，请稍后重试。", "error");
         return;
       }
       dialog.close();
       await loadDeliveryQueue();
-      retryStatus.textContent = "已记录任务 #" + id + " 的核验结果。";
+      void adminFeedback("已记录任务 #" + id + " 的核验结果。");
     } catch {
-      output.textContent = "未收到保存结果，请刷新队列核对。";
+      void adminFeedback("未收到保存结果，请刷新队列核对。", "error");
     } finally {
       close.disabled = save.disabled = false;
     }
@@ -775,7 +813,9 @@ if (showAccounts) {
   accountSheetAccess.addEventListener("click", () => openAccountAccess(selectedAccountEmail));
   accountSheetLifecycle.addEventListener("click", () => {
     const account = accounts.find(item => item.email === selectedAccountEmail);
-    if (account) openMailboxLifecycle(account);
+    if (account?.configuredAdmin && account.admin && account.email !== signedInAdmin) {
+      void adminFeedback("请先用该安装管理员账号登录，在自己的邮箱详情中选择「交接并回收」。交接完成后，可在此永久删除。", "info");
+    } else if (account) openMailboxLifecycle(account);
   });
 }
 const loadPage = showDelivery ? setupAdminDeliveryTools() : showDMARC ? setupAdminDMARC() : showQuarantine ? setupAdminQuarantine() : showStorage ? setupAdminStorage() : showSecurity ? setupAdminSecurity() : showRuntime ? setupAdminRuntime() : showAliases ? setupAdminAliases() :

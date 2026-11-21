@@ -5,7 +5,6 @@ function setupAdminQuarantine() {
   const more = adminElement("admin-quarantine-more");
   const dialog = adminElement("admin-quarantine-dialog");
   const form = adminElement("admin-quarantine-form");
-  const errorOutput = adminElement("admin-quarantine-error");
   const submit = form.querySelector('[type="submit"]');
   let before = 0;
   let pending;
@@ -32,7 +31,6 @@ function setupAdminQuarantine() {
           button.addEventListener("click", () => {
             pending = { id: item.id, action };
             form.reset();
-            errorOutput.textContent = "";
             adminElement("admin-quarantine-action").textContent = title;
             dialog.showModal();
           });
@@ -61,7 +59,6 @@ function setupAdminQuarantine() {
     const password = form.elements.password.value;
     form.elements.password.value = "";
     submit.disabled = true;
-    errorOutput.textContent = "";
     try {
       const response = await fetch("/api/admin/quarantine/" + pending.id, {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -70,8 +67,9 @@ function setupAdminQuarantine() {
       if (!response.ok) throw new Error((await response.json()).error);
       dialog.close();
       await load();
+      void adminFeedback("已处理隔离邮件。");
     } catch (error) {
-      errorOutput.textContent = error.message || "无法处置隔离邮件";
+      void adminFeedback(error.message || "无法处置隔离邮件。", "error");
     } finally {
       submit.disabled = false;
     }

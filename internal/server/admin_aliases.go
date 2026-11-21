@@ -29,7 +29,7 @@ func (a *app) adminAliasList(w http.ResponseWriter, r *http.Request, actor strin
 	if letterError(w, err) {
 		return
 	}
-	admins, err := a.adminRoleSet(ctx)
+	admins, err := a.adminRoleSet(ctx, a.db)
 	if letterError(w, err) {
 		return
 	}

@@ -34,7 +34,7 @@ func (a *app) adminAccountList(w http.ResponseWriter, r *http.Request, actor str
 	if letterError(w, err) {
 		return
 	}
-	admins, err := a.adminRoleSet(ctx)
+	admins, err := a.adminRoleSet(ctx, a.db)
 	if letterError(w, err) {
 		return
 	}
@@ -83,6 +83,10 @@ func (a *app) adminAccountAccess(w http.ResponseWriter, r *http.Request, actor s
 	if letterError(w, err) {
 		return
 	}
+	canManageRole, err := a.canManageAdminRoles(ctx, a.db, actor, target)
+	if letterError(w, err) {
+		return
+	}
 	rows, err := a.db.QueryContext(ctx, `SELECT actor,action,affected,stamp FROM admin_account_actions
 		WHERE target=? ORDER BY id DESC LIMIT 20`, target)
 	if letterError(w, err) {
@@ -101,7 +105,7 @@ func (a *app) adminAccountAccess(w http.ResponseWriter, r *http.Request, actor s
 		reply(w, http.StatusOK, map[string]any{
 			"sessions": sessions, "appPasswords": passwords, "audit": audit,
 			"suspended": suspended, "canSuspend": !administrator,
-			"administrator": administrator, "canManageRole": a.admins[actor] && !a.admins[target],
+			"administrator": administrator, "canManageRole": canManageRole,
 		})
 	}
 }

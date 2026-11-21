@@ -8,12 +8,11 @@ function setupAdminAliases() {
   const form = adminElement("admin-alias-form");
   const close = adminElement("admin-alias-close");
   const save = adminElement("admin-alias-save");
-  const errorOutput = adminElement("admin-alias-error");
-  const message = adminElement("admin-alias-status");
   const states = { active: "生效", shadowed: "被服务器配置覆盖", orphaned: "主邮箱已移除" };
   let aliases = [];
   let owners = [];
   let mode = "alias_add";
+  search.value = new URLSearchParams(location.search).get("search") || "";
 
   const titles = { alias_add: "添加收信别名", alias_remove: "移除收信别名",
     alias_send_grant: "授权别名发信", alias_send_revoke: "撤销别名发信" };
@@ -21,7 +20,6 @@ function setupAdminAliases() {
   function open(entry, operation = entry ? "alias_remove" : "alias_add") {
     mode = operation;
     form.reset();
-    errorOutput.textContent = "";
     form.elements.owner.replaceChildren(...(entry ? [entry.owner] : owners).map(owner => new Option(owner, owner)));
     form.elements.owner.disabled = Boolean(entry);
     form.elements.alias.value = entry?.alias || "";
@@ -100,7 +98,6 @@ function setupAdminAliases() {
     };
     form.elements.password.value = "";
     close.disabled = save.disabled = true;
-    errorOutput.textContent = "";
     try {
       const response = await fetch("/api/admin/aliases", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
@@ -111,14 +108,14 @@ function setupAdminAliases() {
       }
       if (!response.ok) {
         const failure = await response.json().catch(() => null);
-        errorOutput.textContent = failure?.error || "无法保存别名，请重试。";
+        void adminFeedback(failure?.error || "无法保存别名，请重试。", "error");
         return;
       }
       dialog.close();
-      message.textContent = titles[mode] + "成功。";
       await load();
+      void adminFeedback(titles[mode] + "已完成。");
     } catch {
-      errorOutput.textContent = "未收到操作结果，请关闭窗口并刷新核对。";
+      void adminFeedback("未收到操作结果，请刷新核对。", "error");
     } finally {
       close.disabled = save.disabled = false;
     }

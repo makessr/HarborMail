@@ -124,16 +124,16 @@ func (a *app) adminChangeDomain(w http.ResponseWriter, r *http.Request, actor st
 			return
 		}
 	} else {
-		if !registered {
-			fail(w, http.StatusNotFound, "此域名未在后台登记")
-			return
-		}
 		inUse, lookupErr := a.domainHasAddresses(ctx, tx, domain)
 		if letterError(w, lookupErr) {
 			return
 		}
 		if inUse {
 			fail(w, http.StatusConflict, "此域名仍有主邮箱或别名，无法移除")
+			return
+		}
+		if !registered {
+			fail(w, http.StatusNotFound, "此域名未在后台登记")
 			return
 		}
 		if _, err = tx.ExecContext(ctx, `DELETE FROM domain_dkim_keys WHERE domain=?`, domain); letterError(w, err) {
@@ -159,12 +159,18 @@ func (a *app) adminChangeDomain(w http.ResponseWriter, r *http.Request, actor st
 func (a *app) domainHasAddresses(ctx context.Context, tx folderQueryer, domain string) (bool, error) {
 	for email := range a.accounts {
 		if emailDomain(email) == domain {
-			return true, nil
+			removed, err := configuredMailboxRemoved(ctx, tx, email)
+			if err != nil || !removed {
+				return !removed, err
+			}
 		}
 	}
-	for alias := range a.aliases {
+	for alias, owner := range a.aliases {
 		if emailDomain(alias) == domain {
-			return true, nil
+			removed, err := configuredMailboxRemoved(ctx, tx, owner)
+			if err != nil || !removed {
+				return !removed, err
+			}
 		}
 	}
 	pattern := "%@" + domain

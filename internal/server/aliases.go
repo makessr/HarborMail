@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"maps"
 	"net/http"
 	"slices"
 	"strings"
@@ -64,13 +63,20 @@ var errDestinationChanged = errors.New("recipient routing changed")
 
 func (a *app) destination(ctx context.Context, db folderQueryer, to string) (mailDestination, error) {
 	canonical := strings.ToLower(to)
+	owner := a.aliases[canonical]
 	if _, exists := a.accounts[canonical]; exists {
-		return mailDestination{address: canonical, owner: canonical}, nil
+		owner = canonical
 	}
-	if owner := a.aliases[canonical]; owner != "" {
+	if owner != "" {
+		var retired bool
+		if err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM mailbox_retirements WHERE owner=?)`, owner).Scan(&retired); err != nil {
+			return mailDestination{}, err
+		}
+		if retired {
+			return mailDestination{}, errors.Join(errDestinationChanged, errMailboxRetired)
+		}
 		return mailDestination{address: canonical, owner: owner}, nil
 	}
-	var owner string
 	var primary, retired bool
 	err := db.QueryRowContext(ctx, `SELECT email,TRUE,EXISTS(SELECT 1 FROM mailbox_retirements WHERE owner=email)
 		FROM managed_accounts WHERE email=?
@@ -139,7 +145,11 @@ func (a *app) effectiveAliases(ctx context.Context, names map[string]bool) (map[
 			delete(aliases, alias)
 		}
 	}
-	maps.Copy(aliases, a.aliases)
+	for alias, owner := range a.aliases {
+		if names[owner] {
+			aliases[alias] = owner
+		}
+	}
 	return aliases, nil
 }
 

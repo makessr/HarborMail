@@ -71,7 +71,6 @@ function setupAdminStorage() {
   const alertForm = adminElement("admin-storage-alert-form");
   const alertClose = adminElement("admin-storage-alert-close");
   const alertSave = adminElement("admin-storage-alert-save");
-  const alertError = adminElement("admin-storage-alert-error");
   const alertEdit = adminElement("admin-storage-alert-edit");
   let currentAlert;
   let currentQuota;
@@ -190,7 +189,6 @@ function setupAdminStorage() {
       ? "超限会阻止增加用量的写入。现有邮件可继续读取，填 0 取消限制。"
       : "达到 80% 和 100% 时在此页提示。填 0 关闭预警，收发照常。";
     alertSave.textContent = quota ? "保存配额" : "保存阈值";
-    alertError.textContent = "";
     alertEditor.showModal();
   }
   alertEdit.addEventListener("click", () => openEditor(false));
@@ -209,7 +207,6 @@ function setupAdminStorage() {
     };
     alertForm.elements.password.value = "";
     alertSave.disabled = alertClose.disabled = true;
-    alertError.textContent = "";
     try {
       const path = "/api/admin/accounts/" + encodeURIComponent(owner.value) + (editingQuota ? "/storage-quota" : "/storage-alert");
       const response = await fetch(path, {
@@ -221,15 +218,16 @@ function setupAdminStorage() {
       }
       if (!response.ok) {
         const error = await response.json().catch(() => null);
-        alertError.textContent = response.status === 409 ? "阈值已被修改。关闭窗口并刷新用量后重试。" :
+        const message = response.status === 409 ? "阈值已被修改。刷新用量后重试。" :
           error?.error || "无法保存容量阈值，请重试。";
+        void adminFeedback(message, "error");
         return;
       }
       alertEditor.close();
       await load(false);
-      if (!statusOutput.textContent) statusOutput.textContent = "已保存。";
+      void adminFeedback("容量设置已保存。");
     } catch {
-      alertError.textContent = "未收到保存结果，请关闭窗口并刷新用量核对。";
+      void adminFeedback("未收到保存结果，请刷新用量核对。", "error");
     } finally {
       alertSave.disabled = alertClose.disabled = false;
     }

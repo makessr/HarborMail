@@ -82,6 +82,15 @@ jobs:
             HARBOR_TEST_REDIS_URL="redis://$redis_address/0" \
             HARBOR_TEST_BACKUP_MYSQL_PORT="${address##*:}" HARBOR_TEST_BACKUP_MYSQL_PASSWORD="$backup_password" \
             HARBOR_TEST_BACKUP_MYSQL_CONTAINER="$database" bash .github/scripts/test-systemd.sh
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Verify compiled UI styles
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build:ui
+          git diff --exit-code -- web/harbor-ui.css
       - name: Check Web and operations files
         shell: bash
         run: |
