@@ -69,16 +69,28 @@ a { color: inherit; }
   background: var(--surface);
   box-shadow: var(--shadow);
 }
-.disclosure-panel > :is(button, a) { padding: 7px 9px; min-height: 34px; border: 0; border-radius: 5px; text-align: start; text-decoration: none; background: transparent; color: var(--ink); font-size: 13px; }
+:is(.disclosure-panel, .profile-group-items) > :is(button, a), .profile-group > summary { padding: 7px 9px; min-height: 34px; border: 0; border-radius: 5px; text-align: start; text-decoration: none; background: transparent; color: var(--ink); font-size: 13px; }
 .disclosure-panel > select { max-width: 100%; border: 1px solid var(--control-line); }
-.disclosure-panel > :is(button, a):hover { background: var(--hover); }
-.disclosure-panel > :focus-visible { outline-offset: -2px; }
+:is(.disclosure-panel, .profile-group-items) > :is(button, a):hover, .profile-group > summary:hover { background: var(--hover); }
+:is(.disclosure-panel, .profile-group, .profile-group-items) > :focus-visible { outline-offset: -2px; }
 .profile { margin-top: auto; padding-top: 8px; border-top: 1px solid var(--line); }
 .profile > summary { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 4px 6px; border-radius: 6px; color: var(--muted); }
 .profile > summary:hover { background: var(--hover); }
 .profile .disclosure-panel { inset: auto 0 calc(100% + 4px); width: 100%; }
-.profile .disclosure-panel > :is(a, button) { display: flex; align-items: center; gap: 8px; }
+.profile .disclosure-panel > :is(a, button), .profile-group > summary, .profile-group-items > button { display: flex; align-items: center; gap: 8px; }
 .profile .disclosure-panel .glyph { font-size: 16px; color: var(--muted); }
+.profile-group > summary::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  margin-inline-start: auto;
+  margin-inline-end: 3px;
+  border-inline-end: 1px solid var(--muted);
+  border-block-end: 1px solid var(--muted);
+  transform: rotate(-45deg);
+}
+.profile-group[open] > summary::after { transform: rotate(45deg); }
+.profile-group-items { display: grid; gap: 2px; margin: 2px 0 2px 16px; border-inline-start: 1px solid var(--line); padding-inline-start: 4px; }
 .avatar { flex: 0 0 26px; aspect-ratio: 1; display: grid; place-items: center; background: var(--selected); color: var(--accent-ink); border-radius: 50%; font-size: 13px; font-weight: 650; }
 #account { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 

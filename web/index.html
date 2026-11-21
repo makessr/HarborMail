@@ -80,14 +80,24 @@
         </summary>
         <div class="disclosure-panel">
           <a id="admin-link" href="/admin" hidden><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#dashboard-line"></use></svg> 管理后台</a>
-          <button id="show-preferences" aria-haspopup="dialog"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#settings-3-line"></use></svg> 邮箱偏好</button>
-          <button id="manage-rules"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#list-check-2"></use></svg> 邮件规则</button>
-          <button id="show-addresses"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#mail-line"></use></svg> 收信地址</button>
           <button id="show-contacts"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#contacts-book-line"></use></svg> 联系人</button>
-          <button id="show-app-passwords"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#key-2-line"></use></svg> 应用密码</button>
-          <button id="show-client-settings" type="button" aria-haspopup="dialog"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#computer-line"></use></svg> 邮件客户端</button>
-          <button id="show-web-sessions"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#device-line"></use></svg> 登录设备</button>
-          <button id="show-signatures"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#quill-pen-line"></use></svg> 邮件签名</button>
+          <details class="profile-group disclosure" name="profile-settings">
+            <summary><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#settings-3-line"></use></svg> 邮箱设置</summary>
+            <div class="profile-group-items">
+              <button id="show-preferences" aria-haspopup="dialog"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#settings-3-line"></use></svg> 邮箱偏好</button>
+              <button id="manage-rules"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#list-check-2"></use></svg> 邮件规则</button>
+              <button id="show-addresses"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#mail-line"></use></svg> 收信地址</button>
+              <button id="show-signatures"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#quill-pen-line"></use></svg> 邮件签名</button>
+            </div>
+          </details>
+          <details class="profile-group disclosure" name="profile-settings">
+            <summary><svg class="glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#shield"></use></svg> 账号与安全</summary>
+            <div class="profile-group-items">
+              <button id="show-web-sessions"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#device-line"></use></svg> 登录设备</button>
+              <button id="show-app-passwords"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#key-2-line"></use></svg> 应用密码</button>
+              <button id="show-client-settings" type="button" aria-haspopup="dialog"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#computer-line"></use></svg> 邮件客户端</button>
+            </div>
+          </details>
           <button id="logout"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#logout-box-r-line"></use></svg> 退出</button>
         </div>
       </details>

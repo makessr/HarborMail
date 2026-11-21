@@ -1281,6 +1281,12 @@ function setupMailRules() {
 }
 
 setupMailRules();
+const profile = document.querySelector(".profile");
+profile.addEventListener("toggle", () => {
+  if (profile.open) return;
+  const group = profile.querySelector(".profile-group[open]");
+  if (group) group.open = false;
+});
 byId("letter-actions").addEventListener("click", event => {
   if (!event.target.closest(".letter-menu :is(button, a)")) return;
   const menu = event.currentTarget;
@@ -1288,9 +1294,9 @@ byId("letter-actions").addEventListener("click", event => {
   menu.open = false;
 });
 document.addEventListener("click", event => {
-  if (event.target.closest("dialog")) return;
+  const dialog = event.target.closest("dialog");
   for (const disclosure of document.querySelectorAll(".disclosure[open]")) {
-    if (!disclosure.contains(event.target)) disclosure.open = false;
+    if ((!dialog || dialog.contains(disclosure)) && !disclosure.contains(event.target)) disclosure.open = false;
   }
 });
 document.addEventListener("keydown", event => {
