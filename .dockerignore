@@ -2,6 +2,9 @@
 !Dockerfile
 !go.mod
 !go.sum
+!LICENSE
+!NOTICE
+!THIRD_PARTY_NOTICES.md
 !cmd/
 !cmd/**
 !internal/
@@ -10,5 +13,4 @@
 !web/**
 !docs/
 !docs/licenses/
-!docs/licenses/go-qrcode.txt
-!docs/licenses/go-msgauth.txt
+!docs/licenses/**

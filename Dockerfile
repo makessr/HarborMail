@@ -7,6 +7,8 @@ ARG HARBOR_GO_SUMDB=sum.golang.org
 ARG HARBOR_BUILD_VERSION=dev
 WORKDIR /src
 COPY go.mod go.sum ./
+COPY docs/licenses/go-inputs.sha256 ./
+RUN sha256sum -c go-inputs.sha256
 RUN GOPROXY="$HARBOR_GO_PROXY" GOSUMDB="$HARBOR_GO_SUMDB" go mod download
 COPY cmd/ cmd/
 COPY internal/ internal/
@@ -15,16 +17,26 @@ RUN CGO_ENABLED=0 GOOS="$TARGETOS" GOARCH="$TARGETARCH" \
     GOPROXY="$HARBOR_GO_PROXY" GOSUMDB="$HARBOR_GO_SUMDB" \
     go build -trimpath -ldflags="-s -w -X harbormail/internal/server.buildVersion=${HARBOR_BUILD_VERSION} -X harbormail/internal/server.buildDeployment=docker" -o /out/harbormail ./cmd/harbormail
 
-FROM alpine:3.23
-RUN apk add --no-cache ca-certificates \
+FROM alpine:3.23@sha256:469c9ea410b9215eaee7976ba6c0639039b444be8e5d638f7abbada189971eb2
+ARG TARGETARCH
+COPY docs/licenses/alpine-runtime.tsv /usr/share/licenses/harbormail/docs/licenses/
+RUN apk add --no-cache ca-certificates=20261020-r0 \
+    && awk -v arch="$TARGETARCH" '$1 == arch' /usr/share/licenses/harbormail/docs/licenses/alpine-runtime.tsv | LC_ALL=C sort > /tmp/expected-packages \
+    && awk -v arch="$TARGETARCH" 'BEGIN { RS=""; FS="\n"; OFS="\t" } { for (i=1;i<=NF;i++) fields[substr($i,1,1)]=substr($i,3); print arch,fields["P"],fields["V"],fields["L"],fields["o"],fields["c"]; delete fields }' /lib/apk/db/installed | LC_ALL=C sort > /tmp/installed-packages \
+    && test -s /tmp/expected-packages \
+    && diff -u /tmp/expected-packages /tmp/installed-packages \
+    && rm /tmp/expected-packages /tmp/installed-packages \
     && addgroup -S -g 10001 harbor \
     && adduser -S -D -H -u 10001 -G harbor harbor \
     && mkdir -p /var/lib/harbormail \
     && chown harbor:harbor /var/lib/harbormail
 COPY --from=build /out/harbormail /usr/local/bin/harbormail
-COPY docs/licenses/go-qrcode.txt /usr/share/licenses/harbormail/go-qrcode.txt
-COPY docs/licenses/go-msgauth.txt /usr/share/licenses/harbormail/go-msgauth.txt
-COPY docs/licenses/webpush-go.txt docs/licenses/jwt-v5.txt /usr/share/licenses/harbormail/
+COPY LICENSE NOTICE THIRD_PARTY_NOTICES.md /usr/share/licenses/harbormail/
+COPY docs/licenses/ /usr/share/licenses/harbormail/docs/licenses/
+COPY docs/licenses/go-qrcode.txt docs/licenses/go-msgauth.txt docs/licenses/webpush-go.txt docs/licenses/jwt-v5.txt /usr/share/licenses/harbormail/
+COPY web/Remix-Icon-License.txt web/Kubai-Icons-License.txt /usr/share/licenses/harbormail/web/
+COPY web/fonts/source-han-OFL.txt /usr/share/licenses/harbormail/web/fonts/
+COPY web/notosanssc-v41/OFL.txt /usr/share/licenses/harbormail/web/notosanssc-v41/
 USER 10001:10001
 WORKDIR /var/lib/harbormail
 ENV HARBOR_WEB=0.0.0.0:8080 HARBOR_SMTP=0.0.0.0:2525 HARBOR_DB=/var/lib/harbormail/harbor.db \

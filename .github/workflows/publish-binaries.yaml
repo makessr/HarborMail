@@ -72,6 +72,11 @@ jobs:
             exit 1
           fi
           (cd dist; sha256sum -c SHA256SUMS)
+          gh release download v0.2.18 --repo "$GITHUB_REPOSITORY" \
+            --dir dist --pattern harbormail-alpine-sources.tar.gz
+          tar -xOzf dist/harbormail-alpine-sources.tar.gz alpine-sources/alpine-runtime.tsv \
+            | cmp docs/licenses/alpine-runtime.tsv -
+          (cd dist; sha256sum harbormail-alpine-sources.tar.gz >> SHA256SUMS)
           [[ $IMAGE_DIGEST =~ ^sha256:[a-f0-9]{64}$ ]]
           published=$(gh release list --repo "$GITHUB_REPOSITORY" --json tagName,isLatest --jq '.[] | select(.isLatest) | .tagName')
           if [[ -n $published && $(printf '%s\n' "$GITHUB_REF_NAME" "$published" | sort -V | tail -n 1) != "$GITHUB_REF_NAME" ]]; then

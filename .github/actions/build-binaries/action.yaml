@@ -12,6 +12,7 @@ runs:
         CGO_ENABLED: '0'
       run: |
         set -euo pipefail
+        sha256sum -c docs/licenses/go-inputs.sha256
         mkdir -p dist
         version=$(bash .github/scripts/release-version.sh)
         if [[ ${GITHUB_REF_TYPE:-} == tag ]]; then
@@ -30,6 +31,10 @@ runs:
         cp docs/licenses/go-msgauth.txt dist/go-msgauth-LICENSE.txt
         cp docs/licenses/webpush-go.txt dist/webpush-go-LICENSE.txt
         cp docs/licenses/jwt-v5.txt dist/jwt-v5-LICENSE.txt
+        tar -czf dist/harbormail-licenses.tar.gz LICENSE NOTICE THIRD_PARTY_NOTICES.md \
+          docs/licenses web/Remix-Icon-License.txt web/Kubai-Icons-License.txt \
+          web/fonts/source-han-OFL.txt web/notosanssc-v41/OFL.txt
         cd dist
         sha256sum -- harbormail-linux-amd64 harbormail-linux-arm64 harbormail-windows-amd64.exe harbormail-windows-arm64.exe harbormail-systemd.tar.gz \
-          go-qrcode-LICENSE.txt go-msgauth-LICENSE.txt webpush-go-LICENSE.txt jwt-v5-LICENSE.txt > SHA256SUMS
+          go-qrcode-LICENSE.txt go-msgauth-LICENSE.txt webpush-go-LICENSE.txt jwt-v5-LICENSE.txt \
+          harbormail-licenses.tar.gz > SHA256SUMS

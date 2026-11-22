@@ -33,6 +33,7 @@ jobs:
             dist/harbormail-windows-amd64.exe
             dist/harbormail-windows-arm64.exe
             dist/harbormail-systemd.tar.gz
+            dist/harbormail-licenses.tar.gz
             dist/go-qrcode-LICENSE.txt
             dist/go-msgauth-LICENSE.txt
             dist/webpush-go-LICENSE.txt

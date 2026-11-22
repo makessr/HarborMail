@@ -34,11 +34,16 @@ runs:
           --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
           --label "org.opencontainers.image.revision=$GITHUB_SHA" \
           --label "org.opencontainers.image.version=$VERSION" \
+          --label "org.opencontainers.image.licenses=Apache-2.0" \
           --build-arg "HARBOR_BUILD_VERSION=$VERSION" --tag "$image" .
         digest=$(docker buildx imagetools inspect "$image" --format '{{.Manifest.Digest}}')
         [[ $digest =~ ^sha256:[a-f0-9]{64}$ ]]
         for arch in amd64 arm64; do
           test "$(docker run --rm --platform "linux/$arch" --network none "$registry@$digest" version)" = "$VERSION"
+          docker run --rm --platform "linux/$arch" --network none --entrypoint /bin/sh "$registry@$digest" -ec '
+            cd /usr/share/licenses/harbormail
+            test -s LICENSE && test -s THIRD_PARTY_NOTICES.md && test -s docs/licenses/go-runtime.txt && test -s docs/licenses/alpine-runtime.tsv
+          '
           printf '%s\n' 'image-smoke-test' | docker run --rm -i --platform "linux/$arch" --network none "$registry@$digest" hash-password
         done
         printf 'digest=%s\n' "$digest" >> "$GITHUB_OUTPUT"
