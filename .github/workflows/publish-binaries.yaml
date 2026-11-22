@@ -29,7 +29,13 @@ jobs:
             printf 'Expected a release tag in vMAJOR.MINOR.PATCH format\n' >&2
             exit 1
           fi
-          gh release create "$GITHUB_REF_NAME" --verify-tag --title "Harbor Mail $GITHUB_REF_NAME" --generate-notes \
-            --notes 'Linux amd64 和 arm64 用于部署，systemd 模板可单独下载。Windows amd64 用于本地开发。下载后可用 SHA256SUMS 校验。' \
+          notes="docs/releases/$GITHUB_REF_NAME.md"
+          if [[ -s "$notes" ]]; then
+            release_notes=(--notes-file "$notes")
+          else
+            release_notes=(--generate-notes)
+          fi
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "Harbor Mail $GITHUB_REF_NAME" "${release_notes[@]}" \
             dist/harbormail-linux-amd64 dist/harbormail-linux-arm64 dist/harbormail-windows-amd64.exe \
-            dist/harbormail-systemd.tar.gz dist/go-qrcode-LICENSE.txt dist/go-msgauth-LICENSE.txt dist/SHA256SUMS
+            dist/harbormail-systemd.tar.gz dist/go-qrcode-LICENSE.txt dist/go-msgauth-LICENSE.txt \
+            dist/webpush-go-LICENSE.txt dist/jwt-v5-LICENSE.txt dist/SHA256SUMS

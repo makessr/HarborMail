@@ -31,7 +31,7 @@ var migrationTables = strings.Fields(`
 	letters login_audit_events mail_label_links mail_labels mail_rules mail_snoozes mail_templates mail_threads mail_translations
 	mailbox_preferences mailbox_send_delay mailbox_storage_alerts mailbox_quota mailbox_quota_meta mailbox_retirements configured_mailbox_removals managed_accounts managed_admin_roles outbound_limits dmarc_reports managed_aliases managed_domains
 	outbox outbox_dkim_signatures outbox_recipient_progress outbox_schedule saved_searches sessions signature_settings spam_controller_pauses spam_feedback
-	web_drafts web_letter_recipients web_outbox_envelopes web_session_details
+	web_drafts web_letter_recipients web_outbox_envelopes web_push_identity web_push_subscriptions web_session_details
 `)
 
 type migrationTable struct {

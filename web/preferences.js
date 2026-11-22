@@ -65,6 +65,7 @@ async function openMailboxPreferences() {
   preferencesRevision = activeMailboxPreferences.revision;
   populateMailboxPreferences(activeMailboxPreferences);
   preferencesDialog.showModal();
+  void refreshWebPushPreference();
 }
 
 systemTheme.addEventListener("change", () => {

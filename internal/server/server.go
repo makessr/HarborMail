@@ -386,6 +386,15 @@ func (a *app) serve(ctx context.Context, transportTLS inboundTLS) error {
 	}
 	defer runtime.shutdown()
 	a.stopping = runtime.ctx.Done()
+	if !a.recoveryMode {
+		keys, err := a.loadWebPushKeys(ctx)
+		if err != nil {
+			log.Print("Web Push unavailable: ", err)
+		} else {
+			a.webPush = keys
+			runtime.worker(a.runWebPush)
+		}
+	}
 	if err := a.listenMetrics(runtime, os.Getenv("HARBOR_METRICS")); err != nil {
 		return err
 	}
@@ -621,6 +630,10 @@ func (a *app) auth(handler authorized) http.HandlerFunc {
 func (a *app) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", a.health)
+	mux.HandleFunc("GET /harbor-mail.webmanifest", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/manifest+json")
+		http.ServeFileFS(w, r, web.Assets, "harbor-mail.webmanifest")
+	})
 	mux.Handle("GET /", http.FileServer(http.FS(web.Assets)))
 	mux.HandleFunc("GET /admin", a.adminPage)
 	mux.HandleFunc("GET /admin/{$}", a.adminPage)
@@ -701,6 +714,9 @@ func (a *app) routes() http.Handler {
 	mux.HandleFunc("GET /api/saved-searches", a.auth(a.listSavedSearches))
 	mux.HandleFunc("POST /api/saved-searches", a.auth(a.saveSearch))
 	mux.HandleFunc("PUT /api/saved-searches/{id}", a.auth(a.saveSearch))
+	mux.HandleFunc("GET /api/web-push", a.auth(a.webPushStatus))
+	mux.HandleFunc("PUT /api/web-push", a.auth(a.updateWebPush))
+	mux.HandleFunc("DELETE /api/web-push", a.auth(a.disableWebPush))
 	mux.HandleFunc("DELETE /api/saved-searches/{id}", a.auth(a.deleteSavedSearch))
 	mux.HandleFunc("GET /api/labels", a.auth(a.listMailLabels))
 	mux.HandleFunc("POST /api/labels", a.auth(a.saveMailLabel))

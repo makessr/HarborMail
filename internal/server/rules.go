@@ -153,10 +153,18 @@ func insertIncoming(ctx context.Context, tx *sql.Tx, owner, sender, folder strin
 		break
 	}
 	id, err := insertLetter(tx, owner, m, folder, "inbox", raw)
-	if err != nil || label == 0 {
+	if err != nil {
 		return err
 	}
-	return attachMailLabel(ctx, tx, id, label)
+	if label != 0 {
+		if err := attachMailLabel(ctx, tx, id, label); err != nil {
+			return err
+		}
+	}
+	if folder == "inbox" && !m.Read {
+		return queueWebPush(ctx, tx, owner, id)
+	}
+	return nil
 }
 
 func (a *app) saveMailRule(ctx context.Context, owner string, rule mailRule) (mailRule, error) {

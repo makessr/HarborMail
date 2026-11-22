@@ -27,6 +27,7 @@ const mailLimit = 10 << 20
 var addrSpec = regexp.MustCompile(`^[a-zA-Z0-9!#$%&'*+/=?^_` + "`" + `{|}~.-]+@[a-zA-Z0-9.-]+$`)
 
 type app struct {
+	webPush             *webPushService
 	db                  *sql.DB
 	dbDriver            string
 	adminCache          *adminRedisCache

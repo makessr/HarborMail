@@ -78,6 +78,16 @@ var sqliteSchema = []string{
 		digest BLOB PRIMARY KEY, owner TEXT NOT NULL, device TEXT NOT NULL,
 		created INTEGER NOT NULL, last_active INTEGER NOT NULL, expires INTEGER NOT NULL
 	)`,
+	`CREATE TABLE IF NOT EXISTS web_push_identity (
+		id INTEGER PRIMARY KEY, private_key TEXT NOT NULL, public_key TEXT NOT NULL
+	)`,
+	`CREATE TABLE IF NOT EXISTS web_push_subscriptions (
+		id BLOB PRIMARY KEY, owner TEXT NOT NULL, session_digest BLOB NOT NULL,
+		endpoint TEXT NOT NULL, p256dh TEXT NOT NULL, auth_key TEXT NOT NULL,
+		pending_id INTEGER NOT NULL DEFAULT 0, queued_at INTEGER NOT NULL DEFAULT 0, due_at INTEGER NOT NULL DEFAULT 0
+	)`,
+	`CREATE INDEX IF NOT EXISTS web_push_due ON web_push_subscriptions(due_at)`,
+	`CREATE INDEX IF NOT EXISTS web_push_owner ON web_push_subscriptions(owner)`,
 	`CREATE INDEX IF NOT EXISTS web_session_details_owner ON web_session_details(owner)`,
 	`CREATE INDEX IF NOT EXISTS web_session_details_expiry ON web_session_details(expires)`,
 	`CREATE TABLE IF NOT EXISTS outbox (
@@ -290,6 +300,15 @@ var mysqlSchema = []string{
 		device VARCHAR(80) NOT NULL, created BIGINT NOT NULL, last_active BIGINT NOT NULL, expires BIGINT NOT NULL,
 		KEY web_session_details_owner (owner), KEY web_session_details_expiry (expires)
 	) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin`,
+	`CREATE TABLE IF NOT EXISTS web_push_identity (
+		id INTEGER PRIMARY KEY, private_key VARCHAR(64) NOT NULL, public_key VARCHAR(128) NOT NULL
+	) ENGINE=InnoDB`,
+	`CREATE TABLE IF NOT EXISTS web_push_subscriptions (
+		id BINARY(32) PRIMARY KEY, owner VARCHAR(254) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+		session_digest BINARY(32) NOT NULL, endpoint VARCHAR(2048) NOT NULL, p256dh VARCHAR(128) NOT NULL,
+		auth_key VARCHAR(32) NOT NULL, pending_id BIGINT NOT NULL DEFAULT 0, queued_at BIGINT NOT NULL DEFAULT 0,
+		due_at BIGINT NOT NULL DEFAULT 0, KEY web_push_due (due_at), KEY web_push_owner (owner)
+	) ENGINE=InnoDB`,
 	`CREATE TABLE IF NOT EXISTS outbox (
 		id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
 		sender VARCHAR(254) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,

@@ -1,0 +1,11 @@
+{
+  "id": "/",
+  "name": "Harbor Mail",
+  "short_name": "Harbor Mail",
+  "start_url": "/?view=mail",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f2f5fa",
+  "theme_color": "#f2f5fa",
+  "icons": [{ "src": "/harbor-mail-logo.png", "sizes": "96x96", "type": "image/png" }]
+}

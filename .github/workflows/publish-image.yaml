@@ -34,6 +34,8 @@ jobs:
             dist/harbormail-systemd.tar.gz
             dist/go-qrcode-LICENSE.txt
             dist/go-msgauth-LICENSE.txt
+            dist/webpush-go-LICENSE.txt
+            dist/jwt-v5-LICENSE.txt
             dist/SHA256SUMS
           if-no-files-found: error
   publish:

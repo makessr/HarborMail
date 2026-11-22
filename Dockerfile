@@ -24,6 +24,7 @@ RUN apk add --no-cache ca-certificates \
 COPY --from=build /out/harbormail /usr/local/bin/harbormail
 COPY docs/licenses/go-qrcode.txt /usr/share/licenses/harbormail/go-qrcode.txt
 COPY docs/licenses/go-msgauth.txt /usr/share/licenses/harbormail/go-msgauth.txt
+COPY docs/licenses/webpush-go.txt docs/licenses/jwt-v5.txt /usr/share/licenses/harbormail/
 USER 10001:10001
 WORKDIR /var/lib/harbormail
 ENV HARBOR_WEB=0.0.0.0:8080 HARBOR_SMTP=0.0.0.0:2525 HARBOR_DB=/var/lib/harbormail/harbor.db \

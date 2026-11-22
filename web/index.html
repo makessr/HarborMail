@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#f6f7f9">
   <title>Harbor Mail</title>
   <link rel="icon" type="image/png" sizes="96x96" href="/harbor-mail-logo.png">
+  <link rel="manifest" href="/harbor-mail.webmanifest">
   <link rel="stylesheet" href="/notosanssc-v41/font.css">
   <link rel="stylesheet" href="/style.css">
   <link rel="stylesheet" href="/harbor-ui.css">
@@ -18,6 +19,7 @@
   <script src="/saved-searches.js" defer></script>
   <script src="/app-shell.js" defer></script>
   <script src="/preferences.js" defer></script>
+  <script src="/web-push-settings.js" defer></script>
   <script src="/commands.js" defer></script>
   <script src="/draft-autosave.js" defer></script>
   <script src="/letter-sender.js" defer></script>
@@ -452,6 +454,13 @@
         </div>
       </fieldset>
       <label class="preference-read"><input name="autoRead" type="checkbox"> 打开邮件时自动标为已读</label>
+      <section class="preference-group" aria-labelledby="web-push-title">
+        <div class="preference-send-delay">
+          <strong id="web-push-title">新邮件通知</strong>
+          <button id="web-push-toggle" type="button" class="secondary" aria-describedby="web-push-status" disabled>开启本设备通知</button>
+        </div>
+        <p id="web-push-status" class="rule-help" role="status"></p>
+      </section>
       <div class="preference-send-delay">
         <label for="undo-seconds">撤销发送等待时间</label>
         <select id="undo-seconds" name="undoSeconds">
