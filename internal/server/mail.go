@@ -11,13 +11,15 @@ import (
 	"errors"
 	"io"
 	"log"
+	"mime"
 	"net/mail"
 	"regexp"
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode"
 
-	_ "github.com/emersion/go-message/charset"
+	"github.com/emersion/go-message/charset"
 	message "github.com/emersion/go-message/mail"
 	"github.com/emersion/go-smtp"
 )
@@ -91,6 +93,7 @@ type letter struct {
 	reply         replyHeaders
 	recipients    *webRecipients
 	author        string
+	fromName      string
 	formatted     bool
 }
 
@@ -310,7 +313,15 @@ func senderContact(from string) (email, name string) {
 	if err != nil {
 		return "", ""
 	}
-	return email, parsed.Name
+	// The address parser leaves encoded words inside quoted display names intact.
+	name = parsed.Name
+	if strings.Contains(name, "=?") {
+		decoder := mime.WordDecoder{CharsetReader: charset.Reader}
+		if decoded, err := decoder.DecodeHeader(name); err == nil && !strings.ContainsFunc(decoded, unicode.IsControl) {
+			name = decoded
+		}
+	}
+	return email, name
 }
 
 func displaySender(from string) string {
@@ -327,7 +338,7 @@ func displaySender(from string) string {
 func encodeLetter(m letter, domain string, files []uploadedAttachment) ([]byte, error) {
 	var raw bytes.Buffer
 	var header message.Header
-	header.SetAddressList("From", []*mail.Address{{Address: m.wireFrom()}})
+	header.SetAddressList("From", []*mail.Address{{Name: m.fromName, Address: m.wireFrom()}})
 	if m.author != "" && m.author != m.From {
 		header.Set("X-Harbor-Send-As", m.author)
 	}

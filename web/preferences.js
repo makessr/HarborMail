@@ -1,6 +1,6 @@
 "use strict";
 
-const defaultMailboxPreferences = Object.freeze({ revision: 0, theme: "light", density: "comfortable", readMode: "auto", undoSeconds: 0 });
+const defaultMailboxPreferences = Object.freeze({ revision: 0, theme: "light", density: "comfortable", readMode: "auto", undoSeconds: 0, senderDisplayName: "" });
 const preferencesDialog = document.getElementById("preferences-dialog");
 const preferencesForm = document.getElementById("preferences-form");
 let activeMailboxPreferences = defaultMailboxPreferences;
@@ -37,6 +37,7 @@ function selectedMailboxPreferences() {
     density: preferencesForm.elements.density.value,
     readMode: preferencesForm.elements.autoRead.checked ? "auto" : "manual",
     undoSeconds: Number(preferencesForm.elements.undoSeconds.value),
+    senderDisplayName: preferencesForm.elements.senderDisplayName.value,
   };
 }
 
@@ -45,6 +46,7 @@ function populateMailboxPreferences(prefs) {
   preferencesForm.elements.density.value = prefs.density;
   preferencesForm.elements.autoRead.checked = prefs.readMode === "auto";
   preferencesForm.elements.undoSeconds.value = String(prefs.undoSeconds || 0);
+  preferencesForm.elements.senderDisplayName.value = prefs.senderDisplayName || "";
 }
 
 function closeMailboxPreferences() {

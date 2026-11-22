@@ -34,6 +34,19 @@ func testAliasAndRichDraft(t *testing.T, driver, source string) {
 	a := &app{db: db, dbDriver: driver, domain: "harbor.test", accounts: map[string][]byte{owner: {}, other: {}},
 		aliases: map[string]string{alias: owner}, sendAliases: map[string]bool{alias: true},
 		domainRelays: map[string]domainRelay{"alias.test": {Address: "relay.invalid:587"}}}
+	const displayName = "王, Jason"
+	if _, err := db.Exec(`INSERT INTO mailbox_preferences(owner,revision,theme,density,read_mode,sender_display_name)
+		VALUES(?,1,'light','comfortable','auto',?)`, owner, displayName); err != nil {
+		t.Fatal(err)
+	}
+	assertFrom := func(raw []byte) {
+		t.Helper()
+		header := letterHeader(raw)
+		from, err := header.AddressList("From")
+		if err != nil || len(from) != 1 || from[0].Name != displayName || from[0].Address != alias {
+			t.Fatalf("From header = %q, want %q <%s>: %v", header.Get("From"), displayName, alias, err)
+		}
+	}
 	const body = "**bold**\n- One\n> Quote\n[link](https://example.com)\ntest body"
 	plan := "?sendAt=" + strconv.FormatInt(time.Now().Add(time.Hour).Unix(), 10)
 	post := func(actor, to, params, subject string, want int) int64 {
@@ -86,6 +99,7 @@ func testAliasAndRichDraft(t *testing.T, driver, source string) {
 		!inspectHTMLMail(raw, false).hasHTML {
 		t.Fatalf("delivered message has incorrect sender or parts: %q, %q", from, plain)
 	}
+	assertFrom(raw)
 
 	outbox := post(owner, other, plan, "Queued rich mail", http.StatusAccepted)
 	if _, err := db.Exec(`UPDATE outbox SET due=0 WHERE id=?`, outbox); err != nil {
@@ -95,6 +109,7 @@ func testAliasAndRichDraft(t *testing.T, driver, source string) {
 	if err != nil || job == nil || job.message.ID != outbox || job.message.wireFrom() != alias {
 		t.Fatalf("missing scheduled alias shipment: %v (%v)", job, err)
 	}
+	assertFrom(job.raw)
 	if err := a.processOutbox(job, nil); err != nil {
 		t.Fatal(err)
 	}

@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"harbormail/web"
 )
 
 //go:embed admin.html
@@ -63,7 +65,7 @@ func (a *app) adminPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if session.owner == "" {
-		http.Redirect(w, r, "/", http.StatusSeeOther)
+		http.ServeFileFS(w, r, web.Assets, "index.html")
 		return
 	}
 	administrator, err := a.isGlobalAdmin(r.Context(), a.db, session.owner)

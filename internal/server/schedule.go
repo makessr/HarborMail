@@ -240,10 +240,10 @@ func (a *app) restoreScheduled(ctx context.Context, owner string, id int64) (int
 }
 
 func rewriteMailDate(raw []byte, stamp int64) ([]byte, error) {
-	return rewriteOutgoingHeaders(raw, stamp, "", nil)
+	return rewriteOutgoingHeaders(raw, stamp, "", "", nil)
 }
 
-func rewriteOutgoingHeaders(raw []byte, stamp int64, sender string, recipients *webRecipients) ([]byte, error) {
+func rewriteOutgoingHeaders(raw []byte, stamp int64, sender, senderName string, recipients *webRecipients) ([]byte, error) {
 	reader := bufio.NewReader(bytes.NewReader(raw))
 	header, err := textproto.ReadHeader(reader)
 	if err != nil {
@@ -256,7 +256,7 @@ func rewriteOutgoingHeaders(raw []byte, stamp int64, sender string, recipients *
 		header.Del("Bcc")
 		header.Del("Resent-Bcc")
 		var visible message.Header
-		visible.SetAddressList("From", []*message.Address{{Address: sender}})
+		visible.SetAddressList("From", []*message.Address{{Name: senderName, Address: sender}})
 		setVisibleRecipients(&visible, *recipients)
 		for fields := visible.Fields(); fields.Next(); {
 			header.Set(fields.Key(), fields.Value())

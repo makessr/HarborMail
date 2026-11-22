@@ -1020,6 +1020,10 @@ func (a *app) send(w http.ResponseWriter, r *http.Request, owner string) {
 		return
 	}
 	m.reply = headers
+	m.fromName, err = mailboxSenderDisplayName(r.Context(), a.db, owner)
+	if letterError(w, err) {
+		return
+	}
 	if plan.at != 0 {
 		m.Date = plan.at
 	}

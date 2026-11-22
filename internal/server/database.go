@@ -204,7 +204,7 @@ var sqliteSchema = []string{
 	)`,
 	`CREATE TABLE IF NOT EXISTS mailbox_preferences (
 		owner TEXT NOT NULL UNIQUE, revision INTEGER NOT NULL,
-		theme TEXT NOT NULL, density TEXT NOT NULL, read_mode TEXT NOT NULL
+		theme TEXT NOT NULL, density TEXT NOT NULL, read_mode TEXT NOT NULL, sender_display_name TEXT NOT NULL DEFAULT ''
 	)`,
 	`CREATE TABLE IF NOT EXISTS mailbox_send_delay (
 		owner TEXT NOT NULL PRIMARY KEY, delay_seconds INTEGER NOT NULL
@@ -450,7 +450,8 @@ var mysqlSchema = []string{
 	) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin`,
 	`CREATE TABLE IF NOT EXISTS mailbox_preferences (
 		owner VARCHAR(254) CHARACTER SET ascii COLLATE ascii_bin NOT NULL PRIMARY KEY,
-		revision BIGINT NOT NULL, theme VARCHAR(8) NOT NULL, density VARCHAR(12) NOT NULL, read_mode VARCHAR(8) NOT NULL
+		revision BIGINT NOT NULL, theme VARCHAR(8) NOT NULL, density VARCHAR(12) NOT NULL, read_mode VARCHAR(8) NOT NULL,
+		sender_display_name VARCHAR(80) NOT NULL DEFAULT ''
 	) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin`,
 	`CREATE TABLE IF NOT EXISTS mailbox_send_delay (
 		owner VARCHAR(254) CHARACTER SET ascii COLLATE ascii_bin NOT NULL PRIMARY KEY,
@@ -522,6 +523,10 @@ func openDB(driver, source string) (*sql.DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("initialize %s letter details: %w", driver, err)
 	}
+	if err := ensureColumn(ctx, db, driver, "mailbox_preferences", "sender_display_name", "TEXT NOT NULL DEFAULT ''", "VARCHAR(80) NOT NULL DEFAULT ''"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("initialize %s sender display name: %w", driver, err)
+	}
 	if err := initDeliveryTimeline(ctx, db, driver); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("initialize %s delivery timeline: %w", driver, err)
@@ -539,6 +544,26 @@ func openDB(driver, source string) (*sql.DB, error) {
 		return nil, fmt.Errorf("reserve the Junk folder name: %w", err)
 	}
 	return db, nil
+}
+
+func ensureColumn(ctx context.Context, db *sql.DB, driver, table, name, sqliteType, mysqlType string) error {
+	check := "SELECT COUNT(*) FROM pragma_table_info(?) WHERE name=?"
+	column := sqliteType
+	if driver == "mysql" {
+		check = "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name=? AND column_name=?"
+		column = mysqlType
+	}
+	var count int
+	if err := db.QueryRowContext(ctx, check, table, name).Scan(&count); err != nil || count != 0 {
+		return err
+	}
+	// Table names, column names, and types come from schema definitions.
+	_, err := db.ExecContext(ctx, "ALTER TABLE "+table+" ADD COLUMN "+name+" "+column)
+	var duplicate *mysql.MySQLError
+	if errors.As(err, &duplicate) && duplicate.Number == 1060 {
+		return nil // Another MySQL instance upgraded the shared schema first.
+	}
+	return err
 }
 
 func harborMySQLConfig(source string) (*mysql.Config, error) {

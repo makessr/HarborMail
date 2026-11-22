@@ -72,7 +72,16 @@ func testInstallationAdminHandoff(t *testing.T, driver, source string) {
 		t.Helper()
 		call(http.MethodPost, "/api/admin/domains", map[string]any{"domain": oldDomain, "action": action, "password": password}, credentials, want)
 	}
+	adminLogin := call(http.MethodGet, "/admin", nil, nil, http.StatusOK)
+	if !strings.Contains(adminLogin.Body.String(), `id="login-form"`) {
+		t.Fatal("admin entry did not provide a login form")
+	}
 	original := login(outgoing, http.StatusOK)
+	mailbox := call(http.MethodGet, "/", nil, original, http.StatusOK)
+	admin := call(http.MethodGet, "/admin", nil, original, http.StatusOK)
+	if !strings.Contains(mailbox.Body.String(), `id="mailbox"`) || !strings.Contains(admin.Body.String(), `<body class="admin">`) {
+		t.Fatal("mailbox and admin entry points did not serve their respective pages")
+	}
 	domain("domain_add", original, http.StatusCreated)
 	domain("domain_remove", original, http.StatusConflict)
 	change("mailbox_retire", "", original, http.StatusConflict)

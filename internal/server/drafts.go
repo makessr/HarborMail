@@ -235,7 +235,11 @@ func (a *app) sendDraft(w http.ResponseWriter, r *http.Request, owner string) {
 	if plan.at != 0 {
 		m.Date = plan.at
 	}
-	raw, err = rewriteOutgoingHeaders(raw, m.Date, m.wireFrom(), m.recipients)
+	m.fromName, err = mailboxSenderDisplayName(ctx, tx, owner)
+	if letterError(w, err) {
+		return
+	}
+	raw, err = rewriteOutgoingHeaders(raw, m.Date, m.wireFrom(), m.fromName, m.recipients)
 	if letterError(w, err) {
 		return
 	}

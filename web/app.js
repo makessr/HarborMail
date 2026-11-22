@@ -125,7 +125,11 @@ function showLogin() {
   byId("login").hidden = false;
 }
 
-async function openSession({ email, role, recoveryMode = false, attachmentMiB = 6, messageMiB = 10, canTranslate = false, translationProviders }, keepMailbox = false) {
+async function openSession({ email, role, recoveryMode = false, attachmentMiB = 6, messageMiB = 10, canTranslate = false, translationProviders }) {
+  if (location.pathname === "/admin" || location.pathname.startsWith("/admin/")) {
+    location.reload();
+    return;
+  }
   state.recoveryMode = recoveryMode;
   state.canTranslate = configureLetterTranslation(translationProviders ?? (canTranslate ? ["microsoft"] : []), !recoveryMode);
   attachmentSizeLimit = attachmentMiB * 1048576;
@@ -138,11 +142,6 @@ async function openSession({ email, role, recoveryMode = false, attachmentMiB = 
   if (adminDenied) {
     url.searchParams.delete("notice");
     history.replaceState(history.state, "", url);
-  }
-  if (["admin", "domain_admin"].includes(role) && !keepMailbox && !adminDenied) {
-    byId("login-form").reset();
-    window.location.replace("/admin");
-    return;
   }
   byId("admin-link").hidden = !["admin", "domain_admin"].includes(role);
   await showMailbox(email);
@@ -946,7 +945,7 @@ byId("login-form").addEventListener("submit", (event) => {
   const form = event.currentTarget;
   void submit(form, async data => {
     try {
-      openSession(await api("login", "POST", data));
+      await openSession(await api("login", "POST", data));
       byId("login-mfa-field").hidden = true;
     } catch (error) {
       if (error.status === 428) {
@@ -1358,4 +1357,9 @@ byId("flag-phishing").addEventListener("click", event => {
   void updateLetter({ folder: "junk", spamFeedback: true }, event.currentTarget);
 });
 
-api("session").then(session => openSession(session, new URLSearchParams(location.search).get("view") === "mail")).catch(showLogin);
+const mailboxURL = new URL(location.href);
+if (mailboxURL.pathname === "/" && mailboxURL.searchParams.get("view") === "mail") {
+  mailboxURL.searchParams.delete("view");
+  history.replaceState(history.state, "", mailboxURL);
+}
+api("session").then(openSession).catch(showLogin);

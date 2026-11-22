@@ -430,6 +430,11 @@
         <h2 id="preferences-title">邮箱偏好</h2>
         <button id="close-preferences" class="icon" type="button" aria-label="关闭"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#close-line"></use></svg></button>
       </header>
+      <div class="preference-section">
+        <label for="sender-display-name">发件人显示名称</label>
+        <input id="sender-display-name" name="senderDisplayName" type="text" aria-describedby="sender-display-name-help">
+        <p id="sender-display-name-help" class="rule-help">收件人会在网页端发出的邮件中看到此名称。留空时只显示邮箱地址。</p>
+      </div>
       <fieldset class="preference-group">
         <legend>外观</legend>
         <div class="theme-options">
@@ -454,24 +459,29 @@
           <label><input name="density" type="radio" value="compact"> 紧凑</label>
         </div>
       </fieldset>
-      <label class="preference-read"><input name="autoRead" type="checkbox"> 打开邮件时自动标为已读</label>
-      <section class="preference-group" aria-labelledby="web-push-title">
+      <fieldset class="preference-group">
+        <legend>收发邮件</legend>
+        <div class="preference-section">
+          <label class="preference-read"><input name="autoRead" type="checkbox"> 打开邮件时自动标为已读</label>
+          <div class="preference-send-delay">
+            <label for="undo-seconds">撤销发送等待时间</label>
+            <select id="undo-seconds" name="undoSeconds">
+              <option value="0">关闭</option>
+              <option value="5">5 秒</option>
+              <option value="10">10 秒</option>
+              <option value="20">20 秒</option>
+              <option value="30">30 秒</option>
+            </select>
+          </div>
+        </div>
+      </fieldset>
+      <section class="preference-section" aria-labelledby="web-push-title">
         <div class="preference-send-delay">
           <strong id="web-push-title">新邮件通知</strong>
           <button id="web-push-toggle" type="button" class="secondary" aria-describedby="web-push-status" disabled>开启本设备通知</button>
         </div>
         <p id="web-push-status" class="rule-help" role="status"></p>
       </section>
-      <div class="preference-send-delay">
-        <label for="undo-seconds">撤销发送等待时间</label>
-        <select id="undo-seconds" name="undoSeconds">
-          <option value="0">关闭</option>
-          <option value="5">5 秒</option>
-          <option value="10">10 秒</option>
-          <option value="20">20 秒</option>
-          <option value="30">30 秒</option>
-        </select>
-      </div>
       <p id="preferences-error" class="error" role="alert"></p>
       <footer class="preferences-actions">
         <button id="default-preferences" class="secondary" type="button">恢复默认</button>

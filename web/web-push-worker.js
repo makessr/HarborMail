@@ -14,6 +14,6 @@ self.addEventListener("notificationclick", event => {
     const pages = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     const mailbox = pages.find(client => new URL(client.url).pathname === "/");
     if (mailbox) return mailbox.focus();
-    return self.clients.openWindow("/?view=mail");
+    return self.clients.openWindow("/");
   })());
 });

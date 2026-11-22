@@ -389,9 +389,12 @@ dialog:not(.app-drawer, .admin-account-sheet, #editor) {
   @apply rounded-harbor-control px-3 py-2;
 }
 .editor .density-options { @apply gap-1 p-1; }
+.preference-section { @apply grid gap-2; }
+.preference-section > .rule-help { margin: 0; }
+.preference-section > .rule-help:empty { display: none; }
 .editor .preference-read { justify-self: start; min-height: 2rem; }
-.preference-read + .preference-send-delay {
-  @apply border-t border-harbor-line pt-3;
+.preference-section[aria-labelledby="web-push-title"] {
+  @apply border-t border-harbor-line pt-4;
 }
 .editor :is(.schedule-fields, .signature-fields, .signature-defaults, .app-protocols, .saved-search-summary, .template-preview) {
   @apply rounded-harbor-control border-harbor-line bg-harbor-recess;

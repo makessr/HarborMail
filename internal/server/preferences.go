@@ -1,18 +1,23 @@
 package server
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"log"
 	"net/http"
+	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 type mailboxPreferences struct {
-	Revision    int64  `json:"revision"`
-	Theme       string `json:"theme"`
-	Density     string `json:"density"`
-	ReadMode    string `json:"readMode"`
-	UndoSeconds int    `json:"undoSeconds"`
+	Revision          int64  `json:"revision"`
+	Theme             string `json:"theme"`
+	Density           string `json:"density"`
+	ReadMode          string `json:"readMode"`
+	UndoSeconds       int    `json:"undoSeconds"`
+	SenderDisplayName string `json:"senderDisplayName"`
 }
 
 func (p mailboxPreferences) valid() bool {
@@ -25,9 +30,9 @@ func (p mailboxPreferences) valid() bool {
 
 func (a *app) getMailboxPreferences(w http.ResponseWriter, r *http.Request, owner string) {
 	p := mailboxPreferences{Theme: "light", Density: "comfortable", ReadMode: "auto"}
-	err := a.db.QueryRowContext(r.Context(), `SELECT p.revision,p.theme,p.density,p.read_mode,coalesce(s.delay_seconds,0)
+	err := a.db.QueryRowContext(r.Context(), `SELECT p.revision,p.theme,p.density,p.read_mode,coalesce(s.delay_seconds,0),p.sender_display_name
 		FROM mailbox_preferences p LEFT JOIN mailbox_send_delay s ON p.owner=s.owner WHERE p.owner=?`, owner).
-		Scan(&p.Revision, &p.Theme, &p.Density, &p.ReadMode, &p.UndoSeconds)
+		Scan(&p.Revision, &p.Theme, &p.Density, &p.ReadMode, &p.UndoSeconds, &p.SenderDisplayName)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		log.Print("read mailbox preferences: ", err)
 		fail(w, http.StatusInternalServerError, "无法读取邮箱偏好")
@@ -39,12 +44,22 @@ func (a *app) getMailboxPreferences(w http.ResponseWriter, r *http.Request, owne
 func (a *app) putMailboxPreferences(w http.ResponseWriter, r *http.Request, owner string) {
 	var input struct {
 		mailboxPreferences
-		UndoSeconds *int `json:"undoSeconds"`
+		UndoSeconds       *int    `json:"undoSeconds"`
+		SenderDisplayName *string `json:"senderDisplayName"`
 	}
 	if !decode(w, r, &input) {
 		return
 	}
 	p := input.mailboxPreferences
+	if input.SenderDisplayName != nil {
+		name := *input.SenderDisplayName
+		p.SenderDisplayName = strings.TrimSpace(name)
+		if utf8.RuneCountInString(p.SenderDisplayName) > 80 || strings.ContainsFunc(name, unicode.IsControl) {
+			fail(w, http.StatusBadRequest, "发件人显示名称最多 80 个字符，且不能包含控制字符")
+			return
+		}
+		input.SenderDisplayName = &p.SenderDisplayName
+	}
 	if input.UndoSeconds != nil {
 		p.UndoSeconds = *input.UndoSeconds
 	}
@@ -59,15 +74,22 @@ func (a *app) putMailboxPreferences(w http.ResponseWriter, r *http.Request, owne
 	}
 	defer tx.Rollback()
 	if p.Revision == 0 {
-		_, err = tx.ExecContext(ctx, `INSERT INTO mailbox_preferences(owner,revision,theme,density,read_mode) VALUES(?,1,?,?,?)`,
-			owner, p.Theme, p.Density, p.ReadMode)
+		_, err = tx.ExecContext(ctx, `INSERT INTO mailbox_preferences(owner,revision,theme,density,read_mode,sender_display_name) VALUES(?,1,?,?,?,?)`,
+			owner, p.Theme, p.Density, p.ReadMode, p.SenderDisplayName)
 	} else {
-		result, updateErr := tx.ExecContext(ctx, `UPDATE mailbox_preferences SET revision=revision+1,theme=?,density=?,read_mode=?
-			WHERE owner=? AND revision=?`, p.Theme, p.Density, p.ReadMode, owner, p.Revision)
+		result, updateErr := tx.ExecContext(ctx, `UPDATE mailbox_preferences SET revision=revision+1,theme=?,density=?,read_mode=?,
+			sender_display_name=coalesce(?,sender_display_name) WHERE owner=? AND revision=?`,
+			p.Theme, p.Density, p.ReadMode, input.SenderDisplayName, owner, p.Revision)
 		err = requireAffectedRow(result, updateErr)
 	}
 	if mailboxPreferenceError(w, err) {
 		return
+	}
+	if input.SenderDisplayName == nil {
+		p.SenderDisplayName, err = mailboxSenderDisplayName(ctx, tx, owner)
+		if mailboxPreferenceError(w, err) {
+			return
+		}
 	}
 	if input.UndoSeconds == nil {
 		err = tx.QueryRowContext(ctx, `SELECT delay_seconds FROM mailbox_send_delay WHERE owner=?`, owner).Scan(&p.UndoSeconds)
@@ -91,6 +113,15 @@ func (a *app) putMailboxPreferences(w http.ResponseWriter, r *http.Request, owne
 		p.Revision++
 		reply(w, http.StatusOK, p)
 	}
+}
+
+func mailboxSenderDisplayName(ctx context.Context, db folderQueryer, owner string) (string, error) {
+	var name string
+	err := db.QueryRowContext(ctx, `SELECT sender_display_name FROM mailbox_preferences WHERE owner=?`, owner).Scan(&name)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return name, err
 }
 
 func mailboxPreferenceError(w http.ResponseWriter, err error) bool {
