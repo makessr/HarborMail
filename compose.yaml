@@ -71,7 +71,7 @@ services:
       # 客户端 SMTP 465/587、IMAPS 993、POP3S 995 由 compose.tls.yaml
       # 或 compose.acme.yaml 发布。按证书来源选择其一。
     volumes:
-      - harbor_data:/var/lib/harbormail
+      - "${HARBOR_DATA_PATH:-harbor_data}:/var/lib/harbormail"
     secrets:
       - accounts_json
 

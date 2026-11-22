@@ -74,7 +74,7 @@ services:
       # 客户端 SMTP 465/587、IMAPS 993、POP3S 995 由 compose.tls.yaml
       # 或 compose.acme.yaml 发布。按证书来源选择其一。
     volumes:
-      - harbor_data:/var/lib/harbormail
+      - "${HARBOR_DATA_PATH:-harbor_data}:/var/lib/harbormail"
     networks:
       - default
       - admin_cache
@@ -92,7 +92,7 @@ services:
       MYSQL_PASSWORD_FILE: /run/secrets/mysql_password
       MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mysql_root_password
     volumes:
-      - mysql_data:/var/lib/mysql
+      - "${HARBOR_MYSQL_DATA_PATH:-mysql_data}:/var/lib/mysql"
     secrets:
       - mysql_password
       - mysql_root_password

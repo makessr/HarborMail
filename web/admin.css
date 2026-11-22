@@ -58,6 +58,7 @@ body.admin { display: grid; grid-template: auto 1fr / 208px minmax(0, 1fr); }
 .admin-about-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .admin-about-actions button { padding: 5px 10px; min-height: 34px; }
 #admin-update-status:empty { display: none; }
+.admin-update-commands { margin-block: 6px 0; padding: 8px 10px; border-radius: var(--radius-control); background: var(--paper); white-space: pre-wrap; }
 @media (max-width: 540px) {
   .admin-about-updates { width: 100%; border-top: 1px solid var(--line); padding-top: 12px; }
 }

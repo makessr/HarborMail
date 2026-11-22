@@ -1,18 +1,22 @@
-name: Publish Harbor Mail binaries
+name: Publish Harbor Mail release
 
 on:
   push:
     tags: ['v*']
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: harbormail-stable-release
+  cancel-in-progress: false
 
 jobs:
   checks:
     uses: ./.github/workflows/verify.yaml
     permissions:
       contents: read
-  publish:
+  binaries:
     needs: checks
     runs-on: ubuntu-latest
     steps:
@@ -20,22 +24,69 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/build-binaries
-      - name: Publish GitHub Release
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-binaries
+          path: dist/
+          if-no-files-found: error
+  image:
+    needs: checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - id: build
+        uses: ./.github/actions/build-image
+        with:
+          version: ${{ github.ref_name }}
+          token: ${{ github.token }}
+  publish:
+    needs: [binaries, image]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-binaries
+          path: dist/
+      - uses: docker/setup-buildx-action@v4
+      - name: Promote the verified image and publish the release
         env:
           GH_TOKEN: ${{ github.token }}
+          IMAGE_DIGEST: ${{ needs.image.outputs.digest }}
         run: |
           set -euo pipefail
-          if ! [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          if ! [[ "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
             printf 'Expected a release tag in vMAJOR.MINOR.PATCH format\n' >&2
             exit 1
           fi
+          (cd dist; sha256sum -c SHA256SUMS)
+          [[ $IMAGE_DIGEST =~ ^sha256:[a-f0-9]{64}$ ]]
+          published=$(gh release list --repo "$GITHUB_REPOSITORY" --json tagName,isLatest --jq '.[] | select(.isLatest) | .tagName')
+          if [[ -n $published && $(printf '%s\n' "$GITHUB_REF_NAME" "$published" | sort -V | tail -n 1) != "$GITHUB_REF_NAME" ]]; then
+            printf 'A newer release is already public: %s\n' "$published" >&2
+            exit 1
+          fi
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          registry=ghcr.io/makessr/harbormail
+          docker buildx imagetools create --tag "$registry:latest" "$registry@$IMAGE_DIGEST"
+          test "$(docker buildx imagetools inspect "$registry:latest" --format '{{.Manifest.Digest}}')" = "$IMAGE_DIGEST"
+          if [[ $published == "$GITHUB_REF_NAME" ]]; then exit 0; fi
           notes="docs/releases/$GITHUB_REF_NAME.md"
           if [[ -s "$notes" ]]; then
             release_notes=(--notes-file "$notes")
           else
             release_notes=(--generate-notes)
           fi
-          gh release create "$GITHUB_REF_NAME" --verify-tag --title "Harbor Mail $GITHUB_REF_NAME" "${release_notes[@]}" \
-            dist/harbormail-linux-amd64 dist/harbormail-linux-arm64 dist/harbormail-windows-amd64.exe \
-            dist/harbormail-systemd.tar.gz dist/go-qrcode-LICENSE.txt dist/go-msgauth-LICENSE.txt \
-            dist/webpush-go-LICENSE.txt dist/jwt-v5-LICENSE.txt dist/SHA256SUMS
+          gh release create "$GITHUB_REF_NAME" --verify-tag --latest --title "Harbor Mail $GITHUB_REF_NAME" "${release_notes[@]}" dist/*

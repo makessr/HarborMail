@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"errors"
 	"net/http"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -156,6 +157,7 @@ type adminOverviewSnapshot struct {
 }
 
 func (a *app) replyOverview(w http.ResponseWriter, owner string, snapshot adminOverviewSnapshot) {
+	deployment, _ := deploymentDetails(runtime.GOOS, runtime.GOARCH, buildDeployment)
 	reply(w, http.StatusOK, struct {
 		adminOverviewSnapshot
 		Email           string `json:"email"`
@@ -165,7 +167,8 @@ func (a *app) replyOverview(w http.ResponseWriter, owner string, snapshot adminO
 		RelayConfigured bool   `json:"relayConfigured"`
 		SpamScanning    bool   `json:"spamScanning"`
 		Version         string `json:"version"`
-	}{snapshot, owner, a.domain, a.dbDriver, a.directMX != nil && a.relay.Address == "", a.relay.Address != "" || len(a.domainRelays) > 0, a.spamScanner != nil, currentBuildVersion()})
+		Deployment      string `json:"deployment"`
+	}{snapshot, owner, a.domain, a.dbDriver, a.directMX != nil && a.relay.Address == "", a.relay.Address != "" || len(a.domainRelays) > 0, a.spamScanner != nil, currentBuildVersion(), deployment})
 }
 
 func (a *app) adminOverview(w http.ResponseWriter, r *http.Request, owner string) {

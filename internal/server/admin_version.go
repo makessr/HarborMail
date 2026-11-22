@@ -7,14 +7,40 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
-// Release builds set this with the Go linker.
-var buildVersion = "dev"
+// Release builds and the Dockerfile set these with the Go linker.
+var (
+	buildVersion    = "dev"
+	buildDeployment = "binary"
+)
+
+func deploymentDetails(goos, goarch, kind string) (label, asset string) {
+	platform := goos
+	switch goos {
+	case "linux":
+		platform = "Linux"
+	case "windows":
+		platform = "Windows"
+	}
+	architecture := strings.ToUpper(goarch)
+	if kind == "docker" {
+		return "Docker · " + platform + " " + architecture, ""
+	}
+	label = platform + " " + architecture + " · 二进制"
+	if (goos == "linux" || goos == "windows") && (goarch == "amd64" || goarch == "arm64") {
+		asset = "harbormail-" + goos + "-" + goarch
+		if goos == "windows" {
+			asset += ".exe"
+		}
+	}
+	return label, asset
+}
 
 var stableVersionPattern = regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
 
@@ -42,11 +68,30 @@ func currentBuildVersion() string {
 
 const latestReleaseAPI = "https://api.github.com/repos/makessr/HarborMail/releases/latest"
 
+type stableRelease struct {
+	Tag        string `json:"tag_name"`
+	Draft      bool   `json:"draft"`
+	Prerelease bool   `json:"prerelease"`
+	Assets     []struct {
+		Name  string `json:"name"`
+		State string `json:"state"`
+	} `json:"assets"`
+}
+
+func (release stableRelease) download(name string) string {
+	for _, asset := range release.Assets {
+		if asset.Name == name && asset.State == "uploaded" {
+			return name
+		}
+	}
+	return ""
+}
+
 type releaseCheck struct {
 	mu      sync.Mutex
 	client  *http.Client
 	next    time.Time
-	release string
+	release stableRelease
 	err     error
 }
 
@@ -57,7 +102,7 @@ var publishedRelease = releaseCheck{client: &http.Client{
 	},
 }}
 
-func (check *releaseCheck) latest() (string, error) {
+func (check *releaseCheck) latest() (stableRelease, error) {
 	check.mu.Lock()
 	defer check.mu.Unlock()
 	if time.Now().Before(check.next) {
@@ -72,30 +117,26 @@ func (check *releaseCheck) latest() (string, error) {
 	return check.release, check.err
 }
 
-func fetchStableRelease(client *http.Client) (string, error) {
+func fetchStableRelease(client *http.Client) (stableRelease, error) {
 	req, err := http.NewRequest(http.MethodGet, latestReleaseAPI, nil)
 	if err != nil {
-		return "", err
+		return stableRelease{}, err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "HarborMail")
 	res, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return stableRelease{}, err
 	}
 	defer res.Body.Close()
-	var release struct {
-		Tag        string `json:"tag_name"`
-		Draft      bool   `json:"draft"`
-		Prerelease bool   `json:"prerelease"`
-	}
+	var release stableRelease
 	if res.StatusCode != http.StatusOK || json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&release) != nil {
-		return "", errors.New("GitHub release unavailable")
+		return stableRelease{}, errors.New("GitHub release unavailable")
 	}
 	if _, ok := stableVersion(release.Tag); !ok || release.Draft || release.Prerelease {
-		return "", errors.New("invalid stable release")
+		return stableRelease{}, errors.New("invalid stable release")
 	}
-	return release.Tag, nil
+	return release, nil
 }
 
 func updateStatus(current, latest string) string {
@@ -121,8 +162,12 @@ func (a *app) adminCheckVersion(w http.ResponseWriter, _ *http.Request, _ string
 		fail(w, http.StatusServiceUnavailable, "暂时无法访问 GitHub，请稍后重试。")
 		return
 	}
+	status := updateStatus(currentBuildVersion(), latest.Tag)
+	_, asset := deploymentDetails(runtime.GOOS, runtime.GOARCH, buildDeployment)
 	reply(w, http.StatusOK, struct {
 		Latest string `json:"latest"`
 		Status string `json:"status"`
-	}{latest, updateStatus(currentBuildVersion(), latest)})
+		Docker bool   `json:"docker"`
+		Asset  string `json:"asset,omitempty"`
+	}{latest.Tag, status, buildDeployment == "docker", latest.download(asset)})
 }

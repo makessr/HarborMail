@@ -26,12 +26,29 @@ func TestAdminUpdateCheck(t *testing.T) {
 		if req.Method != http.MethodGet || req.URL.String() != latestReleaseAPI || req.Header.Get("Authorization") != "" {
 			t.Fatalf("unexpected GitHub request: %s %s", req.Method, req.URL)
 		}
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"tag_name":"v0.2.14"}`))}, nil
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{
+			"tag_name":"v0.2.14",
+			"assets":[
+				{"name":"harbormail-windows-amd64.exe","state":"uploaded"},
+				{"name":"harbormail-windows-arm64.exe","state":"uploaded"},
+				{"name":"harbormail-linux-amd64","state":"open"}
+			]}`))}, nil
 	})}}
 	first, err := check.latest()
 	second, cachedErr := check.latest()
-	if first != "v0.2.14" || second != first || err != nil || cachedErr != nil || calls != 1 {
-		t.Fatalf("unexpected cached release: %q, %q, %v, %v, calls=%d", first, second, err, cachedErr, calls)
+	if first.Tag != "v0.2.14" || second.Tag != first.Tag || err != nil || cachedErr != nil || calls != 1 {
+		t.Fatalf("unexpected cached release: %q, %q, %v, %v, calls=%d", first.Tag, second.Tag, err, cachedErr, calls)
+	}
+	for _, test := range []struct{ os, arch, kind, label, asset, download string }{
+		{"windows", "amd64", "binary", "Windows AMD64 · 二进制", "harbormail-windows-amd64.exe", "harbormail-windows-amd64.exe"},
+		{"windows", "arm64", "binary", "Windows ARM64 · 二进制", "harbormail-windows-arm64.exe", "harbormail-windows-arm64.exe"},
+		{"linux", "arm64", "docker", "Docker · Linux ARM64", "", ""},
+		{"linux", "amd64", "binary", "Linux AMD64 · 二进制", "harbormail-linux-amd64", ""},
+	} {
+		label, asset := deploymentDetails(test.os, test.arch, test.kind)
+		if label != test.label || asset != test.asset || first.download(asset) != test.download {
+			t.Errorf("%s/%s %s = %q, %q (download %q)", test.os, test.arch, test.kind, label, asset, first.download(asset))
+		}
 	}
 
 	for _, item := range []string{`{"tag_name":"v0.2.14","prerelease":true}`, `{"tag_name":"v0.2.14","draft":true}`, `{"tag_name":"v0.2.14<script>"}`} {

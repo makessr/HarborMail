@@ -225,9 +225,14 @@ const checkUpdate = adminElement("admin-check-update");
 checkUpdate.addEventListener("click", async () => {
   const status = adminElement("admin-update-status");
   const release = adminElement("admin-latest-release");
+  const download = adminElement("admin-update-download");
+  const docker = adminElement("admin-update-docker");
   checkUpdate.disabled = true;
   release.hidden = true;
   release.removeAttribute("href");
+  download.hidden = true;
+  download.removeAttribute("href");
+  docker.hidden = true;
   status.textContent = "正在检查更新…";
   try {
     const response = await fetch("/api/admin/about/update");
@@ -242,6 +247,15 @@ checkUpdate.addEventListener("click", async () => {
     status.textContent = messages[result.status];
     release.href = "https://github.com/makessr/HarborMail/releases/tag/" + encodeURIComponent(result.latest);
     release.hidden = false;
+    if (result.status === "available") {
+      docker.hidden = !result.docker;
+      if (result.asset) {
+        download.href = "https://github.com/makessr/HarborMail/releases/download/" +
+          encodeURIComponent(result.latest) + "/" + encodeURIComponent(result.asset);
+        download.textContent = "下载 " + result.asset;
+        download.hidden = false;
+      }
+    }
   } catch {
     status.textContent = "暂时无法检查更新，请稍后重试。";
   } finally {

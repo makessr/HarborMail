@@ -9,6 +9,7 @@ function overviewLink(label, href) {
 
 function renderAdminOverview(data) {
   adminElement("admin-build-version").textContent = data.version === "dev" || !data.version ? "开发构建" : data.version;
+  adminElement("admin-deployment").textContent = data.deployment || "";
   const queue = data.queue;
   const active = ["queued", "scheduled", "undo", "preparing", "sending"].reduce((sum, key) => sum + (queue[key] || 0), 0);
   const waiting = data.oldestDue ? Math.max(0, data.generatedAt - data.oldestDue) : 0;

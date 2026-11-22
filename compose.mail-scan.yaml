@@ -25,7 +25,7 @@ services:
       - ./ops/rspamd/redis.conf:/etc/rspamd/local.d/redis.conf:ro
       - ./ops/rspamd/options.inc:/etc/rspamd/local.d/options.inc:ro
       - ./ops/rspamd/worker-controller.inc:/etc/rspamd/local.d/worker-controller.inc:ro
-      - rspamd_data:/var/lib/rspamd
+      - "${HARBOR_RSPAMD_DATA_PATH:-rspamd_data}:/var/lib/rspamd"
     networks:
       - mail_scan
       - scanner_backend
@@ -35,7 +35,7 @@ services:
     image: clamav/clamav:1.4
     restart: unless-stopped
     volumes:
-      - clamav_signatures:/var/lib/clamav
+      - "${HARBOR_CLAMAV_DATA_PATH:-clamav_signatures}:/var/lib/clamav"
     networks:
       - scanner_backend
       - scanner_updates
@@ -51,7 +51,7 @@ services:
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
-      - rspamd_redis:/data
+      - "${HARBOR_RSPAMD_REDIS_DATA_PATH:-rspamd_redis}:/data"
     networks:
       - scanner_backend
     healthcheck:

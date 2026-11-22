@@ -22,6 +22,7 @@ runs:
         GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="$flags" -o dist/harbormail-linux-amd64 ./cmd/harbormail
         GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="$flags" -o dist/harbormail-linux-arm64 ./cmd/harbormail
         GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="$flags" -o dist/harbormail-windows-amd64.exe ./cmd/harbormail
+        GOOS=windows GOARCH=arm64 go build -trimpath -ldflags="$flags" -o dist/harbormail-windows-arm64.exe ./cmd/harbormail
         test "$(dist/harbormail-linux-amd64 version)" = "${version:-dev}"
         tar -czf dist/harbormail-systemd.tar.gz ops/harbormail.service ops/harbormail.env.example \
           ops/backup.sh ops/harbor-backup.service ops/harbor-backup.timer ops/harbor-backup.env.example
@@ -30,5 +31,5 @@ runs:
         cp docs/licenses/webpush-go.txt dist/webpush-go-LICENSE.txt
         cp docs/licenses/jwt-v5.txt dist/jwt-v5-LICENSE.txt
         cd dist
-        sha256sum -- harbormail-linux-amd64 harbormail-linux-arm64 harbormail-windows-amd64.exe harbormail-systemd.tar.gz \
+        sha256sum -- harbormail-linux-amd64 harbormail-linux-arm64 harbormail-windows-amd64.exe harbormail-windows-arm64.exe harbormail-systemd.tar.gz \
           go-qrcode-LICENSE.txt go-msgauth-LICENSE.txt webpush-go-LICENSE.txt jwt-v5-LICENSE.txt > SHA256SUMS

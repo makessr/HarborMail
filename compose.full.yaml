@@ -76,7 +76,7 @@ services:
       # 客户端 SMTP 465/587、IMAPS 993、POP3S 995 由 compose.tls.yaml
       # 或 compose.acme.yaml 发布。按证书来源选择其一。
     volumes:
-      - harbor_data:/var/lib/harbormail
+      - "${HARBOR_DATA_PATH:-harbor_data}:/var/lib/harbormail"
     networks:
       - default
       - admin_cache
@@ -95,7 +95,7 @@ services:
       MYSQL_PASSWORD_FILE: /run/secrets/mysql_password
       MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mysql_root_password
     volumes:
-      - mysql_data:/var/lib/mysql
+      - "${HARBOR_MYSQL_DATA_PATH:-mysql_data}:/var/lib/mysql"
     secrets:
       - mysql_password
       - mysql_root_password
@@ -174,7 +174,7 @@ services:
       - source: rspamd_controller
         target: /etc/rspamd/local.d/worker-controller.inc
     volumes:
-      - rspamd_data:/var/lib/rspamd
+      - "${HARBOR_RSPAMD_DATA_PATH:-rspamd_data}:/var/lib/rspamd"
     networks:
       - mail_scan
       - scanner_backend
@@ -184,7 +184,7 @@ services:
     image: clamav/clamav:1.4
     restart: unless-stopped
     volumes:
-      - clamav_signatures:/var/lib/clamav
+      - "${HARBOR_CLAMAV_DATA_PATH:-clamav_signatures}:/var/lib/clamav"
     networks:
       - scanner_backend
       - scanner_updates
@@ -200,7 +200,7 @@ services:
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
-      - rspamd_redis:/data
+      - "${HARBOR_RSPAMD_REDIS_DATA_PATH:-rspamd_redis}:/data"
     networks:
       - scanner_backend
     healthcheck:

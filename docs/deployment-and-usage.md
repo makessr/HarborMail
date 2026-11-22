@@ -46,7 +46,7 @@ HARBOR_ACCOUNTS_FILE="$PWD/secrets/accounts.json" HARBOR_ADMINS=hello@harbor.tes
 
 ### Windows 开发
 
-Windows 用于本地开发。可从 [GitHub Releases](https://github.com/makessr/HarborMail/releases/latest) 下载 `harbormail-windows-amd64.exe`，重命名为 `harbormail.exe`，然后从下面的 `$accountHash` 一行开始。若从源码构建，需要 Go 1.27.4 或更新版本。以下命令从项目目录在 PowerShell 7 中运行。
+Windows 用于本地开发。在 [GitHub Releases](https://github.com/makessr/HarborMail/releases/latest) 按架构选择 `harbormail-windows-amd64.exe`（x64）或 `harbormail-windows-arm64.exe`（ARM64）。重命名为 `harbormail.exe`，然后从下面的 `$accountHash` 一行开始。若从源码构建，需要 Go 1.27.4 或更新版本。以下命令从项目目录在 PowerShell 7 中运行。
 
 ```powershell
 go build -o harbormail.exe ./cmd/harbormail

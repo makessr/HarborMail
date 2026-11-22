@@ -30,6 +30,17 @@ docker compose ps
 
 使用 1Panel 的 Compose 页面时，选用同一版本对应的单文件，并把初始化生成的 `.env` 与 `secrets/` 放在项目目录。已经从终端启动的实例可继续用原目录管理。MySQL 和 Redis 的端口默认只在 Compose 网络内使用。[Docker 详细配置](deployment-and-usage.md#docker-compose-部署)
 
+### 选择数据存放位置
+
+默认使用 Docker 命名卷。新装时想在主机上直接管理目录，可以在第一次 `up` 前把下面的路径填进 `.env`。极简版只需要第一项。
+
+```dotenv
+HARBOR_DATA_PATH=/srv/harbor-mail/data
+HARBOR_MYSQL_DATA_PATH=/srv/harbor-mail/mysql
+```
+
+预先创建目录。Harbor 数据目录须允许容器的 UID/GID `10001:10001` 写入。MySQL 目录须满足官方镜像的写入权限。全量版还可设置 `HARBOR_RSPAMD_DATA_PATH`、`HARBOR_RSPAMD_REDIS_DATA_PATH` 和 `HARBOR_CLAMAV_DATA_PATH`，未设置的组件继续用命名卷。已有实例更换位置前，应先备份并把原数据迁移到目标目录。 [生产存储与迁移](../ops/README.md#存储上限)
+
 ## 路线 B · Linux 单二进制
 
 在服务器执行 `uname -m`。`x86_64` 选 `harbormail-linux-amd64`，`aarch64` 选 `harbormail-linux-arm64`。同时下载同版本的 `harbormail-systemd.tar.gz` 和 `SHA256SUMS`。长期运行的服务模板需要 systemd 251 或更新版本。[下载 GitHub Release](https://github.com/makessr/HarborMail/releases)
@@ -115,7 +126,16 @@ Docker 修改配置后执行 `docker compose up -d --no-deps --no-build --wait h
 
 在「管理后台 → 概览 → 关于 Harbor Mail」点击「检查更新」。它会查询 GitHub 的最新稳定版。先阅读发布说明，再备份数据库、配置和 DKIM 密钥。保留原 Compose 项目名、数据卷和凭据。[备份与恢复](../ops/README.md#备份)
 
-- **Docker** 在原部署目录运行 `docker compose pull harbor`，再运行 `docker compose up -d --no-deps --no-build --wait harbor`。如果 Compose 使用固定镜像标签或摘要，先核对目标版本对应的镜像，再更新原有镜像引用。命令应沿用原来的 Compose 文件和项目名。
-- **Linux 单二进制** 从 GitHub Release 下载对应架构的文件并校验，停止服务，备份并替换原可执行文件，然后重新启动。 [单二进制升级命令](../ops/README.md#tls-与版本升级)
+**Docker** 使用默认的 `ghcr.io/makessr/harbormail:latest` 镜像时，在原部署目录运行：
+
+```bash
+docker compose pull &&
+docker compose down &&
+docker compose up -d
+```
+
+沿用原 Compose 文件、项目名和数据挂载。`down` 会短暂停止整个项目并保留命名卷，请勿加 `-v`。如果自定义配置固定了镜像标签或摘要，先调整原有镜像引用。
+
+**单二进制** 后台会按当前运行的架构提示对应下载，Windows amd64 和 ARM64 分开提供。下载后校验文件，停止服务并备份，替换原可执行文件后重新启动。 [Linux systemd 升级命令](../ops/README.md#tls-与版本升级)
 
 升级后检查服务状态、`/healthz` 和后台显示的版本，再验证一封邮件的收发。
