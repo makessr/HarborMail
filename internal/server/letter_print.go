@@ -50,7 +50,7 @@ func (a *app) printLetter(w http.ResponseWriter, r *http.Request, owner string) 
 		HTML                                              template.HTML
 		AutoPrint                                         bool
 	}{
-		Subject: m.Subject, From: m.From, To: m.To, Cc: m.Cc, Bcc: m.Bcc, Body: m.Body,
+		Subject: m.Subject, From: displaySender(m.From), To: m.To, Cc: m.Cc, Bcc: m.Bcc, Body: m.Body,
 		AutoPrint: r.URL.Query().Get("print") == "1",
 	}
 	date := time.Unix(m.Date, 0).UTC()

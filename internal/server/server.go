@@ -861,6 +861,7 @@ func (a *app) list(w http.ResponseWriter, r *http.Request, owner string) {
 			fail(w, 500, "无法读取邮件")
 			return
 		}
+		m.SenderAddress, m.SenderName = senderContact(m.From)
 		result = append(result, m)
 	}
 	if rows.Err() != nil {

@@ -1,5 +1,10 @@
 "use strict";
 
+function displayMailSender(item) {
+  if (item.senderName && item.senderAddress) return item.senderName + " <" + item.senderAddress + ">";
+  return item.senderAddress || item.from || "退信";
+}
+
 const senderDetails = document.getElementById("sender-details");
 const senderHeaders = document.getElementById("sender-detail-headers");
 const senderStatus = document.getElementById("sender-detail-status");

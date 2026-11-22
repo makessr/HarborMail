@@ -302,7 +302,7 @@ func address(value string) (string, error) {
 }
 
 func senderContact(from string) (email, name string) {
-	parsed, err := mail.ParseAddress(from)
+	parsed, err := message.ParseAddress(from)
 	if err != nil {
 		return "", ""
 	}
@@ -311,6 +311,17 @@ func senderContact(from string) (email, name string) {
 		return "", ""
 	}
 	return email, parsed.Name
+}
+
+func displaySender(from string) string {
+	email, name := senderContact(from)
+	if name != "" {
+		return name + " <" + email + ">"
+	}
+	if email != "" {
+		return email
+	}
+	return from
 }
 
 func encodeLetter(m letter, domain string, files []uploadedAttachment) ([]byte, error) {

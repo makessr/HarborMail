@@ -325,7 +325,7 @@ function rowFor(item) {
   row.toggleAttribute("data-selectable", !item.delivery && (item.folder !== "drafts" || state.folder === "drafts"));
   row.setAttribute("aria-current", String(state.current?.id === item.id));
   const display = item.folder === "drafts" || item.folder === "sent" || item.delivery
-    ? (item.to || item.cc || item.bcc) : item.from;
+    ? (item.to || item.cc || item.bcc) : displayMailSender(item);
   const values = {
     name: display || (item.folder === "drafts" ? "未填写收件人" : "退信"),
     time: shortDate.format(item.date * 1000),
@@ -760,7 +760,7 @@ function renderConversation(messages, selectedID) {
       button.type = "button";
       button.dataset.threadId = item.id;
       const from = item.from?.trim() || "退信";
-      const name = from.includes("<") ? from.split("<")[0].trim().replace(/^"|"$/g, "") : from;
+      const name = item.senderName || (from.includes("<") ? from.split("<")[0].trim().replace(/^"|"$/g, "") : from);
       const fields = {
         contact: item.folder === "sent" ? "发给 " + item.to : name || from,
         date: fullDate.format(item.date * 1000),

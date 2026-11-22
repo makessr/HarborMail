@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -25,10 +26,11 @@ func TestLetterPrintAndSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := &app{db: db, dbDriver: "sqlite", domain: "harbor.test", accounts: map[string][]byte{owner: hash, other: hash}}
-	const raw = "From: other@harbor.test\r\nCc: team@harbor.test\r\nContent-Type: text/html; charset=utf-8\r\n\r\n" +
+	const encodedSender = "=?utf-8?q?=E4=B8=AD=E6=96=87?= <" + other + ">"
+	const raw = "From: " + encodedSender + "\r\nCc: team@harbor.test\r\nContent-Type: text/html; charset=utf-8\r\n\r\n" +
 		"<p>Rich body</p><script>malicious()</script><img src='https://track.example.invalid/pixel' onload='bad()'>"
 	row, err := db.Exec(`INSERT INTO letters(owner,sender,recipient,subject,body,stamp,folder,origin,raw)
-		VALUES(?,?,?,?,?,?,?,?,?)`, owner, other, owner, "<mail> & subject", "Plain body <tag>", 1760000000, "inbox", "inbox", []byte(raw))
+		VALUES(?,?,?,?,?,?,?,?,?)`, owner, encodedSender, owner, "<mail> & subject", "Plain body <tag>", 1760000000, "inbox", "inbox", []byte(raw))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,6 +50,18 @@ func TestLetterPrintAndSource(t *testing.T) {
 	}
 	root := web.URL + "/api/letters/" + strconv.FormatInt(id, 10)
 	client := login(owner)
+	list, err := client.Get(web.URL + "/api/letters?folder=inbox")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer list.Body.Close()
+	var inbox struct{ Letters []letter }
+	if err := json.NewDecoder(list.Body).Decode(&inbox); err != nil || list.StatusCode != http.StatusOK || len(inbox.Letters) != 1 {
+		t.Fatalf("unable to read the stored sender from the inbox: %d (%v)", list.StatusCode, err)
+	}
+	if item := inbox.Letters[0]; item.From != encodedSender || item.SenderName != "中文" || item.SenderAddress != other {
+		t.Fatalf("unexpected stored sender: %q / %q / %q", item.From, item.SenderName, item.SenderAddress)
+	}
 	get := func(client *http.Client, path string, code int) (http.Header, string) {
 		t.Helper()
 		res, err := client.Get(root + path)
@@ -70,7 +84,7 @@ func TestLetterPrintAndSource(t *testing.T) {
 	if headers.Get("Cache-Control") != "no-store" || !strings.Contains(headers.Get("Content-Security-Policy"), "img-src data:") {
 		t.Fatalf("unexpected print headers: %v", headers)
 	}
-	for _, want := range []string{`data-auto-print="true"`, "Rich body", "team@harbor.test", "&lt;mail&gt; &amp; subject"} {
+	for _, want := range []string{`data-auto-print="true"`, "Rich body", "team@harbor.test", "&lt;mail&gt; &amp; subject", "中文 &lt;other@harbor.test&gt;"} {
 		if !strings.Contains(html, want) {
 			t.Errorf("print page lacks %q: %s", want, html)
 		}

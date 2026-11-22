@@ -128,14 +128,15 @@ func (a *app) indexMissingThread(ctx context.Context, id int64) (string, error) 
 }
 
 type threadEntry struct {
-	ID      int64  `json:"id"`
-	From    string `json:"from"`
-	To      string `json:"to"`
-	Subject string `json:"subject"`
-	Date    int64  `json:"date"`
-	Folder  string `json:"folder"`
-	Preview string `json:"preview,omitempty"`
-	keys    [3][]byte
+	ID         int64  `json:"id"`
+	From       string `json:"from"`
+	SenderName string `json:"senderName,omitempty"`
+	To         string `json:"to"`
+	Subject    string `json:"subject"`
+	Date       int64  `json:"date"`
+	Folder     string `json:"folder"`
+	Preview    string `json:"preview,omitempty"`
+	keys       [3][]byte
 }
 
 type threadScanner interface{ Scan(...any) error }
@@ -144,6 +145,9 @@ func scanThreadEntry(row threadScanner) (threadEntry, error) {
 	var item threadEntry
 	err := row.Scan(&item.ID, &item.From, &item.To, &item.Subject, &item.Date, &item.Folder, &item.Preview,
 		&item.keys[0], &item.keys[1], &item.keys[2])
+	if err == nil {
+		_, item.SenderName = senderContact(item.From)
+	}
 	return item, err
 }
 
