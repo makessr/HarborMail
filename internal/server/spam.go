@@ -40,6 +40,7 @@ func newRspamdScanner(endpoint string) (*rspamdScanner, error) {
 
 type scanVerdict struct {
 	spam, reject, virus, unavailable bool
+	greylisted                       bool
 }
 
 func (scanner *rspamdScanner) check(ctx context.Context, session *delivery, raw []byte) (scanVerdict, error) {
@@ -81,9 +82,10 @@ func (scanner *rspamdScanner) check(ctx context.Context, session *delivery, raw 
 		return scanVerdict{}, errors.New("scan response is too large")
 	}
 	var result struct {
-		Skipped bool                       `json:"is_skipped"`
-		Action  string                     `json:"action"`
-		Symbols map[string]json.RawMessage `json:"symbols"`
+		Skipped           bool                       `json:"is_skipped"`
+		Action            string                     `json:"action"`
+		PassthroughModule string                     `json:"passthrough_module"`
+		Symbols           map[string]json.RawMessage `json:"symbols"`
 	}
 	if err := json.Unmarshal(body, &result); err != nil {
 		return scanVerdict{}, errors.New("invalid scan response")
@@ -91,6 +93,7 @@ func (scanner *rspamdScanner) check(ctx context.Context, session *delivery, raw 
 	_, infected := result.Symbols["CLAM_VIRUS"]
 	_, failed := result.Symbols["CLAM_VIRUS_FAIL"]
 	verdict := scanVerdict{virus: infected, unavailable: failed || result.Skipped || result.Action == "soft reject"}
+	verdict.greylisted = result.Action == "soft reject" && result.PassthroughModule == "greylist" && !failed && !result.Skipped
 	if result.Skipped {
 		return verdict, nil
 	}

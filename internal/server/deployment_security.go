@@ -60,7 +60,7 @@ func (a *app) deploymentScanner(ctx context.Context) deploymentCheck {
 		"Message-ID: <" + token() + "@harbor.test>\r\nSubject: Harbor Mail scan health\r\n" +
 		"MIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\nSynthetic scan health check.\r\n"
 	verdict, err := a.spamScanner.check(ctx, probe, []byte(message))
-	if err != nil || verdict.unavailable || verdict.virus {
+	if err != nil || (verdict.unavailable && !verdict.greylisted) || verdict.virus {
 		return deploymentCheck{"来信扫描", "warning", "合成扫描未成功。请检查 Rspamd、ClamAV 和扫描超时。"}
 	}
 	if !a.scanPolicy.deferUnavailable {

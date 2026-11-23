@@ -45,7 +45,7 @@ func TestDeploymentSecurityProbe(t *testing.T) {
 		if err != nil || message.Header.Get("Message-ID") == "" || message.Header.Get("Date") == "" || message.Header.Get("Content-Type") == "" {
 			t.Error("probe requires the standard message headers")
 		}
-		fmt.Fprint(w, `{"action":"no action"}`)
+		fmt.Fprint(w, `{"action":"soft reject","passthrough_module":"greylist"}`)
 	}))
 	defer worker.Close()
 	scanner, err := newRspamdScanner(worker.URL + "/checkv2")
