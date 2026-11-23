@@ -1,95 +1,56 @@
-# Harbor Mail
+<div align="center">
+  <img src="web/harbor-mail-logo.png" width="88" height="88" alt="Harbor Mail 标志">
+  <h1>Harbor Mail</h1>
+  <p><strong>用自己的域名收发邮件</strong></p>
+  <p>中文网页邮箱 · 多域名管理 · SMTP、IMAP、POP3</p>
+  <p>
+    <a href="https://github.com/makessr/HarborMail/releases/latest"><strong>下载正式版</strong></a>
+    &nbsp;·&nbsp;
+    <a href="docs/deploy/README.md"><strong>部署与升级</strong></a>
+    &nbsp;·&nbsp;
+    <a href="docs/releases/v0.2.23.md">v0.2.23 发行说明</a>
+  </p>
+</div>
 
-<img src="web/harbor-mail-logo.png" width="72" height="72" alt="Harbor Mail">
+Harbor Mail 是一个用 Go 编写的自建域名邮箱。用户从网页收发邮件，管理员在 `/admin` 管理域名、邮箱、配额和投递队列。可以用 Docker Compose 启动，也可以下载 Linux 二进制交给 systemd 管理。
 
-Harbor Mail 是一个自建域名邮箱系统。用户从首页收发邮件，管理员从 `/admin` 管理域名、邮箱、投递队列和隔离邮件。服务端用 Go 编写，网页资源内嵌在单个可执行文件中，支持 Docker Compose 和 Linux systemd 部署。
+[快速启动](#docker-首次启动) · [部署选型](#部署方案和难度) · [功能](#功能与取舍) · [界面截图](#界面演示) · [开发](#底层实现)
 
-[下载正式版](https://github.com/makessr/HarborMail/releases/latest) · [部署与升级指南](docs/deploy/README.md) · [完整配置](docs/deployment-and-usage.md) · [生产运行手册](ops/README.md)
+## 快速开始
 
-## 界面演示
+### Docker 首次启动
 
-截图来自正式版 **v0.2.18** 的 Docker 标准版。账号、域名、IP 和邮件均为演示数据。
+新用户建议从 **Docker 标准版**开始。在安装了 Git、OpenSSL 和 Docker Compose 的 Linux 服务器上执行。初始化时输入管理员邮箱和密码。
 
-### 网页邮箱
+```bash
+git clone --branch v0.2.23 --depth 1 https://github.com/makessr/HarborMail.git &&
+  cd HarborMail &&
+  sudo bash ops/init-docker.sh standard &&
+  sudo docker compose config --quiet &&
+  sudo docker compose up -d --no-build --wait --wait-timeout 900 &&
+  curl -fsS http://127.0.0.1:8080/healthz
+```
 
-侧栏可切换收件箱、草稿、发件箱和自定义文件夹。阅读页可查看发件人详情、下载原始邮件、打印、回复或转发。
+健康接口返回 `ok` 后，从本机回环地址打开后台。远程服务器可以通过 SSH 隧道访问，再用刚创建的账号给自己发一封测试邮件。 [打开后台并试发](docs/deploy/common.md#打开后台并试发) · [接入公网](docs/quick-start.md#接入公网)
 
-![Harbor Mail v0.2.18 网页邮箱，展示收件箱与邮件阅读页](docs/assets/webmail.webp)
+### Linux 单二进制启动
 
-### 管理后台
+从 [GitHub Release](https://github.com/makessr/HarborMail/releases/latest) 下载对应的 Linux amd64 或 arm64 文件，再按所选方案安装 systemd 服务。 [下载和校验步骤](docs/deploy/common.md#下载同版二进制)
 
-概览显示账号数、近期管理操作和投递队列。后台也提供别名、配额、扫描隔离与审计管理。
-
-![Harbor Mail v0.2.18 管理后台的概览、趋势和队列](docs/assets/admin-overview.webp)
-
-### 域名与 DNS
-
-新增邮件域名后，从「DNS 记录」查看并复制 A、MX、SPF、DKIM 和 DMARC 配置。发布记录后可在后台运行域名上线检查。
-
-![Harbor Mail v0.2.18 域名 DNS 记录生成界面](docs/assets/admin-dns.webp)
-
-<details>
-<summary>更多实机截图 · 写邮件、账号管理、存储与运行监控</summary>
-
-#### 写邮件
-
-写信窗口可展开抄送和密送，并提供附件、草稿和定时发送入口。
-
-![Harbor Mail 写邮件窗口，包含正文、主题和发送工具](docs/assets/webmail-compose.webp)
-
-#### 账号管理
-
-按域名、角色和状态筛选账号，打开详情查看可用管理操作。
-
-![Harbor Mail 账号列表和账号详情面板](docs/assets/admin-accounts.webp)
-
-#### 存储用量
-
-查看单个邮箱的邮件、文件夹和投递队列用量，并管理容量预警。
-
-![Harbor Mail 存储用量和容量预警页面](docs/assets/admin-storage.webp)
-
-#### 运行监控
-
-查看 Harbor 进程 CPU、内存、数据库连接池及后台处理状态。
-
-![Harbor Mail 运行监控的 CPU、内存和数据库指标](docs/assets/admin-runtime.webp)
-
-</details>
-
-## 功能与取舍
-
-| 场景 | 支持内容 |
-| --- | --- |
-| 网页收发 | 多收件人、抄送和密送、附件、草稿自动保存、定时发送和撤销、授权别名发信、签名与模板 |
-| 邮件整理 | 嵌套文件夹、标签、邮件规则、搜索、稍后处理、EML 导入和导出 |
-| 邮件客户端 | SMTP 收信与提交、IMAP（含 IDLE）、POP3、TLS、应用密码 |
-| 域名和运维 | 多域名、管理员与域管理员、邮箱和别名、DNS 指引、内置 DKIM、投递队列、存储配额、隔离与审计 |
-| 可选集成 | SMTP 中继、Cloudflare DNS-01 自动证书、Rspamd 和 ClamAV、旧邮箱 IMAPS 迁移 |
-
-**优点**
-
-- 网页和 IMAP 客户端共用邮箱。可以从 SQLite 单实例起步，也可部署 MySQL、Redis 和来信扫描。
-- 多个域名可以在同一后台维护。默认启用原生 MX 直投，也可配置 SMTP 中继。
-- 邮箱数据、扫描数据和凭据可独立备份。Docker 默认使用命名卷，当前仓库的 Compose 也支持指定宿主机路径。
-
-**局限**
-
-- 公网收发涉及域名 DNS、证书和邮件端口。直投还取决于出站 TCP 25、IP 信誉和收件方策略。远端返回 SMTP `250` 表示已接收，最终分类由对方决定。
-- SQLite 适合单实例。共享 MySQL 时需要维护数据库连接、备份和各实例配置。
-- Rspamd 和 ClamAV 增加内存、磁盘及病毒库维护开销。下方的标准版测试未启用扫描。
-- 网页发信默认附件合计 6 MiB，编码后整封邮件上限 10 MiB。可配置的最高值分别为 28 MiB 和 40 MiB。 [邮件大小与附件](docs/deployment-and-usage.md#当前范围)
+从源码构建时，在仓库根目录使用 Go 1.27.4 或更新版本执行 `go build -o harbormail ./cmd/harbormail`。网页资源已内嵌在二进制中。
 
 ## 部署方案和难度
 
-| 方案 | 难度 | 需要的组件 |
-| --- | --- | --- |
-| [Docker 极简版](compose.minimal.yaml) | 低，适合体验或轻量单实例 | Harbor Mail 和内置 SQLite |
-| [Docker 标准版](compose.standard.yaml) | 中，适合首次长期部署 | Harbor Mail、MySQL 8.4、Redis |
-| [Docker 全量版](compose.full.yaml) | 较高，需要等待病毒库就绪并管理扫描策略 | 标准版加 Rspamd、ClamAV 和扫描专用 Redis |
-| [Linux 单二进制](ops/README.md#linux-单二进制-systemd-部署) | 中到较高，需要配置 systemd 和所选外部服务 | 极简只使用内置 SQLite，标准和全量按需接入相同的外部组件 |
+| 方案 | 适合谁 | Docker | Linux 二进制 |
+| --- | --- | --- | --- |
+| **精简版** | 个人邮箱或轻量单实例，使用内置 SQLite | [部署](docs/deploy/docker-minimal-install.md) · [升级](docs/deploy/docker-minimal-upgrade.md) | [部署](docs/deploy/binary-minimal-install.md) · [升级](docs/deploy/binary-minimal-upgrade.md) |
+| **标准版** | 首次长期部署或小团队，使用 MySQL 8.4 和 Redis | [部署](docs/deploy/docker-standard-install.md) · [升级](docs/deploy/docker-standard-upgrade.md) | [部署](docs/deploy/binary-standard-install.md) · [升级](docs/deploy/binary-standard-upgrade.md) |
+| **全量版** | 需要来信反垃圾和病毒隔离，在标准版上接入 Rspamd 和 ClamAV | [部署](docs/deploy/docker-full-install.md) · [升级](docs/deploy/docker-full-upgrade.md) | [部署](docs/deploy/binary-full-install.md) · [升级](docs/deploy/binary-full-upgrade.md) |
 
-难度按安装和维护工作量评估。所有方案接入公网前都需要核验 DNS、HTTPS、实际收发和备份恢复。
+Docker 自动启动配套服务。Linux 三种方案使用同一发行二进制，标准版和全量版需要准备相应的外部服务。
+
+<details>
+<summary>查看服务器配置与上线清单</summary>
 
 ### 服务器配置推荐
 
@@ -119,24 +80,84 @@ Harbor Mail 是一个自建域名邮箱系统。用户从首页收发邮件，�
 
 已有实例更换存储路径前，先备份并迁移原数据。 [存储路径配置](docs/quick-start.md#选择数据存放位置) · [接入公网域名](docs/deployment-and-usage.md#接入真实域名) · [扫描配置](docs/spam-and-antivirus.md)
 
-### Docker 首次启动
+</details>
 
-在 Linux 服务器终端执行。安装极简或全量版时，把 `standard` 改成 `minimal` 或 `full`。
+## 界面演示
 
-```bash
-git clone --depth 1 https://github.com/makessr/HarborMail.git &&
-cd HarborMail &&
-bash ops/init-docker.sh standard
-```
+截图来自正式版 **v0.2.18** 的 Docker 标准版。账号、域名、IP 和邮件均为演示数据。
 
-初始化成功后，可先编辑 `.env` 选择端口和数据目录，再启动。
+### 网页邮箱
 
-```bash
-docker compose config --quiet &&
-docker compose up -d --wait --wait-timeout 900
-```
+侧栏可切换收件箱、草稿、发件箱和自定义文件夹。阅读页可查看发件人详情、下载原始邮件、打印、回复或转发。
 
-通过 1Panel 部署时，使用对应的单文件 Compose，并把初始化生成的 `.env` 和 `secrets/` 放进同一个项目目录。 [1Panel 与命令行部署说明](docs/quick-start.md)
+![Harbor Mail v0.2.18 网页邮箱，展示收件箱与邮件阅读页](docs/assets/webmail.webp)
+
+<details>
+<summary>查看更多实机截图 · 管理后台、DNS、写信和运行监控</summary>
+
+### 管理后台
+
+概览显示账号数、近期管理操作和投递队列。后台也提供别名、配额、扫描隔离与审计管理。
+
+![Harbor Mail v0.2.18 管理后台的概览、趋势和队列](docs/assets/admin-overview.webp)
+
+### 域名与 DNS
+
+新增邮件域名后，从「DNS 记录」查看并复制 A、MX、SPF、DKIM 和 DMARC 配置。发布记录后可在后台运行域名上线检查。
+
+![Harbor Mail v0.2.18 域名 DNS 记录生成界面](docs/assets/admin-dns.webp)
+
+### 写邮件
+
+写信窗口可展开抄送和密送，并提供附件、草稿和定时发送入口。
+
+![Harbor Mail 写邮件窗口，包含正文、主题和发送工具](docs/assets/webmail-compose.webp)
+
+### 账号管理
+
+按域名、角色和状态筛选账号，打开详情查看可用管理操作。
+
+![Harbor Mail 账号列表和账号详情面板](docs/assets/admin-accounts.webp)
+
+### 存储用量
+
+查看单个邮箱的邮件、文件夹和投递队列用量，并管理容量预警。
+
+![Harbor Mail 存储用量和容量预警页面](docs/assets/admin-storage.webp)
+
+### 运行监控
+
+查看 Harbor 进程 CPU、内存、数据库连接池及后台处理状态。
+
+![Harbor Mail 运行监控的 CPU、内存和数据库指标](docs/assets/admin-runtime.webp)
+
+</details>
+
+## 功能与取舍
+
+| 场景 | 支持内容 |
+| --- | --- |
+| 网页收发 | 多收件人、抄送和密送、附件、草稿自动保存、定时发送和撤销、授权别名发信、签名与模板 |
+| 邮件整理 | 嵌套文件夹、标签、邮件规则、搜索、稍后处理、EML 导入和导出 |
+| 邮件客户端 | SMTP 收信与提交、IMAP（含 IDLE）、POP3、TLS、应用密码 |
+| 登录保护 | 网页邮箱两步验证、一次性恢复码、会话管理 |
+| 域名和运维 | 多域名、管理员与域管理员、邮箱和别名、DNS 指引、内置 DKIM、投递队列、存储配额、隔离与审计 |
+| 可选集成 | SMTP 中继、Cloudflare DNS-01 自动证书、Rspamd 和 ClamAV、旧邮箱 IMAPS 迁移 |
+
+**来信扫描与病毒隔离**。全站管理员可在「安全 → 公网部署安全检查」测试扫描接口，在「隔离邮件」查看和处置隔离记录。自动反垃圾依赖 Rspamd，病毒检测由 Rspamd 调用 ClamAV，启用隔离策略后才会产生病毒隔离记录。Docker 全量版已预配这些组件。 [扫描配置与处置说明](docs/spam-and-antivirus.md)
+
+**优点**
+
+- 网页和 IMAP 客户端共用邮箱。可以从 SQLite 单实例起步，也可部署 MySQL、Redis 和来信扫描。
+- 多个域名可以在同一后台维护。默认启用原生 MX 直投，也可配置 SMTP 中继。
+- 邮箱数据、扫描数据和凭据可独立备份。Docker 默认使用命名卷，当前仓库的 Compose 也支持指定宿主机路径。
+
+**局限**
+
+- 公网收发涉及域名 DNS、证书和邮件端口。直投还取决于出站 TCP 25、IP 信誉和收件方策略。远端返回 SMTP `250` 表示已接收，最终分类由对方决定。
+- SQLite 适合单实例。共享 MySQL 时需要维护数据库连接、备份和各实例配置。
+- Rspamd 和 ClamAV 增加内存、磁盘及病毒库维护开销。下方的标准版测试未启用扫描。
+- 网页发信默认附件合计 6 MiB，编码后整封邮件上限 10 MiB。可配置的最高值分别为 28 MiB 和 40 MiB。 [邮件大小与附件](docs/deployment-and-usage.md#当前范围)
 
 ## 升级已有部署
 
@@ -148,32 +169,12 @@ docker compose up -d --wait --wait-timeout 900
 
 ### Linux 单二进制升级
 
-按 [精简版](docs/deploy/binary-minimal-upgrade.md)、[标准版](docs/deploy/binary-standard-upgrade.md)或[全量版](docs/deploy/binary-full-upgrade.md)备份和验收。下方是共用的二进制替换步骤。
-
-从同一个 [GitHub Release](https://github.com/makessr/HarborMail/releases/latest) 下载本机架构的二进制和 `SHA256SUMS`。以下命令适用于项目默认的 systemd 安装路径，在下载目录执行。
-
-```bash
-(
-  set -euo pipefail
-  case "$(uname -m)" in
-    x86_64) binary=harbormail-linux-amd64 ;;
-    aarch64|arm64) binary=harbormail-linux-arm64 ;;
-    *) echo "此架构暂无官方 Linux 二进制" >&2; exit 1 ;;
-  esac
-  awk -v file="$binary" '$2 == file' SHA256SUMS | sha256sum -c -
-  sudo cp -p /usr/local/bin/harbormail "/usr/local/bin/harbormail.$(date +%Y%m%d-%H%M%S).bak"
-  sudo install -m 0755 "$binary" /usr/local/bin/harbormail.next
-  sudo systemctl stop harbormail.service
-  sudo mv -f /usr/local/bin/harbormail.next /usr/local/bin/harbormail
-  sudo systemctl start harbormail.service
-  sudo systemctl status harbormail.service --no-pager
-  /usr/local/bin/harbormail version
-)
-```
-
-自定义 systemd 安装以实际 `ExecStart` 为准。服务启动失败时先查日志，再按备份和数据库兼容性决定回退方式。 [服务管理与升级](ops/README.md#tls-与版本升级)
+按 [精简版](docs/deploy/binary-minimal-upgrade.md)、[标准版](docs/deploy/binary-standard-upgrade.md)或[全量版](docs/deploy/binary-full-upgrade.md)完成备份，再[校验并替换二进制](docs/deploy/common.md#二进制替换与回退)。
 
 ## 实机测试数据
+
+<details>
+<summary>查看 Docker 精简版和标准版的轻负载记录</summary>
 
 2026-11-22，正式版 v0.2.18，Docker Desktop Linux 环境（Docker 可见 12 个逻辑 CPU 和 15.58 GiB 内存）。全部请求走本机回环。每种方案投递 6 封合成邮件，预热 10 次后串行请求 `/healthz` 100 次，并用 `docker stats --no-stream` 记录容器内存快照。
 
@@ -186,6 +187,8 @@ docker compose up -d --wait --wait-timeout 900
 | 数据库与缓存容器内存 | 内置 SQLite | MySQL 463.9 MiB、Redis 6.95 MiB |
 
 标准版停止 Redis 后，后台概览继续从 MySQL 读取，测试结束后恢复 Redis。表中是轻负载下的容器内存快照，运行监控截图则显示另一时点的进程常驻内存（RSS）。健康接口的延迟也不能代表邮件投递速度。全量扫描、公网投递和高并发峰值未纳入这组数字。
+
+</details>
 
 ## 发布平台和架构
 
