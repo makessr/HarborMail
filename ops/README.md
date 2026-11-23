@@ -370,6 +370,8 @@ MySQL 备份账户需读取整个 Harbor 数据库，以涵盖后续版本增加
 
 #### 全量 Compose 的本机回读与巡检
 
+`harbormail-systemd.tar.gz` 包含本节的脚本和定时任务模板。
+
 全量 Compose 可以运行 `ops/compose-maintenance.sh backup` 生成加密异地备份之外的同机副本。它校验压缩文件和 SHA-256，导入临时 MySQL 库并读取邮件、队列、账号、DKIM、UID 和配额计数。临时库的写入跳过 binlog。脚本仅轮换其生成且完成回读的副本，保留约 14 天。目录须由 root 独占，默认是 `/var/backups/harbor-mail`。它只备份数据库，配置、证书和密钥仍按「成功标记与配套数据」单独保存。
 
 全量部署可把 `harbor-compose-maintenance@.service`、`harbor-compose-check.timer` 和 `harbor-compose-backup.timer` 安装到 `/etc/systemd/system/`，把脚本安装到 `/opt/harbor-mail/ops/` 并设为可执行。创建 `/etc/harbor/compose-maintenance.env`，设置 `HARBOR_MAINTENANCE_PUBLIC_URL=https://mail.example.com`。同一主机开放邮件 TLS 时，可设 `HARBOR_MAINTENANCE_MAIL_TLS=25,587,993`，只列出实际提供 TLS 的端口。改变部署或备份目录时，同时设置 `HARBOR_MAINTENANCE_COMPOSE_DIR` 或 `HARBOR_MAINTENANCE_BACKUP_DIR`。先手动运行两个服务并确认成功，再启用定时器。

@@ -26,7 +26,9 @@ runs:
         GOOS=windows GOARCH=arm64 go build -trimpath -ldflags="$flags" -o dist/harbormail-windows-arm64.exe ./cmd/harbormail
         test "$(dist/harbormail-linux-amd64 version)" = "${version:-dev}"
         tar -czf dist/harbormail-systemd.tar.gz ops/harbormail.service ops/harbormail.env.example \
-          ops/backup.sh ops/harbor-backup.service ops/harbor-backup.timer ops/harbor-backup.env.example
+          ops/backup.sh ops/harbor-backup.service ops/harbor-backup.timer ops/harbor-backup.env.example \
+          ops/compose-maintenance.sh ops/harbor-compose-maintenance@.service \
+          ops/harbor-compose-check.timer ops/harbor-compose-backup.timer
         cp docs/licenses/go-qrcode.txt dist/go-qrcode-LICENSE.txt
         cp docs/licenses/go-msgauth.txt dist/go-msgauth-LICENSE.txt
         cp docs/licenses/webpush-go.txt dist/webpush-go-LICENSE.txt

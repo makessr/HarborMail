@@ -8,7 +8,7 @@
     &nbsp;·&nbsp;
     <a href="docs/deploy/README.md"><strong>部署与升级</strong></a>
     &nbsp;·&nbsp;
-    <a href="docs/releases/v0.2.24.md">v0.2.24 发行说明</a>
+    <a href="docs/releases/v0.2.25.md">v0.2.25 发行说明</a>
   </p>
 </div>
 
@@ -221,7 +221,7 @@ Docker 自动启动配套服务。Linux 三种方案使用同一发行二进制�
 
 Submission 容量计数可从 Prometheus 指标读取。MySQL 上，已有 UID 的 IMAP 文件夹使用只读一致性快照，缺失 UID 时仍由现有分配器补齐。
 
-[v0.2.24 发行说明](docs/releases/v0.2.24.md)涵盖新安装默认额度、SMTP 接入限制、协议会话撤销和固定镜像摘要的安装方式。
+[v0.2.25 发行说明](docs/releases/v0.2.25.md)涵盖网页改密与找回密码、回收邮箱释放地址、后台存储列表，以及全量 Compose 的本机备份恢复与巡检。
 
 参与开发见[贡献指南](CONTRIBUTING.md)。发布维护见[发布检查清单](docs/release-checklist.md)。
 
