@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/mail"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,6 +40,10 @@ func TestDeploymentSecurityProbe(t *testing.T) {
 	worker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" || r.URL.Path != "/checkv2" || r.Header.Get("From") != "probe@harbor.test" {
 			t.Error("unexpected probe request")
+		}
+		message, err := mail.ReadMessage(r.Body)
+		if err != nil || message.Header.Get("Message-ID") == "" || message.Header.Get("Date") == "" || message.Header.Get("Content-Type") == "" {
+			t.Error("probe requires the standard message headers")
 		}
 		fmt.Fprint(w, `{"action":"no action"}`)
 	}))

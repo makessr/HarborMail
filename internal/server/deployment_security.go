@@ -52,8 +52,14 @@ func (a *app) deploymentScanner(ctx context.Context) deploymentCheck {
 	defer a.inbound.endScan()
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	verdict, err := a.spamScanner.check(ctx, &delivery{sender: "probe@harbor.test"},
-		[]byte("From: probe@harbor.test\r\nTo: probe@harbor.test\r\nSubject: Harbor scan health\r\n\r\nSynthetic health check.\r\n"))
+	const sender = "probe@harbor.test"
+	const recipient = "scan-health@harbor.test"
+	probe := &delivery{sender: sender, recipients: []mailDestination{{address: recipient}}}
+	message := "From: Harbor Mail <" + sender + ">\r\nTo: Scanner <" + recipient + ">\r\n" +
+		"Date: " + time.Now().Format(time.RFC1123Z) + "\r\n" +
+		"Message-ID: <" + token() + "@harbor.test>\r\nSubject: Harbor Mail scan health\r\n" +
+		"MIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\nSynthetic scan health check.\r\n"
+	verdict, err := a.spamScanner.check(ctx, probe, []byte(message))
 	if err != nil || verdict.unavailable || verdict.virus {
 		return deploymentCheck{"来信扫描", "warning", "合成扫描未成功。请检查 Rspamd、ClamAV 和扫描超时。"}
 	}
