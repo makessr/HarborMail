@@ -2,6 +2,8 @@
 
 本教程用 `example.com` 作为邮箱域名，`mail.example.com` 作为网页和邮件主机，`admin@example.com` 作为第一个管理员。操作时全部换成你自己的值。先跑通站内邮件，再接入公网。
 
+要直接查看单个方案的部署或升级步骤，请打开[部署与升级指南](deploy/README.md)。
+
 ## 选一种安装方式
 
 | 方案 | 适合谁 | 包含组件 |
@@ -126,16 +128,8 @@ Docker 修改配置后执行 `docker compose up -d --no-deps --no-build --wait h
 
 在「管理后台 → 概览 → 关于 Harbor Mail」点击「检查更新」。它会查询 GitHub 的最新稳定版。先阅读发布说明，再备份数据库、配置和 DKIM 密钥。保留原 Compose 项目名、数据卷和凭据。[备份与恢复](../ops/README.md#备份)
 
-**Docker** 使用默认的 `ghcr.io/makessr/harbormail:latest` 镜像时，在原部署目录运行：
+**Docker** 沿用原 Compose 文件、项目名和数据挂载。备份后保存旧镜像，再只更新 Harbor Mail。查看 [精简版](deploy/docker-minimal-upgrade.md)、[标准版](deploy/docker-standard-upgrade.md)或[全量版](deploy/docker-full-upgrade.md)的升级步骤。
 
-```bash
-docker compose pull &&
-docker compose down &&
-docker compose up -d
-```
-
-沿用原 Compose 文件、项目名和数据挂载。`down` 会短暂停止整个项目并保留命名卷，请勿加 `-v`。如果自定义配置固定了镜像标签或摘要，先调整原有镜像引用。
-
-**单二进制** 后台会按当前运行的架构提示对应下载，Windows amd64 和 ARM64 分开提供。下载后校验文件，停止服务并备份，替换原可执行文件后重新启动。 [Linux systemd 升级命令](../ops/README.md#tls-与版本升级)
+**Linux 二进制** 下载并校验本机架构的文件，备份数据后替换二进制。查看 [精简版](deploy/binary-minimal-upgrade.md)、[标准版](deploy/binary-standard-upgrade.md)或[全量版](deploy/binary-full-upgrade.md)的升级步骤。
 
 升级后检查服务状态、`/healthz` 和后台显示的版本，再验证一封邮件的收发。

@@ -4,7 +4,7 @@
 
 Harbor Mail 是一个自建域名邮箱系统。用户从首页收发邮件，管理员从 `/admin` 管理域名、邮箱、投递队列和隔离邮件。服务端用 Go 编写，网页资源内嵌在单个可执行文件中，支持 Docker Compose 和 Linux systemd 部署。
 
-[下载正式版](https://github.com/makessr/HarborMail/releases/latest) · [第一次部署](docs/quick-start.md) · [完整配置](docs/deployment-and-usage.md) · [生产运行手册](ops/README.md)
+[下载正式版](https://github.com/makessr/HarborMail/releases/latest) · [部署与升级指南](docs/deploy/README.md) · [完整配置](docs/deployment-and-usage.md) · [生产运行手册](ops/README.md)
 
 ## 界面演示
 
@@ -144,17 +144,11 @@ docker compose up -d --wait --wait-timeout 900
 
 ### Docker 容器升级
 
-使用 `ghcr.io/makessr/harbormail:latest` 时，在原部署目录执行。沿用原 Compose 文件、项目名和数据挂载。
-
-```bash
-docker compose pull &&
-docker compose down &&
-docker compose up -d
-```
-
-`down` 会短暂停止整个项目，命名卷会保留。请勿加 `-v`。固定镜像标签或摘要的部署需先调整原镜像引用。 [Docker Compose down](https://docs.docker.com/reference/cli/docker/compose/down/)
+沿用原项目名、Compose 配置和数据挂载。确认备份后，仅更新 `harbor` 服务。选择对应的 [精简版](docs/deploy/docker-minimal-upgrade.md)、[标准版](docs/deploy/docker-standard-upgrade.md)或[全量版](docs/deploy/docker-full-upgrade.md)升级指南。
 
 ### Linux 单二进制升级
+
+按 [精简版](docs/deploy/binary-minimal-upgrade.md)、[标准版](docs/deploy/binary-standard-upgrade.md)或[全量版](docs/deploy/binary-full-upgrade.md)备份和验收。下方是共用的二进制替换步骤。
 
 从同一个 [GitHub Release](https://github.com/makessr/HarborMail/releases/latest) 下载本机架构的二进制和 `SHA256SUMS`。以下命令适用于项目默认的 systemd 安装路径，在下载目录执行。
 
