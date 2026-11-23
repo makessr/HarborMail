@@ -113,6 +113,24 @@ func TestLoginAudit(t *testing.T) {
 			if len(second.Events) != 1 || second.Events[0].ID >= cursor || second.HasMore || second.Totals != nil {
 				t.Fatalf("wrong second page: %+v", second)
 			}
+			get("limit=11", adminCookie, http.StatusBadRequest)
+			for _, limit := range []int{10, 20, 50, 100} {
+				pagedQuery := query + "&totals=0&limit=" + strconv.Itoa(limit)
+				var page report
+				if err := json.Unmarshal(get(pagedQuery, adminCookie, http.StatusOK).Body.Bytes(), &page); err != nil {
+					t.Fatal(err)
+				}
+				if len(page.Events) != limit || !page.HasMore {
+					t.Fatalf("limit %d returned %d rows, more=%t", limit, len(page.Events), page.HasMore)
+				}
+				cursor := page.Events[limit-1].ID
+				if err := json.Unmarshal(get(pagedQuery+"&before="+strconv.FormatInt(cursor, 10), adminCookie, http.StatusOK).Body.Bytes(), &page); err != nil {
+					t.Fatal(err)
+				}
+				if want := min(limit, loginAuditPage+1-limit); len(page.Events) != want || page.HasMore != (loginAuditPage+1 > 2*limit) || page.Events[0].ID >= cursor {
+					t.Fatalf("limit %d returned incorrect next page: %d rows, more=%t", limit, len(page.Events), page.HasMore)
+				}
+			}
 			var expired report
 			response = get("account="+owner+"&until="+strconv.FormatInt(now-3600, 10), adminCookie, http.StatusOK)
 			if err := json.Unmarshal(response.Body.Bytes(), &expired); err != nil || len(expired.Events) != 0 {

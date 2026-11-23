@@ -161,6 +161,10 @@ func Run() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	a.inbound.limits, err = loadInboundLimits(a.messageLimit())
+	if err != nil {
+		log.Fatal(err)
+	}
 	switch os.Getenv("HARBOR_RECOVERY_MODE") {
 	case "true":
 		a.recoveryMode = true
@@ -685,6 +689,7 @@ func (a *app) routes() http.Handler {
 	mux.HandleFunc("POST /api/admin/aliases", a.domainAdminOnly(a.adminAliasChange))
 	mux.HandleFunc("GET /api/admin/runtime", a.adminOnly(a.adminRuntime))
 	mux.HandleFunc("GET /api/admin/security", a.adminOnly(a.adminSecurity))
+	mux.HandleFunc("GET /api/admin/deployment-security", a.adminOnly(a.adminDeploymentSecurity))
 	mux.HandleFunc("POST /api/login", a.login)
 	mux.HandleFunc("GET /api/session", a.auth(func(w http.ResponseWriter, r *http.Request, owner string) {
 		a.replySession(w, r, owner)

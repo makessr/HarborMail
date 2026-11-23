@@ -54,6 +54,11 @@ func (a *app) metrics(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "# TYPE harbor_spam_training_failed_samples gauge\nharbor_spam_training_failed_samples %d\n", stats.FailedTraining)
 	fmt.Fprintf(w, "# TYPE harbor_dkim_active_domains gauge\nharbor_dkim_active_domains %d\n", activeDKIM)
 	fmt.Fprintf(w, "# TYPE harbor_dkim_unusable_domains gauge\nharbor_dkim_unusable_domains %d\n", unusableDKIM)
+	inbound := a.inbound.snapshot()
+	fmt.Fprintf(w, "# TYPE harbor_inbound_active_messages gauge\nharbor_inbound_active_messages %d\n", inbound.messages)
+	fmt.Fprintf(w, "# TYPE harbor_inbound_reserved_bytes gauge\nharbor_inbound_reserved_bytes %d\n", inbound.bytes)
+	fmt.Fprintf(w, "# TYPE harbor_inbound_active_scans gauge\nharbor_inbound_active_scans %d\n", inbound.scans)
+	fmt.Fprintf(w, "# TYPE harbor_inbound_capacity_deferred_total counter\nharbor_inbound_capacity_deferred_total %d\n", inbound.deferred)
 }
 
 func (a *app) dkimKeyCounts(ctx context.Context) (active, unusable int, err error) {

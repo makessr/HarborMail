@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -41,8 +42,8 @@ type scanVerdict struct {
 	spam, reject, virus, unavailable bool
 }
 
-func (scanner *rspamdScanner) check(session *delivery, raw []byte) (scanVerdict, error) {
-	req, err := http.NewRequest(http.MethodPost, scanner.endpoint, bytes.NewReader(raw))
+func (scanner *rspamdScanner) check(ctx context.Context, session *delivery, raw []byte) (scanVerdict, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, scanner.endpoint, bytes.NewReader(raw))
 	if err != nil {
 		return scanVerdict{}, err
 	}

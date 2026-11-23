@@ -39,6 +39,7 @@ type app struct {
 	stopping            <-chan struct{}
 	spamScanner         *rspamdScanner
 	scanPolicy          inboundScanPolicy
+	inbound             inboundCapacity
 	sizes               mailSizeLimits
 	spamTrainer         *rspamdTrainer
 	sharedMailboxEvents bool
@@ -228,9 +229,18 @@ func (s *delivery) Rcpt(to string, _ *smtp.RcptOptions) error {
 }
 
 func (s *delivery) Data(r io.Reader) error {
-	raw, err := io.ReadAll(r)
+	maxBytes := s.app.messageLimit()
+	// Reserve the full limit even when the sender advertises a smaller SIZE.
+	if !s.app.inbound.beginMessage(maxBytes) {
+		return errInboundCapacity
+	}
+	defer s.app.inbound.endMessage(maxBytes)
+	raw, err := io.ReadAll(io.LimitReader(r, int64(maxBytes)+1))
 	if err != nil {
 		return err
+	}
+	if len(raw) > maxBytes {
+		return smtp.ErrDataTooLarge
 	}
 	folder, err := s.scanIncoming(raw)
 	if err != nil || folder == "" {

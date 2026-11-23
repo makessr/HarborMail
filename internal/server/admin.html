@@ -421,6 +421,14 @@ docker compose up -d</code></pre>
     </div>
     <div id="admin-security-view" hidden>
       <dl class="admin-kpis" id="admin-security-kpis" aria-label="保留期内的登录统计"></dl>
+      <section class="admin-panel" aria-labelledby="admin-deployment-security-title">
+        <div class="admin-heading">
+          <h2 id="admin-deployment-security-title">公网部署安全检查</h2>
+          <button class="secondary" type="button" id="admin-deployment-security-run">运行检查</button>
+        </div>
+        <p class="admin-note" id="admin-deployment-security-status" role="status" hidden></p>
+        <dl id="admin-deployment-security-results" hidden></dl>
+      </section>
       <section class="admin-panel" aria-labelledby="admin-security-policy-title">
         <div class="admin-heading"><h2 id="admin-security-policy-title">登录限速</h2><a href="/admin/audit">管理审计</a></div>
         <dl id="admin-security-policy"></dl>
@@ -428,6 +436,15 @@ docker compose up -d</code></pre>
       <section class="admin-panel admin-directory" aria-labelledby="admin-security-log-title">
         <div class="admin-heading">
           <h2 id="admin-security-log-title">登录记录</h2>
+          <div class="admin-security-page-size">
+            <label for="admin-security-page-size">每页条数</label>
+            <select id="admin-security-page-size">
+              <option value="10">10</option>
+              <option value="20" selected>20</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+          </div>
         </div>
         <form class="admin-filters" id="admin-security-filters">
           <input name="account" type="email" aria-label="邮箱账号" placeholder="邮箱账号" autocomplete="off" maxlength="254">
@@ -436,7 +453,7 @@ docker compose up -d</code></pre>
           <select name="result" aria-label="按登录结果筛选"></select>
           <label>起始日期 <input name="from" type="date"></label>
           <label>结束日期 <input name="until" type="date"></label>
-          <button type="submit">筛选</button>
+          <button type="submit" class="secondary">筛选</button>
         </form>
         <div class="admin-table">
           <table>
@@ -445,10 +462,13 @@ docker compose up -d</code></pre>
           </table>
           <p class="admin-note" id="admin-security-empty" hidden>没有匹配的登录记录。</p>
         </div>
-        <div class="admin-filters">
-          <button id="admin-security-previous" type="button" disabled>上一页</button>
-          <button id="admin-security-next" type="button" disabled>下一页</button>
-        </div>
+        <nav class="admin-security-pagination" aria-label="登录记录分页">
+          <span class="admin-note" id="admin-security-page-status" role="status"></span>
+          <div class="admin-filters">
+            <button id="admin-security-previous" type="button" class="secondary" disabled>上一页</button>
+            <button id="admin-security-next" type="button" class="secondary" disabled>下一页</button>
+          </div>
+        </nav>
       </section>
     </div>
   </main>

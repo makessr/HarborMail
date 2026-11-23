@@ -112,6 +112,15 @@ func loginAuditAccount(value string) string {
 func (a *app) adminSecurity(w http.ResponseWriter, r *http.Request, actor string) {
 	w.Header().Set("Cache-Control", "no-store")
 	q := r.URL.Query()
+	limit := loginAuditPage
+	if value := q.Get("limit"); value != "" {
+		var err error
+		limit, err = strconv.Atoi(value)
+		if err != nil || (limit != 10 && limit != 20 && limit != 50 && limit != loginAuditPage) {
+			fail(w, http.StatusBadRequest, "每页条数可选 10、20、50 或 100")
+			return
+		}
+	}
 	now := time.Now()
 	cutoff := now.Add(-time.Duration(a.loginAuditDays()) * 24 * time.Hour).Unix()
 	filters := []string{"stamp>=?"}
@@ -177,13 +186,13 @@ func (a *app) adminSecurity(w http.ResponseWriter, r *http.Request, actor string
 		}
 	}
 	rows, err := a.db.QueryContext(ctx, `SELECT id,stamp,source,account,protocol,result FROM login_audit_events WHERE `+
-		strings.Join(filters, " AND ")+` ORDER BY id DESC LIMIT ?`, append(args, loginAuditPage+1)...)
+		strings.Join(filters, " AND ")+` ORDER BY id DESC LIMIT ?`, append(args, limit+1)...)
 	if err != nil {
 		fail(w, 503, "暂时无法读取登录审计")
 		return
 	}
 	defer rows.Close()
-	events := make([]loginEvent, 0, loginAuditPage+1)
+	events := make([]loginEvent, 0, limit+1)
 	for rows.Next() {
 		var event loginEvent
 		if err := rows.Scan(&event.ID, &event.At, &event.Source, &event.Account, &event.Protocol, &event.Result); err != nil {
@@ -196,9 +205,9 @@ func (a *app) adminSecurity(w http.ResponseWriter, r *http.Request, actor string
 		fail(w, 503, "暂时无法读取登录审计")
 		return
 	}
-	hasMore := len(events) > loginAuditPage
+	hasMore := len(events) > limit
 	if hasMore {
-		events = events[:loginAuditPage]
+		events = events[:limit]
 	}
 	g := &a.webLogin
 	reply(w, http.StatusOK, map[string]any{

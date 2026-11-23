@@ -52,7 +52,11 @@ func (s *delivery) scanIncoming(raw []byte) (string, error) {
 		return "inbox", nil
 	}
 	policy := s.app.scanPolicy
-	v, err := s.app.spamScanner.check(s, raw)
+	if !s.app.inbound.beginScan(true) {
+		return "", errInboundCapacity
+	}
+	defer s.app.inbound.endScan()
+	v, err := s.app.spamScanner.check(context.Background(), s, raw)
 	if err != nil || v.unavailable {
 		log.Print("Inbound scanner unavailable or incomplete")
 	}

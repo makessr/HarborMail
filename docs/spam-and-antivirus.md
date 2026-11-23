@@ -107,3 +107,19 @@ clamav {
 普通垃圾邮件分类仍可由用户规则覆盖。拒收和隔离在邮件进入邮箱前完成。使用自管 ClamAV 时，请保持 `CLAM_VIRUS` 和 `CLAM_VIRUS_FAIL` 符号，分别用于标记命中和故障。确认扫描服务及其上游大小限制能覆盖 Harbor Mail 接收上限。
 
 扫描覆盖公网 SMTP 入口。网页发信、SMTP Submission、站内投递、EML 导入和 IMAP 迁移沿用各自的现有路径。
+
+### 收信并发与容量
+
+每个 Harbor Mail 实例限制同时处理的来信和同时提交给扫描器的请求。Docker 在 `.env` 配置，单二进制部署在 `harbormail.env` 配置，应用重启后生效。
+
+| 配置项 | 默认值 | 含义 |
+| --- | ---: | --- |
+| `HARBOR_INBOUND_MAX_INFLIGHT` | 4 | 同时读取、扫描或存储的公网来信数，范围 1 至 64 |
+| `HARBOR_INBOUND_MAX_MIB` | 64 | 所有正在处理来信的原始邮件预留量，范围 1 至 1024 MiB，至少等于 `HARBOR_MAX_MESSAGE_MIB` |
+| `HARBOR_INBOUND_SCAN_CONCURRENCY` | 2 | 每个实例同时送往 Rspamd 的扫描数，范围 1 至 64 |
+
+每封来信按单封大小上限预留字节，处理结束后释放。单封上限为 40 MiB 时，默认 64 MiB 预算同一时间可处理一封。实际进程内存还包含解析、数据库写入和运行时开销。达到任一上限时，当前邮件返回 SMTP `451 4.3.2`，由发送方稍后重投。扫描名额已满时同样暂缓投递。
+
+启用 Prometheus 监听后，可查看 `harbor_inbound_active_messages`、`harbor_inbound_reserved_bytes`、`harbor_inbound_active_scans` 和 `harbor_inbound_capacity_deferred_total`。多个 Harbor Mail 实例共享一个扫描器时，按所有实例的扫描并发总和规划容量。ClamAV 病毒库重载所需内存另计。 [ClamAV 容器内存说明](https://docs.clamav.net/manual/Installing/Docker.html#memory-ram-requirements)
+
+后台「安全 → 公网部署安全检查」可测试配置的扫描接口。检查使用合成邮件并占用同一组扫描名额，繁忙时显示待核验。扫描接口响应是连通性信号，验证病毒隔离仍需独立测试。

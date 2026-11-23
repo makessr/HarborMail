@@ -9,6 +9,30 @@ permissions:
   contents: read
 
 jobs:
+  go-vulnerabilities:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [linux, windows]
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Install the scanner for the runner
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.10.0
+      - name: Check reachable Go vulnerabilities
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: '0'
+        run: "$(go env GOPATH)/bin/govulncheck ./..."
+
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15

@@ -47,3 +47,31 @@ runs:
           printf '%s\n' 'image-smoke-test' | docker run --rm -i --platform "linux/$arch" --network none "$registry@$digest" hash-password
         done
         printf 'digest=%s\n' "$digest" >> "$GITHUB_OUTPUT"
+    - name: Scan both Linux images before promotion
+      shell: bash
+      env:
+        IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+      run: |
+        set -euo pipefail
+        scanner=ghcr.io/aquasecurity/trivy:0.76.2@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb
+        target="ghcr.io/makessr/harbormail@$IMAGE_DIGEST"
+        mkdir -p "$RUNNER_TEMP/harbor-image-scan"
+        for arch in amd64 arm64; do
+          docker run --rm -v "$RUNNER_TEMP/harbor-image-scan:/reports" "$scanner" image \
+            --cache-dir /reports/cache --image-src remote --platform "linux/$arch" \
+            --scanners vuln --severity HIGH,CRITICAL --format json --output "/reports/$arch.json" "$target"
+        done
+        for arch in amd64 arm64; do
+          report="$RUNNER_TEMP/harbor-image-scan/$arch.json"
+          jq -r '.Results[]?.Vulnerabilities[]? | [.Severity,.VulnerabilityID,.PkgName,.InstalledVersion,(.FixedVersion // "")] | @tsv' "$report"
+          if jq -e 'any(.Results[]?.Vulnerabilities[]?; (.FixedVersion // "") != "")' "$report" >/dev/null; then
+            echo "Fixable high or critical vulnerabilities in linux/$arch" >&2
+            exit 1
+          fi
+        done
+    - uses: actions/upload-artifact@v7
+      if: always()
+      with:
+        name: harbor-image-vulnerability-reports
+        path: ${{ runner.temp }}/harbor-image-scan/*.json
+        if-no-files-found: ignore

@@ -73,8 +73,12 @@ body.admin { display: grid; grid-template: auto 1fr / 208px minmax(0, 1fr); }
 .admin-security-badge[data-result="success"] { color: var(--accent-ink); }
 .admin-security-badge[data-result="blocked"], .admin-security-badge[data-result="error"] { color: var(--danger); }
 #admin-security-view .admin-table th:nth-child(2) { width: clamp(120px, 24vw, 245px); }
-#admin-security-filters label { display: grid; gap: 5px; }
-#admin-security-view .admin-table + .admin-filters { margin-top: 14px; }
+#admin-security-filters { margin-top: 12px; }
+#admin-security-filters > input { flex: 1 1 150px; min-width: min(150px, 100%); }
+#admin-security-filters label { display: grid; gap: 5px; color: var(--muted); font-size: 13px; }
+.admin-security-page-size { display: flex; align-items: center; gap: 8px; white-space: nowrap; color: var(--muted); font-size: 13px; }
+.admin-security-pagination { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+#admin-security-filters .secondary, .admin-security-pagination .secondary { min-height: var(--control-height); }
 .admin-runtime-toolbar { margin-bottom: 12px; }
 .admin-runtime-toolbar p { margin: 0; font-size: 13px; color: var(--muted); }
 .admin-runtime-charts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
