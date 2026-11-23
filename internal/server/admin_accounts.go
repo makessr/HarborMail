@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"net/http"
 	"time"
 )
@@ -129,9 +128,7 @@ func (a *app) adminChangeAccountAccess(w http.ResponseWriter, r *http.Request, a
 		return
 	}
 	if _, err := a.authenticate(actor, input.Password); err != nil {
-		if errors.Is(err, errLoginBusy) {
-			fail(w, http.StatusTooManyRequests, "验证请求过多，请稍后重试")
-		} else {
+		if !loginTemporaryError(w, err) {
 			fail(w, http.StatusForbidden, "管理员主邮箱密码不正确")
 		}
 		return
@@ -180,7 +177,7 @@ func (a *app) adminChangeAccountAccess(w http.ResponseWriter, r *http.Request, a
 			return
 		}
 	}
-	affected, err := revokeAccountCredentials(ctx, tx, target, input.Scope)
+	affected, err := a.revokeAccountCredentials(ctx, tx, target, input.Scope)
 	if letterError(w, err) {
 		return
 	}
@@ -198,8 +195,17 @@ func (a *app) adminChangeAccountAccess(w http.ResponseWriter, r *http.Request, a
 	reply(w, http.StatusOK, map[string]any{"affected": affected, "signedOut": signedOut})
 }
 
-func revokeAccountCredentials(ctx context.Context, tx *sql.Tx, target, scope string) (int64, error) {
+func (a *app) revokeAccountCredentials(ctx context.Context, tx *sql.Tx, target, scope string) (int64, error) {
 	var affected int64
+	switch scope {
+	case "sessions", "suspend", "password_reset":
+		if _, err := a.lockAccountAccess(ctx, tx, target); err != nil {
+			return 0, err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE account_access SET protocol_generation=protocol_generation+1 WHERE owner=?`, target); err != nil {
+			return 0, err
+		}
+	}
 	if scope == "sessions" || scope == "suspend" || scope == "password_reset" {
 		result, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE owner=?`, target)
 		if err != nil {

@@ -175,8 +175,7 @@ func (a *app) adminChangeQuarantine(w http.ResponseWriter, r *http.Request, acto
 		return
 	}
 	if _, err := a.authenticate(actor, input.Password); err != nil {
-		if errors.Is(err, errLoginBusy) {
-			fail(w, 429, "验证请求过多，请稍后重试")
+		if loginTemporaryError(w, err) {
 			return
 		}
 		fail(w, 403, "管理员密码验证失败")
@@ -220,7 +219,7 @@ func (a *app) adminChangeQuarantine(w http.ResponseWriter, r *http.Request, acto
 				return
 			}
 			m.To = recipient.Address
-			if err := insert(tx, recipient.Owner, m, "junk", raw); err != nil {
+			if err := insert(ctx, tx, recipient.Owner, m, "junk", raw); err != nil {
 				if isQuotaExceeded(err) {
 					fail(w, 507, "原收件邮箱配额不足")
 				} else {

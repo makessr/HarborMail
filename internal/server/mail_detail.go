@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"io"
+
+	"harbormail/internal/mailmime"
 )
 
 type mailDetail struct {
@@ -21,8 +23,8 @@ func inspectMailDetail(raw []byte) mailDetail {
 		detail.Attachments = append(detail.Attachments, info)
 		return true
 	})
-	view := inspectHTMLMail(raw, false)
-	detail.HasHTML, detail.HasText = view.hasHTML, view.hasText
+	view := mailmime.InspectHTML(raw, false)
+	detail.HasHTML, detail.HasText = view.HasHTML, view.HasText
 	return detail
 }
 

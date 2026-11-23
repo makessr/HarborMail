@@ -143,7 +143,7 @@ func TestIMAPCopyAppendsAndRollsBackOnStaleSource(t *testing.T) {
 	defer tx.Rollback()
 	raw := []byte("Subject: source\r\n\r\nbody\r\n")
 	for _, folder := range []string{"archive", "inbox", "inbox"} {
-		if err := insert(tx, owner, letter{From: "sender@harbor.test", To: owner}, folder, raw); err != nil {
+		if err := insert(t.Context(), tx, owner, letter{From: "sender@harbor.test", To: owner}, folder, raw); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -196,7 +196,7 @@ func TestIMAPUIDOnFolderMove(t *testing.T) {
 	}
 	defer tx.Rollback()
 	msg := letter{From: "sender@harbor.test", To: owner, Date: time.Now().Unix()}
-	if err := insert(tx, owner, msg, "inbox", []byte("Subject: test\r\n\r\nbody\r\n")); err != nil {
+	if err := insert(t.Context(), tx, owner, msg, "inbox", []byte("Subject: test\r\n\r\nbody\r\n")); err != nil {
 		t.Fatal(err)
 	}
 	if err := tx.Commit(); err != nil {

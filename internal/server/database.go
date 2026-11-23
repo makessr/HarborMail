@@ -165,6 +165,7 @@ var sqliteSchema = []string{
 		id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, target TEXT NOT NULL,
 		alias TEXT NOT NULL, action VARCHAR(24) NOT NULL, stamp INTEGER NOT NULL
 	)`,
+	`CREATE INDEX IF NOT EXISTS admin_alias_action_time ON admin_alias_actions(stamp,id)`,
 	`CREATE TABLE IF NOT EXISTS outbox_schedule (
 		outbox_id INTEGER PRIMARY KEY, send_at INTEGER NOT NULL, local_owner TEXT NOT NULL
 	)`,
@@ -540,6 +541,10 @@ func openDB(driver, source string) (*sql.DB, error) {
 	if err := ensureColumn(ctx, db, driver, "mailbox_preferences", "sender_display_name", "TEXT NOT NULL DEFAULT ''", "VARCHAR(80) NOT NULL DEFAULT ''"); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("initialize %s sender display name: %w", driver, err)
+	}
+	if err := ensureColumn(ctx, db, driver, "account_access", "protocol_generation", "INTEGER NOT NULL DEFAULT 0", "BIGINT NOT NULL DEFAULT 0"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("initialize %s protocol session generation: %w", driver, err)
 	}
 	if err := initDeliveryTimeline(ctx, db, driver); err != nil {
 		db.Close()

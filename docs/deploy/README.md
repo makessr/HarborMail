@@ -1,6 +1,6 @@
 # Harbor Mail 部署与升级
 
-适用于 [Harbor Mail v0.2.23](https://github.com/makessr/HarborMail/releases/tag/v0.2.23)。新用户建议选 **Docker 标准版**。只想先跑通邮箱，选**精简版**。需要来信反垃圾和病毒隔离，选**全量版**。
+安装指南从 [GitHub 当前正式发行版](https://github.com/makessr/HarborMail/releases/latest) 选择发行标签。新用户建议选 **Docker 标准版**。只想先跑通邮箱，选**精简版**。需要来信反垃圾和病毒隔离，选**全量版**。
 
 | 安装方式 | 方案 | 包含组件 | 首次部署 | 已有实例 |
 | --- | --- | --- | --- | --- |

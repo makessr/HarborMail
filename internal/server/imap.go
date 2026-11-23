@@ -30,11 +30,13 @@ func (a *app) listenIMAPS(runtime *serviceRuntime, addr string, config *tls.Conf
 	if config == nil {
 		return errors.New("IMAPS requires TLS certificate configuration")
 	}
-	listener, err := tls.Listen("tcp", addr, config.Clone())
+	tcp, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("listen for IMAPS: %w", err)
 	}
-	service := server.New(imapBackend{app: a})
+	tracked := &imapListener{Listener: tcp}
+	listener := tls.NewListener(tracked, config.Clone())
+	service := server.New(imapBackend{app: a, listener: tracked})
 	enableHarborIMAPCommands(service)
 	service.AutoLogout = server.MinAutoLogout
 	service.MaxLiteralSize = uint32(a.messageLimit())
@@ -48,21 +50,32 @@ func (a *app) listenIMAPS(runtime *serviceRuntime, addr string, config *tls.Conf
 	return nil
 }
 
-type imapBackend struct{ app *app }
+type imapBackend struct {
+	app      *app
+	listener *imapListener
+}
 
 func (b imapBackend) Login(info *imap.ConnInfo, email, password string) (backend.User, error) {
 	var peer net.Addr
 	if info != nil {
 		peer = info.RemoteAddr
 	}
-	owner, err := b.app.authenticateProtocol(peer, email, password, clientIMAP)
+	session, err := b.app.authenticateProtocol(peer, email, password, clientIMAP)
 	if errors.Is(err, errLoginInvalid) {
 		return nil, backend.ErrInvalidCredentials
 	}
 	if err != nil {
 		return nil, err
 	}
-	return &imapUser{app: b.app, owner: owner}, nil
+	if b.listener != nil {
+		if conn, ok := b.listener.connections.Load(peer); ok {
+			tracked := conn.(*imapTransport)
+			go b.app.watchProtocolSession(tracked.ctx, session, tracked.Close)
+		} else {
+			return nil, backend.ErrInvalidCredentials
+		}
+	}
+	return &imapUser{app: b.app, owner: session.owner}, nil
 }
 
 var (

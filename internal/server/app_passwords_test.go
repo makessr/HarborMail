@@ -66,7 +66,7 @@ func TestAppPasswordsEnforceAccountScopeExpiryAndRotation(t *testing.T) {
 	id, secret := newPassword()
 	mustFail := func(account, password string, protocol mailProtocol) {
 		t.Helper()
-		if _, err := a.authenticateClient(account, password, protocol); !errors.Is(err, errLoginInvalid) {
+		if _, _, err := a.authenticateClient(account, password, protocol); !errors.Is(err, errLoginInvalid) {
 			t.Fatalf("unexpected auth result: %v", err)
 		}
 	}
@@ -86,7 +86,7 @@ func TestAppPasswordsEnforceAccountScopeExpiryAndRotation(t *testing.T) {
 		}
 	}
 	revoke(other, id)
-	if _, err := a.authenticateClient(owner, secret, clientIMAP); err != nil {
+	if _, _, err := a.authenticateClient(owner, secret, clientIMAP); err != nil {
 		t.Fatalf("valid credential failed after another account attempted revocation: %v", err)
 	}
 	req := httptest.NewRequest(http.MethodGet, "/api/app-passwords", nil)
@@ -107,7 +107,7 @@ func TestAppPasswordsEnforceAccountScopeExpiryAndRotation(t *testing.T) {
 	_, secret = newPassword()
 	a.accounts[owner] = hashPassword()
 	mustFail(owner, secret, clientIMAP)
-	if _, err := a.authenticateClient(owner, primary, clientSMTP); err != nil {
+	if _, _, err := a.authenticateClient(owner, primary, clientSMTP); err != nil {
 		t.Fatalf("primary password stopped working: %v", err)
 	}
 }

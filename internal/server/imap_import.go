@@ -348,7 +348,7 @@ func (a *app) saveIMAPImport(ctx context.Context, owner, key string, validity, u
 	if err := verifyFolder(ctx, tx, owner, id); err != nil {
 		return false, err
 	}
-	if _, err := insertLetter(tx, owner, m, id, "inbox", raw); err != nil {
+	if _, err := insertLetter(ctx, tx, owner, m, id, "inbox", raw); err != nil {
 		return false, err
 	}
 	if _, err := tx.ExecContext(ctx, "UPDATE imap_import_checkpoints SET last_uid=? WHERE source_key=?", uid, key); err != nil {

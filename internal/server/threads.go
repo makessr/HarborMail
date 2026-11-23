@@ -26,8 +26,11 @@ func threadKey(id string) []byte {
 	return hash[:]
 }
 
-func indexThread(tx *sql.Tx, owner string, id int64, raw []byte) error {
-	header := identifyMessage(raw)
+func indexThread(ctx context.Context, tx *sql.Tx, owner string, id int64, raw []byte) error {
+	return storeThreadIdentity(ctx, tx, owner, id, identifyMessage(raw))
+}
+
+func storeThreadIdentity(ctx context.Context, tx *sql.Tx, owner string, id int64, header messageIdentity) error {
 	var root, parent string
 	if len(header.references) > 0 {
 		root = header.references[0]
@@ -36,7 +39,7 @@ func indexThread(tx *sql.Tx, owner string, id int64, raw []byte) error {
 	if len(header.parents) > 0 {
 		parent = header.parents[0]
 	}
-	_, err := tx.Exec(`INSERT INTO mail_threads (letter_id,owner,message_key,root_key,parent_key) VALUES(?,?,?,?,?)`,
+	_, err := tx.ExecContext(ctx, `INSERT INTO mail_threads (letter_id,owner,message_key,root_key,parent_key) VALUES(?,?,?,?,?)`,
 		id, owner, threadKey(header.id), threadKey(root), threadKey(parent))
 	return err
 }
@@ -56,7 +59,7 @@ func copyThread(ctx context.Context, tx *sql.Tx, owner string, source, copyID in
 		threadHeaderLimit, owner, copyID).Scan(&raw); err != nil {
 		return err
 	}
-	return indexThread(tx, owner, copyID, raw)
+	return indexThread(ctx, tx, owner, copyID, raw)
 }
 
 func (a *app) backfillThreads(ctx context.Context) error {
@@ -121,7 +124,7 @@ func (a *app) indexMissingThread(ctx context.Context, id int64) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	if err := indexThread(tx, owner, id, raw); err != nil {
+	if err := indexThread(ctx, tx, owner, id, raw); err != nil {
 		return "", err
 	}
 	return owner, tx.Commit()

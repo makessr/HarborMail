@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"errors"
 	"net"
 	"net/http"
 	"slices"
@@ -90,9 +89,7 @@ func (a *app) adminChangeDomain(w http.ResponseWriter, r *http.Request, actor st
 		return
 	}
 	if _, err := a.authenticate(actor, input.Password); err != nil {
-		if errors.Is(err, errLoginBusy) {
-			fail(w, http.StatusTooManyRequests, "验证请求过多，请稍后重试")
-		} else {
+		if !loginTemporaryError(w, err) {
 			fail(w, http.StatusForbidden, "管理员主邮箱密码不正确")
 		}
 		return

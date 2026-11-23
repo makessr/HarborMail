@@ -27,7 +27,7 @@ func consumeOutboundLimit(ctx context.Context, tx *sql.Tx, owner string, count i
 	for _, limit := range []outboundLimit{{Scope: "account", Target: owner}, {Scope: "domain", Target: emailDomain(owner)}} {
 		var configured int
 		err := tx.QueryRowContext(ctx, "SELECT daily_limit FROM outbound_limits WHERE scope=? AND target=?", limit.Scope, limit.Target).Scan(&configured)
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) || (err == nil && configured == 0) {
 			continue
 		}
 		if err != nil {
@@ -35,7 +35,7 @@ func consumeOutboundLimit(ctx context.Context, tx *sql.Tx, owner string, count i
 		}
 		result, err := tx.ExecContext(ctx, `UPDATE outbound_limits
 			SET used=CASE WHEN day=? THEN used+? ELSE ? END, day=?
-			WHERE scope=? AND target=? AND daily_limit >= CASE WHEN day=? THEN used+? ELSE ? END`,
+			WHERE scope=? AND target=? AND (daily_limit=0 OR daily_limit >= CASE WHEN day=? THEN used+? ELSE ? END)`,
 			day, count, count, day, limit.Scope, limit.Target, day, count, count)
 		if err := requireAffectedRow(result, err); errors.Is(err, sql.ErrNoRows) {
 			return errOutboundLimit
@@ -91,9 +91,7 @@ func (a *app) adminSetOutboundLimit(w http.ResponseWriter, r *http.Request, acto
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 	defer cancel()
 	if _, _, err := a.authenticatePrimary(ctx, actor, input.Password); err != nil {
-		if errors.Is(err, errLoginBusy) {
-			fail(w, http.StatusTooManyRequests, "验证请求过多，请稍后重试")
-		} else {
+		if !loginTemporaryError(w, err) {
 			fail(w, http.StatusForbidden, "管理员主邮箱密码不正确")
 		}
 		return
@@ -107,12 +105,12 @@ func (a *app) adminSetOutboundLimit(w http.ResponseWriter, r *http.Request, acto
 		browserSessionError(w, a.lockBrowserSession(ctx, tx, actor, browserSessionDigest(r))) {
 		return
 	}
-	if input.Scope == "account" && input.Limit != 0 {
+	if input.Scope == "account" && (input.Limit != 0 || a.publicDefaults) {
 		if _, err := a.baseAccountHash(ctx, tx, input.Target); letterError(w, err) {
 			return
 		}
 	}
-	if input.Limit == 0 {
+	if input.Limit == 0 && !a.publicDefaults {
 		_, err = tx.ExecContext(ctx, "DELETE FROM outbound_limits WHERE scope=? AND target=?", input.Scope, input.Target)
 	} else {
 		storage := `INSERT INTO outbound_limits(scope,target,daily_limit,day,used) VALUES(?,?,?,0,0)

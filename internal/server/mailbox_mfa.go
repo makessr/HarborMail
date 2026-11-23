@@ -145,8 +145,7 @@ func (a *app) prepareMailboxMFA(w http.ResponseWriter, r *http.Request, owner st
 		return
 	}
 	source := loginSource(r, a.webLogin.proxies)
-	if retry := a.webLogin.reserve(r.Context(), source, owner, true); retry > 0 {
-		a.rejectWebLoginRate(w, source, owner, retry)
+	if !a.checkWebLoginRate(w, r.Context(), source, owner, true) {
 		return
 	}
 	entry, err := readMailboxMFA(r.Context(), a.db, owner)
@@ -193,8 +192,7 @@ func (a *app) changeMailboxMFA(w http.ResponseWriter, r *http.Request, owner str
 	}
 	ctx := r.Context()
 	source := loginSource(r, a.webLogin.proxies)
-	if retry := a.webLogin.reserve(ctx, source, owner, true); retry > 0 {
-		a.rejectWebLoginRate(w, source, owner, retry)
+	if !a.checkWebLoginRate(w, ctx, source, owner, true) {
 		return
 	}
 	_, verified, err := a.authenticatePrimary(ctx, owner, input.Password)
@@ -202,8 +200,7 @@ func (a *app) changeMailboxMFA(w http.ResponseWriter, r *http.Request, owner str
 		fail(w, http.StatusForbidden, "主邮箱密码不正确")
 		return
 	}
-	if errors.Is(err, errLoginBusy) {
-		fail(w, http.StatusTooManyRequests, "验证请求过多，请稍后重试")
+	if loginTemporaryError(w, err) {
 		return
 	}
 	if mailboxMFAError(w, err) {

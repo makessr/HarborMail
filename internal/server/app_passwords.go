@@ -70,19 +70,23 @@ func isAppPassword(password string) bool {
 	return err == nil
 }
 
-func (a *app) authenticateClient(email, password string, protocol mailProtocol) (string, error) {
+func (a *app) authenticateClient(email, password string, protocol mailProtocol) (string, []byte, error) {
 	owner := strings.ToLower(strings.TrimSpace(email))
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	primary := func() (string, []byte, error) {
+		owner, err := a.authenticateClientPrimary(ctx, email, password)
+		return owner, nil, err
+	}
 	if !isAppPassword(password) {
-		return a.authenticateClientPrimary(ctx, email, password)
+		return primary()
 	}
 	credential, err := a.baseAccountDigest(ctx, a.db, owner)
 	if errors.Is(err, sql.ErrNoRows) {
-		return a.authenticateClientPrimary(ctx, email, password)
+		return primary()
 	}
 	if err != nil {
-		return "", errLoginBusy
+		return "", nil, errLoginUnavailable
 	}
 	digest := sha256.Sum256([]byte(password))
 	now := time.Now().Unix()
@@ -92,17 +96,17 @@ func (a *app) authenticateClient(email, password string, protocol mailProtocol) 
 		now, owner, digest[:], credential[:], protocol, now, owner)
 	if err != nil {
 		log.Print("client credential lookup: ", err)
-		return "", errLoginBusy
+		return "", nil, errLoginUnavailable
 	}
 	count, err := result.RowsAffected()
 	if err != nil {
-		return "", errLoginBusy
+		return "", nil, errLoginUnavailable
 	}
 	if count == 1 {
-		return owner, nil
+		return owner, digest[:], nil
 	}
 	// Keep accepting primary passwords even if they happen to use this format.
-	return a.authenticateClientPrimary(ctx, email, password)
+	return primary()
 }
 
 func (a *app) authenticateClientPrimary(ctx context.Context, email, password string) (string, error) {
@@ -114,7 +118,7 @@ func (a *app) authenticateClientPrimary(ctx context.Context, email, password str
 	if err := a.db.QueryRowContext(ctx, `SELECT EXISTS(
 		SELECT 1 FROM account_access WHERE owner=? AND suspended=TRUE UNION ALL
 		SELECT 1 FROM mailbox_mfa WHERE owner=?)`, owner, owner).Scan(&blocked); err != nil {
-		return "", errLoginBusy
+		return "", errLoginUnavailable
 	}
 	if blocked {
 		return "", errLoginInvalid
@@ -123,7 +127,7 @@ func (a *app) authenticateClientPrimary(ctx context.Context, email, password str
 		if errors.Is(err, errPrimaryPasswordChanged) {
 			return "", errLoginInvalid
 		}
-		return "", errLoginBusy
+		return "", errLoginUnavailable
 	}
 	return owner, nil
 }
@@ -192,9 +196,7 @@ func (a *app) createAppPassword(w http.ResponseWriter, r *http.Request, owner st
 	}
 	_, verified, err := a.authenticatePrimary(r.Context(), owner, input.Password)
 	if err != nil {
-		if errors.Is(err, errLoginBusy) {
-			fail(w, http.StatusTooManyRequests, "验证请求过多，请稍后重试")
-		} else {
+		if !loginTemporaryError(w, err) {
 			fail(w, http.StatusForbidden, "主邮箱密码不正确")
 		}
 		return
@@ -255,9 +257,15 @@ func (a *app) revokeAppPassword(w http.ResponseWriter, r *http.Request, owner st
 	if appPasswordHTTPError(w, err) {
 		return
 	}
-	_, err = a.db.ExecContext(r.Context(), `DELETE FROM app_passwords WHERE owner=? AND id=? AND credential=?`,
+	ctx := r.Context()
+	tx, err := a.db.BeginTx(ctx, nil)
+	if appPasswordHTTPError(w, err) {
+		return
+	}
+	defer tx.Rollback()
+	_, err = tx.ExecContext(ctx, `DELETE FROM app_passwords WHERE owner=? AND id=? AND credential=?`,
 		owner, letterID(r), credential[:])
-	if !appPasswordHTTPError(w, err) {
+	if !appPasswordHTTPError(w, err) && !appPasswordHTTPError(w, a.commitMailbox(tx, owner)) {
 		// Repeated revocations and requests for unknown IDs have the same outcome.
 		w.WriteHeader(http.StatusNoContent)
 	}

@@ -11,6 +11,8 @@ import (
 
 	message "github.com/emersion/go-message/mail"
 	"golang.org/x/net/html"
+
+	"harbormail/internal/mailmime"
 )
 
 const translationCharLimit = 20000
@@ -37,12 +39,12 @@ func emailTranslationBody(raw []byte) (string, error) {
 		if filename != "" || (media != "text/plain" && (media != "text/html" || rich != nil)) {
 			continue
 		}
-		body, err := io.ReadAll(io.LimitReader(part.Body, htmlBodyLimit+1))
+		body, err := io.ReadAll(io.LimitReader(part.Body, mailmime.HTMLBodyLimit+1))
 		if err != nil {
 			return "", err
 		}
 		if media == "text/plain" {
-			if len(body) > htmlBodyLimit {
+			if len(body) > mailmime.HTMLBodyLimit {
 				return "", errTranslationTooLong
 			}
 			if plain := strings.TrimSpace(strings.ToValidUTF8(string(body), "\uFFFD")); plain != "" {
@@ -52,11 +54,11 @@ func emailTranslationBody(raw []byte) (string, error) {
 			rich = body
 		}
 	}
-	if len(rich) > htmlBodyLimit {
+	if len(rich) > mailmime.HTMLBodyLimit {
 		return "", errTranslationTooLong
 	}
 	var plain strings.Builder
-	tokens := html.NewTokenizer(bytes.NewReader(emailHTMLPolicy.SanitizeBytes(rich)))
+	tokens := html.NewTokenizer(bytes.NewReader(mailmime.SanitizeHTML(rich)))
 	for {
 		switch tokens.Next() {
 		case html.ErrorToken:

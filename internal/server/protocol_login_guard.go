@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-func (a *app) authenticateProtocol(peer net.Addr, username, password string, protocol mailProtocol) (string, error) {
+func (a *app) authenticateProtocol(peer net.Addr, username, password string, protocol mailProtocol) (protocolSession, error) {
 	var source netip.Prefix
 	if peer != nil {
 		host, _, _ := net.SplitHostPort(peer.String())
@@ -31,19 +31,50 @@ func (a *app) authenticateProtocol(peer net.Addr, username, password string, pro
 	}
 	login, _ := address(strings.ToLower(strings.TrimSpace(username)))
 	ctx := context.Background()
-	if source.IsValid() && (a.clientLogin.reserve(ctx, source, "", false) > 0 ||
-		(login != "" && a.clientLogin.reserve(ctx, source, login, true) > 0)) {
-		a.recordLogin(source, login, "blocked", name)
-		return "", errLoginBusy
+	if source.IsValid() {
+		if err := a.checkClientLoginRate(ctx, source, login, name); err != nil {
+			return protocolSession{}, err
+		}
 	}
-	owner, err := a.authenticateClient(username, password, protocol)
+	ctx, cancel := context.WithTimeout(ctx, protocolCheckTimeout)
+	defer cancel()
+	generation, _, err := a.protocolAccountState(ctx, login)
+	if err != nil {
+		a.recordLogin(source, login, "error", name)
+		return protocolSession{}, errLoginUnavailable
+	}
+	owner, digest, err := a.authenticateClient(username, password, protocol)
+	session := protocolSession{owner: owner, generation: generation, appDigest: digest}
+	if err == nil {
+		err = a.checkProtocolSession(ctx, session)
+	}
 	switch {
 	case err == nil:
 		a.recordLogin(source, owner, "success", name)
 	case errors.Is(err, errLoginBusy):
 		a.recordLogin(source, login, "busy", name)
+	case errors.Is(err, errLoginUnavailable):
+		a.recordLogin(source, login, "error", name)
 	default:
 		a.recordLogin(source, login, "failed", name)
 	}
-	return owner, err
+	return session, err
+}
+
+func (a *app) checkClientLoginRate(ctx context.Context, source netip.Prefix, login, name string) error {
+	for _, account := range []string{"", login} {
+		retry, err := a.clientLogin.reserve(ctx, source, account, account != "")
+		if err != nil {
+			a.recordLogin(source, login, "error", name)
+			return err
+		}
+		if retry > 0 {
+			a.recordLogin(source, login, "blocked", name)
+			return errLoginBusy
+		}
+		if login == "" {
+			break
+		}
+	}
+	return nil
 }

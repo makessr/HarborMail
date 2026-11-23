@@ -50,6 +50,8 @@ func (a *app) metrics(w http.ResponseWriter, r *http.Request) {
 		paused = 1
 	}
 	fmt.Fprintf(w, "# TYPE harbor_outbox_paused gauge\nharbor_outbox_paused %d\n", paused)
+	fmt.Fprintf(w, "# TYPE harbor_outbox_ready_messages gauge\nharbor_outbox_ready_messages %d\n", stats.Ready)
+	fmt.Fprintf(w, "# TYPE harbor_outbox_failed_messages gauge\nharbor_outbox_failed_messages %d\n", stats.Failed)
 	fmt.Fprintf(w, "# TYPE harbor_outbox_uncertain_messages gauge\nharbor_outbox_uncertain_messages %d\n", stats.Uncertain)
 	fmt.Fprintf(w, "# TYPE harbor_spam_training_failed_samples gauge\nharbor_spam_training_failed_samples %d\n", stats.FailedTraining)
 	fmt.Fprintf(w, "# TYPE harbor_dkim_active_domains gauge\nharbor_dkim_active_domains %d\n", activeDKIM)
@@ -92,6 +94,8 @@ func (a *app) dkimKeyCounts(ctx context.Context) (active, unusable int, err erro
 
 type operationalCounts struct {
 	OldestDueSeconds int64 `json:"oldestDueSeconds"`
+	Ready            int64 `json:"ready"`
+	Failed           int64 `json:"failed"`
 	Uncertain        int64 `json:"uncertain"`
 	FailedTraining   int64 `json:"failedTraining"`
 }
@@ -114,6 +118,11 @@ func (a *app) operationalCounts(ctx context.Context, now int64) (operationalCoun
 			SELECT o.id FROM outbox_recipient_progress p JOIN outbox o ON o.id=p.outbox_id
 			WHERE p.state='uncertain'
 		) unresolved`).Scan(&stats.Uncertain)
+	}
+	if err == nil {
+		err = a.db.QueryRowContext(ctx, `SELECT
+			(SELECT COUNT(*) FROM outbox WHERE state IN ('queued','scheduled','undo') AND due<=?),
+			(SELECT COUNT(*) FROM outbox WHERE state='failed')`, now).Scan(&stats.Ready, &stats.Failed)
 	}
 	if err == nil {
 		err = a.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM spam_feedback WHERE state='failed'`).Scan(&stats.FailedTraining)

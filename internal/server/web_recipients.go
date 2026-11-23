@@ -160,8 +160,8 @@ func (m *letter) showWebRecipients(fields webRecipients) {
 	m.To, m.Cc, m.Bcc = fields.To, fields.Cc, fields.Bcc
 }
 
-func saveWebRecipients(tx *sql.Tx, id int64, fields webRecipients) error {
-	_, err := tx.Exec(`INSERT INTO web_letter_recipients(letter_id,to_list,cc_list,bcc_list) VALUES(?,?,?,?)`,
+func saveWebRecipients(ctx context.Context, tx *sql.Tx, id int64, fields webRecipients) error {
+	_, err := tx.ExecContext(ctx, `INSERT INTO web_letter_recipients(letter_id,to_list,cc_list,bcc_list) VALUES(?,?,?,?)`,
 		id, fields.To, fields.Cc, fields.Bcc)
 	return err
 }

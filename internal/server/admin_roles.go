@@ -113,13 +113,11 @@ func (a *app) adminChangeRole(w http.ResponseWriter, r *http.Request, actor stri
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 	defer cancel()
 	source := loginSource(r, a.webLogin.proxies)
-	if retry := a.webLogin.reserve(ctx, source, actor, true); retry > 0 {
-		a.rejectWebLoginRate(w, source, actor, retry)
+	if !a.checkWebLoginRate(w, ctx, source, actor, true) {
 		return
 	}
 	_, verified, err := a.authenticatePrimary(ctx, actor, input.Password)
-	if errors.Is(err, errLoginBusy) {
-		fail(w, http.StatusTooManyRequests, "验证请求过多，请稍后重试")
+	if loginTemporaryError(w, err) {
 		return
 	}
 	if err != nil {
@@ -178,7 +176,7 @@ func (a *app) adminChangeRole(w http.ResponseWriter, r *http.Request, actor stri
 			return
 		}
 	}
-	affected, err := revokeAccountCredentials(ctx, tx, target, "sessions")
+	affected, err := a.revokeAccountCredentials(ctx, tx, target, "sessions")
 	if letterError(w, err) {
 		return
 	}

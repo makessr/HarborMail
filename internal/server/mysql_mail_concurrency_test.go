@@ -68,6 +68,14 @@ func TestMySQLMailboxWriteContention(t *testing.T) {
 	if err := first.db.QueryRow("SELECT id FROM letters WHERE owner=?", owners[0]).Scan(&id); err != nil {
 		t.Fatal(err)
 	}
+	label, err := first.db.Exec("INSERT INTO mail_labels(owner,name,name_key) VALUES(?,?,?)", owners[3], "Test label", "test label")
+	if err != nil {
+		t.Fatal(err)
+	}
+	labelID, err := label.LastInsertId()
+	if err != nil {
+		t.Fatal(err)
+	}
 	lock, err := first.db.BeginTx(t.Context(), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -88,6 +96,27 @@ func TestMySQLMailboxWriteContention(t *testing.T) {
 		if err == nil && len(messages) != largeMailboxSize {
 			err = fmt.Errorf("IMAP snapshot returned %d messages, want %d", len(messages), largeMailboxSize)
 		}
+		if err == nil {
+			box := &imapMailbox{imapUser: imapUser{app: second, owner: owners[4]}, folder: "inbox", messages: messages}
+			marked := true
+			finished := make(chan error, 1)
+			go func() { finished <- box.persistFlags([]int{0}, nil, nil, &marked) }()
+			select {
+			case err = <-finished:
+			case <-ctx.Done():
+				err = ctx.Err()
+			}
+		}
+	}
+	if err == nil {
+		var folder customFolder
+		folder, err = second.saveCustomFolder(ctx, owners[2], "", "Test folder")
+		if err == nil {
+			_, err = second.saveCustomFolder(ctx, owners[2], folder.ID, "Renamed folder")
+		}
+	}
+	if err == nil {
+		err = second.removeMailLabel(ctx, owners[3], labelID)
 	}
 	cancel()
 	if err != nil {

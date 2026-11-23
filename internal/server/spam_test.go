@@ -96,7 +96,7 @@ func TestLegacyCustomJunkRetainsItsUIDs(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer tx.Rollback()
-	if err := insert(tx, owner, letter{From: "sender@example.test", To: owner}, folder, []byte("Subject: Keep\r\n\r\nBody")); err != nil {
+	if err := insert(t.Context(), tx, owner, letter{From: "sender@example.test", To: owner}, folder, []byte("Subject: Keep\r\n\r\nBody")); err != nil {
 		t.Fatal(err)
 	}
 	if err := tx.Commit(); err != nil {

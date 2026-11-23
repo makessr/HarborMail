@@ -105,6 +105,11 @@ func (a *app) registerConfiguredAccounts() error {
 		if _, err := a.lockAccountAccess(ctx, tx, email); err != nil {
 			return err
 		}
+		if !a.recoveryMode && a.publicDefaults {
+			if err := a.seedMailboxLimits(ctx, tx, email); err != nil {
+				return err
+			}
+		}
 	}
 	return tx.Commit()
 }
@@ -129,16 +134,13 @@ func (a *app) adminCreateAccount(w http.ResponseWriter, r *http.Request, actor s
 		return
 	}
 	if _, err := a.authenticate(actor, input.Password); err != nil {
-		if errors.Is(err, errLoginBusy) {
-			fail(w, 429, "验证请求过多，请稍后重试")
-		} else {
+		if !loginTemporaryError(w, err) {
 			fail(w, 403, "管理员主邮箱密码不正确")
 		}
 		return
 	}
 	hash, err := hashPrimaryPassword(nil, input.InitialPassword)
-	if errors.Is(err, errLoginBusy) {
-		fail(w, 429, "验证请求过多，请稍后重试")
+	if loginTemporaryError(w, err) {
 		return
 	}
 	if letterError(w, err) {
@@ -177,10 +179,8 @@ func (a *app) adminCreateAccount(w http.ResponseWriter, r *http.Request, actor s
 	if _, err := tx.ExecContext(ctx, `INSERT INTO account_access(owner,suspended) VALUES(?,FALSE)`, email); letterError(w, err) {
 		return
 	}
-	if limit := a.domainQuota[emailDomain(email)]; limit > 0 {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO mailbox_quota(owner,used_bytes,limit_mib) VALUES(?,0,?)`, email, limit); letterError(w, err) {
-			return
-		}
+	if letterError(w, a.seedMailboxLimits(ctx, tx, email)) {
+		return
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO admin_account_actions(actor,target,action,affected,stamp)
 		VALUES(?,?,?,?,?)`, actor, email, "account_create", 0, time.Now().Unix()); letterError(w, err) {

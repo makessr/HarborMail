@@ -41,7 +41,7 @@ func TestTaskWorkersWakeForLocalDeadlines(t *testing.T) {
 	}
 	defer tx.Rollback()
 	message.Subject = "Existing"
-	id, err := insertLetter(tx, owner, message, "inbox", "inbox", raw)
+	id, err := insertLetter(t.Context(), tx, owner, message, "inbox", "inbox", raw)
 	if err != nil {
 		t.Fatal(err)
 	}

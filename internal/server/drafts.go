@@ -115,7 +115,7 @@ func (a *app) saveWebDraft(w http.ResponseWriter, r *http.Request, owner string,
 		if _, err := tx.ExecContext(ctx, `DELETE FROM web_letter_recipients WHERE letter_id=?`, id); letterError(w, err) {
 			return
 		}
-		if letterError(w, saveWebRecipients(tx, id, fields)) {
+		if letterError(w, saveWebRecipients(ctx, tx, id, fields)) {
 			return
 		}
 		if letterError(w, clearIMAPMembership(ctx, tx, id)) {
@@ -124,7 +124,7 @@ func (a *app) saveWebDraft(w http.ResponseWriter, r *http.Request, owner string,
 		if _, err := tx.ExecContext(ctx, `DELETE FROM mail_threads WHERE letter_id=? AND owner=?`, id, owner); letterError(w, err) {
 			return
 		}
-		if letterError(w, indexThread(tx, owner, id, raw)) {
+		if letterError(w, indexThread(ctx, tx, owner, id, raw)) {
 			return
 		}
 		m.ID, m.DraftVersion = id, expected+1
@@ -153,7 +153,7 @@ func (a *app) saveWebDraft(w http.ResponseWriter, r *http.Request, owner string,
 }
 
 func insertWebDraft(ctx context.Context, tx *sql.Tx, owner string, m letter, raw []byte) (int64, error) {
-	id, err := insertLetter(tx, owner, m, "drafts", "drafts", raw)
+	id, err := insertLetter(ctx, tx, owner, m, "drafts", "drafts", raw)
 	if err != nil {
 		return 0, err
 	}

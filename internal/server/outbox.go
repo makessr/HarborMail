@@ -6,12 +6,13 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"strings"
 	"time"
 
 	"github.com/emersion/go-smtp"
+
+	"harbormail/internal/mailqueue"
 )
 
 const (
@@ -92,57 +93,33 @@ func insertOutbox(writer outboxWriter, m letter, raw []byte, state string, due i
 	return id, recordDeliveryEvent(writer, m.From, id, "", "enqueued", 0, due)
 }
 
+type outboxStore struct{ app *app }
+
+func (s outboxStore) Recover(ctx context.Context) error { return s.app.recoverOutbox(ctx) }
+func (s outboxStore) Claim() (*outboxJob, error)        { return s.app.claimOutbox() }
+
+func (s outboxStore) NextDeadline(ctx context.Context, claimAt, recoveryAt int64) (sql.NullInt64, error) {
+	var next sql.NullInt64
+	err := s.app.db.QueryRowContext(ctx, `SELECT MIN(deadline) FROM (
+		SELECT MIN(due) AS deadline FROM outbox WHERE state IN ('queued','scheduled','undo') AND due>?
+		UNION ALL
+		SELECT MIN(lease) FROM outbox WHERE state IN ('preparing','sending') AND lease>?
+	) AS deadlines`, claimAt, recoveryAt).Scan(&next)
+	return next, err
+}
+
 func (a *app) runOutbox(ctx context.Context, connectRelay func(context.Context, string) (*smtp.Client, func(), error)) {
-	for ctx.Err() == nil {
-		recoveryAt := time.Now().Unix()
-		claimAt := recoveryAt
-		retry := false
-		if err := a.recoverOutbox(ctx); err != nil {
-			retry = true
-			if ctx.Err() == nil {
-				log.Print("outbox recovery: ", err)
-			}
-		} else {
-			for ctx.Err() == nil {
-				claimAt = time.Now().Unix()
-				job, err := a.claimOutbox()
-				if err != nil {
-					retry = true
-					log.Print("outbox claim: ", err)
-					break
-				}
-				if job == nil {
-					break
-				}
-				sender := job.message.wireFrom()
-				connect := relayForRecipient(func(ctx context.Context) (*smtp.Client, func(), error) {
-					return connectRelay(ctx, sender)
-				})
-				if a.directMX != nil && !a.hasRelayFor(sender) {
-					connect = a.directMX.connect
-				}
-				if err := a.processOutboxForRecipient(job, connect); err != nil {
-					log.Print("outbox delivery state: ", err)
-				}
-			}
+	deliver := func(job *outboxJob) error {
+		sender := job.message.wireFrom()
+		if a.directMX != nil && !a.hasRelayFor(sender) {
+			return a.processOutboxForRecipient(job, a.directMX.connect)
 		}
-		var next sql.NullInt64
-		if !retry && ctx.Err() == nil {
-			probe, cancel := context.WithTimeout(ctx, 3*time.Second)
-			err := a.db.QueryRowContext(probe, `SELECT MIN(deadline) FROM (
-				SELECT MIN(due) AS deadline FROM outbox WHERE state IN ('queued','scheduled','undo') AND due>?
-				UNION ALL
-				SELECT MIN(lease) FROM outbox WHERE state IN ('preparing','sending') AND lease>?
-			) AS deadlines`, claimAt, recoveryAt).Scan(&next)
-			cancel()
-			retry = err != nil
-		}
-		delay := a.taskPollInterval()
-		if retry {
-			delay = 3 * time.Second
-		}
-		a.outboxWakeup.wait(ctx, next, delay)
+		connect := relayForRecipient(func(ctx context.Context) (*smtp.Client, func(), error) {
+			return connectRelay(ctx, sender)
+		})
+		return a.processOutboxForRecipient(job, connect)
 	}
+	mailqueue.Run(ctx, outboxStore{a}, deliver, a.outboxWakeup.wait, a.taskPollInterval())
 }
 
 func (a *app) recoverOutbox(ctx context.Context) error {
@@ -453,14 +430,14 @@ func (a *app) finishOutbox(job *outboxJob, state, reason string, due int64) erro
 			}
 		}
 	case "failed", "uncertain":
-		if err := a.insertDeliveryNotice(tx, m, state, reason); err != nil {
+		if err := a.insertDeliveryNotice(ctx, tx, m, state, reason); err != nil {
 			return err
 		}
 	}
 	return a.commitMailbox(tx, m.From)
 }
 
-func (a *app) insertDeliveryNotice(tx *sql.Tx, m letter, state, reason string) error {
+func (a *app) insertDeliveryNotice(ctx context.Context, tx *sql.Tx, m letter, state, reason string) error {
 	subject := "邮件投递失败"
 	if state == "uncertain" {
 		subject = "邮件投递结果待确认"
@@ -472,7 +449,7 @@ func (a *app) insertDeliveryNotice(tx *sql.Tx, m letter, state, reason string) e
 	if err != nil {
 		return err
 	}
-	err = insert(tx, notice.To, notice, "inbox", raw)
+	err = insert(ctx, tx, notice.To, notice, "inbox", raw)
 	if isQuotaExceeded(err) {
 		return nil
 	}

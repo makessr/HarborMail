@@ -352,7 +352,7 @@ const accessPassword = accessForm.elements.password;
 const accessNewPassword = accessForm.elements.newPassword;
 const accessConfirmPassword = accessForm.elements.confirmPassword;
 const accessLabels = {
-  sessions: "撤销网页登录会话", app_passwords: "撤销应用密码", suspend: "停用账号登录", restore: "恢复账号登录",
+  sessions: "强制退出全部会话", app_passwords: "撤销应用密码", suspend: "停用账号登录", restore: "恢复账号登录",
   password_reset: "重置主邮箱密码", password_change: "修改自己的密码", admin_grant: "设为全站管理员", admin_revoke: "撤销全站管理员权限", outbound_limit: "更新外发额度", account_create: "创建邮箱账号", storage_alert: "更新容量预警", storage_quota: "更新邮箱硬配额",
   mailbox_retire: "回收邮箱", mailbox_restore: "恢复已回收邮箱", mailbox_purge: "清除邮箱数据", mailbox_rename: "迁移邮箱地址"
 };
@@ -362,11 +362,11 @@ let accessBusy = false;
 
 function updateAccessImpact() {
   const messages = {
-    sessions: accessTarget === signedInAdmin ? "此操作也会退出你当前的网页登录。" : "该账号的网页设备需重新登录。",
-    app_passwords: "已撤销的应用密码会在下次连接认证时失效。",
-    suspend: "撤销网页会话和应用密码，并阻止新的登录。邮箱内容和收信继续保留。",
+    sessions: accessTarget === signedInAdmin ? "此操作会退出你当前的网页登录，并断开已连接的邮件客户端。" : "该账号的浏览器和邮件客户端需重新登录。",
+    app_passwords: "断开使用这些应用密码的邮件客户端。重新连接需要有效凭据。",
+    suspend: "撤销网页会话和应用密码，断开现有邮件客户端，并阻止新的登录。邮箱内容和收信继续保留。",
     restore: "允许使用主邮箱密码重新登录。恢复后需要重新生成应用密码。",
-    password_reset: "新密码须为 12 至 72 字节。重置会撤销旧网页会话和应用密码，已停用账号需单独恢复登录。",
+    password_reset: "新密码须为 12 至 72 字节。重置会撤销旧网页会话和应用密码，并断开邮件客户端。已停用账号需单独恢复登录。",
     admin_grant: "该账号将能管理全站域名、邮箱和投递。现有网页登录会话会退出。",
     admin_revoke: "撤销全站管理权限，现有网页登录会话会退出。邮箱和邮件保留。"
   };

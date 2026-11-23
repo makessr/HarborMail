@@ -97,16 +97,13 @@ func (a *app) updatePrimaryPassword(w http.ResponseWriter, r *http.Request, acto
 	defer cancel()
 	if action == "password_change" {
 		source := loginSource(r, a.webLogin.proxies)
-		if retry := a.webLogin.reserve(ctx, source, actor, true); retry > 0 {
-			a.rejectWebLoginRate(w, source, actor, retry)
+		if !a.checkWebLoginRate(w, ctx, source, actor, true) {
 			return
 		}
 	}
 	_, verified, err := a.authenticatePrimary(ctx, actor, input.Password)
 	if err != nil {
-		if errors.Is(err, errLoginBusy) {
-			fail(w, http.StatusTooManyRequests, "验证请求过多，请稍后重试")
-		} else {
+		if !loginTemporaryError(w, err) {
 			fail(w, http.StatusForbidden, "管理员主邮箱密码不正确")
 		}
 		return
@@ -158,7 +155,7 @@ func (a *app) updatePrimaryPassword(w http.ResponseWriter, r *http.Request, acto
 	if letterError(w, err) || letterError(w, a.storePrimaryPassword(ctx, tx, target, hash)) {
 		return
 	}
-	affected, err := revokeAccountCredentials(ctx, tx, target, "password_reset")
+	affected, err := a.revokeAccountCredentials(ctx, tx, target, "password_reset")
 	if letterError(w, err) {
 		return
 	}

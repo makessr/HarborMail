@@ -169,7 +169,8 @@ func (a *app) saveCustomFolder(ctx context.Context, owner, id, name string) (cus
 		return customFolder{}, err
 	}
 	defer tx.Rollback()
-	if err := lockIMAPUIDs(ctx, tx); err != nil {
+	// Folder names and parent creation serialize per mailbox. Folder IDs are stable.
+	if err := a.requireActiveAccount(ctx, tx, owner); err != nil {
 		return customFolder{}, err
 	}
 	folders, err := listCustomFolders(ctx, tx, owner)
@@ -273,6 +274,9 @@ func (a *app) deleteCustomFolder(ctx context.Context, owner, id string) error {
 	}
 	defer tx.Rollback()
 	if err := lockIMAPUIDs(ctx, tx); err != nil {
+		return err
+	}
+	if err := a.requireActiveAccount(ctx, tx, owner); err != nil {
 		return err
 	}
 	folder, err := readCustomFolder(ctx, tx, owner, id)

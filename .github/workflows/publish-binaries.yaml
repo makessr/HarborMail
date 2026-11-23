@@ -85,6 +85,8 @@ jobs:
           fi
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           registry=ghcr.io/makessr/harbormail
+          printf '%s@%s\n' "$registry" "$IMAGE_DIGEST" > dist/OCI_IMAGE
+          (cd dist; sha256sum OCI_IMAGE >> SHA256SUMS)
           docker buildx imagetools create --tag "$registry:latest" "$registry@$IMAGE_DIGEST"
           test "$(docker buildx imagetools inspect "$registry:latest" --format '{{.Manifest.Digest}}')" = "$IMAGE_DIGEST"
           if [[ $published == "$GITHUB_REF_NAME" ]]; then exit 0; fi

@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"harbormail/internal/mailmime"
 )
 
 var letterPrintPage = template.Must(template.New("letter-print").Parse(`<!doctype html>
@@ -56,15 +58,15 @@ func (a *app) printLetter(w http.ResponseWriter, r *http.Request, owner string) 
 	date := time.Unix(m.Date, 0).UTC()
 	page.Timestamp, page.Date = date.Format(time.RFC3339), date.Format("2006-01-02 15:04 UTC")
 	if mode := r.URL.Query().Get("format"); mode == "html" || (mode != "text" && strings.TrimSpace(m.Body) == "") {
-		view := inspectHTMLMail(raw, true)
-		if view.hasHTML {
-			fragment, err := view.renderFragment()
+		view := mailmime.InspectHTML(raw, true)
+		if view.HasHTML {
+			fragment, err := view.RenderFragment()
 			if letterError(w, err) {
 				return
 			}
 			// Only the shared sanitized renderer can supply markup to the print page.
 			page.HTML = template.HTML(fragment)
-			if view.tooLong && strings.TrimSpace(m.Body) != "" {
+			if view.TooLong && strings.TrimSpace(m.Body) != "" {
 				page.HTML = ""
 			}
 		}

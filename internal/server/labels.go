@@ -124,16 +124,25 @@ func (a *app) removeMailLabel(ctx context.Context, owner string, id int64) error
 		return err
 	}
 	defer tx.Rollback()
-	if err := lockIMAPUIDs(ctx, tx); err != nil {
+	if err := a.requireActiveAccount(ctx, tx, owner); err != nil {
 		return err
 	}
-	var referenced bool
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM mail_rules
-		WHERE owner=? AND rule_action='label' AND destination=?)`, owner, strconv.FormatInt(id, 36)).Scan(&referenced); err != nil {
+	if err := lockMailLabel(ctx, tx, owner, id); err != nil {
 		return err
 	}
-	if referenced {
+	ruleQuery := `SELECT id FROM mail_rules WHERE owner=? AND rule_action='label' AND destination=? LIMIT 1`
+	if a.dbDriver == "mysql" {
+		// This current read follows the label row lock even if a prior read
+		// in the transaction already established a repeatable-read snapshot.
+		ruleQuery += " FOR UPDATE"
+	}
+	var ruleID int64
+	err = tx.QueryRowContext(ctx, ruleQuery, owner, strconv.FormatInt(id, 36)).Scan(&ruleID)
+	if err == nil {
 		return errLabelReferenced
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return err
 	}
 	result, err := tx.ExecContext(ctx, `DELETE FROM mail_labels WHERE owner=? AND id=?`, owner, id)
 	if err := requireAffectedRow(result, err); err != nil {
@@ -161,8 +170,7 @@ func (a *app) setMailLabels(ctx context.Context, owner string, letters []int64, 
 	defer tx.Rollback()
 	// Verify both resources while locking their rows so a concurrent delete or
 	// retry cannot create orphaned or duplicate links on either database.
-	result, err := tx.ExecContext(ctx, `UPDATE mail_labels SET id=id WHERE id=? AND owner=?`, label, owner)
-	if err := requireAffectedRow(result, err); err != nil {
+	if err := lockMailLabel(ctx, tx, owner, label); err != nil {
 		return err
 	}
 	for _, letter := range letters {
@@ -180,6 +188,11 @@ func (a *app) setMailLabels(ctx context.Context, owner string, letters []int64, 
 		}
 	}
 	return a.commitMailbox(tx, owner)
+}
+
+func lockMailLabel(ctx context.Context, tx *sql.Tx, owner string, label int64) error {
+	result, err := tx.ExecContext(ctx, `UPDATE mail_labels SET id=id WHERE id=? AND owner=?`, label, owner)
+	return requireAffectedRow(result, err)
 }
 
 func attachMailLabel(ctx context.Context, tx *sql.Tx, letter, label int64) error {

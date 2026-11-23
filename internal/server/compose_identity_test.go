@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/emersion/go-smtp"
+
+	"harbormail/internal/mailmime"
 )
 
 func TestAliasAndRichDraftLifecycle(t *testing.T) {
@@ -96,7 +98,7 @@ func testAliasAndRichDraft(t *testing.T, driver, source string) {
 		t.Fatal(err)
 	}
 	if from != alias || strings.Contains(plain, "**") || !strings.Contains(plain, "https://example.com") ||
-		!inspectHTMLMail(raw, false).hasHTML {
+		!mailmime.InspectHTML(raw, false).HasHTML {
 		t.Fatalf("delivered message has incorrect sender or parts: %q, %q", from, plain)
 	}
 	assertFrom(raw)

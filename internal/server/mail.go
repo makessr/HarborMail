@@ -22,6 +22,9 @@ import (
 	"github.com/emersion/go-message/charset"
 	message "github.com/emersion/go-message/mail"
 	"github.com/emersion/go-smtp"
+
+	"harbormail/internal/mailstore"
+	"harbormail/internal/smtpadmission"
 )
 
 const mailLimit = 10 << 20
@@ -39,6 +42,8 @@ type app struct {
 	stopping            <-chan struct{}
 	spamScanner         *rspamdScanner
 	scanPolicy          inboundScanPolicy
+	smtpAdmission       smtpadmission.Guard
+	publicDefaults      bool
 	inbound             inboundCapacity
 	submissions         inboundCapacity
 	sizes               mailSizeLimits
@@ -107,36 +112,52 @@ func token() string {
 	return hex.EncodeToString(value)
 }
 
-func insert(tx *sql.Tx, owner string, m letter, folder string, raw []byte) error {
-	_, err := insertLetter(tx, owner, m, folder, folder, raw)
+func insert(ctx context.Context, tx *sql.Tx, owner string, m letter, folder string, raw []byte) error {
+	_, err := insertLetter(ctx, tx, owner, m, folder, folder, raw)
 	return err
 }
 
-func insertLetter(tx *sql.Tx, owner string, m letter, folder, origin string, raw []byte) (int64, error) {
-	var detail []byte
-	if folder != "drafts" {
-		detail = encodeMailDetail(raw)
-		if m.formatted {
-			m.Body, _ = renderRichCompose(m.Body)
-		}
+func insertLetter(ctx context.Context, tx *sql.Tx, owner string, m letter, folder, origin string, raw []byte) (int64, error) {
+	return insertPreparedLetter(ctx, tx, owner, m, folder, origin, prepareLetterContent(raw, folder != "drafts"))
+}
+
+type letterContent struct {
+	raw    []byte
+	detail []byte
+	octets int64
+	thread messageIdentity
+}
+
+func prepareLetterContent(raw []byte, withDetail bool) letterContent {
+	content := letterContent{raw: raw, octets: popOctets(raw), thread: identifyMessage(raw)}
+	if withDetail {
+		content.detail = encodeMailDetail(raw)
 	}
-	result, err := tx.Exec(`INSERT INTO letters(owner,sender,recipient,subject,body,stamp,folder,origin,seen,star,raw,detail_meta,pop_octets)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, owner, strings.ToValidUTF8(m.wireFrom(), "\uFFFD"), m.To,
-		strings.ToValidUTF8(m.Subject, "\uFFFD"), strings.ToValidUTF8(m.Body, "\uFFFD"),
-		m.Date, folder, origin, m.Read || folder == "sent", m.Star, raw, detail, popOctets(raw))
-	if err != nil {
-		return 0, err
+	return content
+}
+
+func insertPreparedLetter(ctx context.Context, tx *sql.Tx, owner string, m letter, folder, origin string, content letterContent) (int64, error) {
+	detail := content.detail
+	if folder == "drafts" {
+		detail = nil
+	} else if m.formatted {
+		m.Body, _ = renderRichCompose(m.Body)
 	}
-	id, err := result.LastInsertId()
+	id, err := mailstore.InsertLetter(ctx, tx, mailstore.LetterRow{
+		Owner: owner, Sender: strings.ToValidUTF8(m.wireFrom(), "\uFFFD"), Recipient: m.To,
+		Subject: strings.ToValidUTF8(m.Subject, "\uFFFD"), Body: strings.ToValidUTF8(m.Body, "\uFFFD"),
+		Stamp: m.Date, Folder: folder, Origin: origin, Seen: m.Read || folder == "sent", Star: m.Star,
+		Raw: content.raw, Detail: detail, POPOctets: content.octets,
+	})
 	if err != nil {
 		return 0, err
 	}
 	if m.recipients != nil {
-		if err := saveWebRecipients(tx, id, *m.recipients); err != nil {
+		if err := saveWebRecipients(ctx, tx, id, *m.recipients); err != nil {
 			return 0, err
 		}
 	}
-	return id, indexThread(tx, owner, id, raw)
+	return id, storeThreadIdentity(ctx, tx, owner, id, content.thread)
 }
 
 func interpret(raw []byte, sender, recipient string) letter {
@@ -184,6 +205,7 @@ type delivery struct {
 	sender     string
 	size       int64
 	recipients []mailDestination
+	rcptBudget smtpadmission.RecipientBudget
 }
 
 func (s *delivery) Mail(from string, options *smtp.MailOptions) error {
@@ -199,6 +221,10 @@ func (s *delivery) Mail(from string, options *smtp.MailOptions) error {
 }
 
 func (s *delivery) Rcpt(to string, _ *smtp.RcptOptions) error {
+	return s.rcptBudget.Check(&s.app.smtpAdmission, s.conn, func() error { return s.resolveRecipient(to) })
+}
+
+func (s *delivery) resolveRecipient(to string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	target, err := s.app.destination(ctx, s.app.db, to)
@@ -248,6 +274,7 @@ func (s *delivery) Data(r io.Reader) error {
 		return err
 	}
 	m := interpret(raw, s.sender, "")
+	content := prepareLetterContent(raw, true)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	tx, err := s.app.db.BeginTx(ctx, nil)
@@ -261,7 +288,7 @@ func (s *delivery) Data(r io.Reader) error {
 					break
 				}
 				m.To = recipient.address
-				if err = insertIncoming(ctx, tx, recipient.owner, s.sender, folder, m, raw); err != nil {
+				if err = insertPreparedIncoming(ctx, tx, recipient.owner, s.sender, folder, m, content); err != nil {
 					break
 				}
 				owners = append(owners, recipient.owner)

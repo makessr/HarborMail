@@ -16,10 +16,12 @@ ssh -N -L 8080:127.0.0.1:8080 用户名@服务器IP
 
 ## 下载同版二进制
 
-新建一个空的下载目录，进入目录后执行。此例下载 v0.2.23。升级到后续版本时替换第一行的版本号。需要的工具有 Bash、curl、tar 和 sha256sum。
+新建一个空的下载目录，进入目录后执行。命令从 GitHub 读取正式发行标签。需要固定历史版本时，将 `version` 设置为该发行标签。需要的工具有 Bash、curl、tar 和 sha256sum。
 
 ~~~bash
-version=v0.2.23
+release_url=$(curl -fsSL -o /dev/null -w '%{url_effective}' https://github.com/makessr/HarborMail/releases/latest) &&
+version=${release_url##*/} &&
+[[ $version =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
 case "$(uname -m)" in
   x86_64) binary=harbormail-linux-amd64 ;;
   aarch64|arm64) binary=harbormail-linux-arm64 ;;
@@ -118,12 +120,22 @@ curl -fsS http://127.0.0.1:8080/healthz
 
 ## Docker 保存旧镜像并更新
 
-备份完成后，在**原项目目录**和原来的 Compose 参数下运行。下面以默认镜像 `ghcr.io/makessr/harbormail:latest` 为例。使用 `-p` 或 `-f` 的部署，在每条 `docker compose` 命令保留相同参数。使用固定标签或摘要的部署，按原配置方式更新镜像引用。
+备份完成后，在**原项目目录**和原来的 Compose 参数下运行。使用 `-p` 或 `-f` 的部署，在每条 `docker compose` 命令保留相同参数。
+
+### 固定摘要的部署
+
+从目标 GitHub Release 下载 `OCI_IMAGE` 和 `SHA256SUMS`，在下载目录执行 `awk '$2=="OCI_IMAGE" {print; found=1} END {if (!found) exit 1}' SHA256SUMS | sha256sum -c -`。记录旧的 `HARBOR_IMAGE`，再将部署目录 `.env` 的 `HARBOR_IMAGE` 改为 `OCI_IMAGE` 的内容。运行 `sudo docker compose pull harbor` 和 `sudo docker compose up -d --no-deps --no-build --wait harbor`，然后按目标版本说明验收。满足数据库回滚条件时，恢复旧摘要并用相同参数重建 Harbor Mail。
+
+### 沿用 latest 的部署
+
+以下命令适用于镜像引用为 `ghcr.io/makessr/harbormail:latest` 的已有部署。
 
 ~~~bash
 (
   set -euo pipefail
-  version=v0.2.23
+  release_url=$(curl -fsSL -o /dev/null -w '%{url_effective}' https://github.com/makessr/HarborMail/releases/latest)
+  version=${release_url##*/}
+  [[ $version =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
   harbor=$(sudo docker compose ps -a -q harbor)
   test -n "$harbor"
   old=$(sudo docker inspect -f '{{.Image}}' "$harbor")
@@ -141,7 +153,7 @@ curl -fsS http://127.0.0.1:8080/healthz
 )
 ~~~
 
-升级到后续版本时替换命令中的版本号。保留输出的旧镜像标签。确认打印预期版本，检查健康接口，再用后台账号验证实际收发。备份时已停止服务且升级未继续时，可按下方步骤恢复旧镜像。
+要安装特定历史版本，在命令中设定该发行标签。保留输出的旧镜像标签。确认打印预期版本，检查健康接口，再用后台账号验证实际收发。备份时已停止服务且升级未继续时，可按下方步骤恢复旧镜像。
 
 若需回退，先核对[数据库回滚条件](../../ops/README.md#切换与回滚)。数据库仍兼容时，把旧镜像指回本地 `latest`，再重建 Harbor Mail。使用旧卷和原配置。
 

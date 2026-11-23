@@ -134,7 +134,7 @@ func (a *app) importMessages(ctx context.Context, owner, folder string, files []
 		if !valid {
 			return invalidEML(i + 1)
 		}
-		if _, err := insertLetter(tx, owner, m, folder, origin, raw); err != nil {
+		if _, err := insertLetter(ctx, tx, owner, m, folder, origin, raw); err != nil {
 			return err
 		}
 	}

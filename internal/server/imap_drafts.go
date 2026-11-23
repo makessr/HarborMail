@@ -73,6 +73,7 @@ func (m *imapMailbox) CreateMessage(flags []string, date time.Time, body imap.Li
 			return errors.New("Draft APPEND supports Seen, Flagged, and Draft")
 		}
 	}
+	content := prepareLetterContent(raw, false)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	tx, err := m.app.db.BeginTx(ctx, nil)
@@ -90,7 +91,7 @@ func (m *imapMailbox) CreateMessage(flags []string, date time.Time, body imap.Li
 		}
 		return errIMAPStorage
 	}
-	if err := insert(tx, m.owner, draft, "drafts", raw); err != nil {
+	if _, err := insertPreparedLetter(ctx, tx, m.owner, draft, "drafts", "drafts", content); err != nil {
 		if isQuotaExceeded(err) {
 			return errors.New("[OVERQUOTA] Mailbox storage quota exceeded")
 		}

@@ -103,12 +103,8 @@ func (m *imapMailbox) persistFlags(indices []int, seen, starred, deleted *bool) 
 		return errIMAPStorage
 	}
 	defer tx.Rollback()
-	if deleted != nil {
-		if err := lockIMAPUIDs(ctx, tx); err != nil {
-			log.Print("IMAP lock deletion flags: ", err)
-			return errIMAPStorage
-		}
-	}
+	// The conditional UPDATE locks the letter and validates its current UID.
+	// Moves and purges change that same letter before changing its IMAP metadata.
 	flags := make([][]string, len(indices))
 	for j, i := range indices {
 		msg := m.messages[i]

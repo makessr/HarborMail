@@ -34,7 +34,8 @@ func parseAdmins(setting string, accounts map[string][]byte) (map[string]bool, e
 
 func (a *app) replySession(w http.ResponseWriter, r *http.Request, owner string) {
 	administrator, err := a.isGlobalAdmin(r.Context(), a.db, owner)
-	if letterError(w, err) {
+	if err != nil {
+		loginUnavailable(w)
 		return
 	}
 	role := "user"
@@ -62,7 +63,7 @@ func (a *app) adminPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	session, err := a.browserSession(r)
 	if err != nil {
-		http.Error(w, "无法读取登录会话", http.StatusInternalServerError)
+		http.Error(w, "无法读取登录会话", http.StatusServiceUnavailable)
 		return
 	}
 	if session.owner == "" {

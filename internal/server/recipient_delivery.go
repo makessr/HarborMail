@@ -290,7 +290,7 @@ func (a *app) recoverOutboxJob(job *outboxJob) error {
 		return err
 	}
 	if state == "uncertain" {
-		if err := a.insertDeliveryNotice(tx, m, state, reason); err != nil {
+		if err := a.insertDeliveryNotice(ctx, tx, m, state, reason); err != nil {
 			return err
 		}
 	}

@@ -126,6 +126,10 @@ func (rule mailRule) matches(sender, domain, subject, recipient string) bool {
 
 // Callers hold the mailbox write lock, which also protects rule targets from deletion.
 func insertIncoming(ctx context.Context, tx *sql.Tx, owner, sender, folder string, m letter, raw []byte) error {
+	return insertPreparedIncoming(ctx, tx, owner, sender, folder, m, prepareLetterContent(raw, true))
+}
+
+func insertPreparedIncoming(ctx context.Context, tx *sql.Tx, owner, sender, folder string, m letter, content letterContent) error {
 	rules, err := readMailRules(ctx, tx, owner, true)
 	if err != nil {
 		return err
@@ -152,12 +156,17 @@ func insertIncoming(ctx context.Context, tx *sql.Tx, owner, sender, folder strin
 		}
 		break
 	}
-	id, err := insertLetter(tx, owner, m, folder, "inbox", raw)
+	id, err := insertPreparedLetter(ctx, tx, owner, m, folder, "inbox", content)
 	if err != nil {
 		return err
 	}
 	if label != 0 {
-		if err := attachMailLabel(ctx, tx, id, label); err != nil {
+		// A concurrently removed rule and label can leave a stale read of the rule.
+		if err := lockMailLabel(ctx, tx, owner, label); err == nil {
+			if err := attachMailLabel(ctx, tx, id, label); err != nil {
+				return err
+			}
+		} else if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
 	}
@@ -189,15 +198,14 @@ func (a *app) saveMailRule(ctx context.Context, owner string, rule mailRule) (ma
 			return rule, err
 		}
 	case "label":
-		var id int64
-		if err := tx.QueryRowContext(ctx, `SELECT id FROM mail_labels WHERE owner=? AND id=?`, owner, rule.LabelID).Scan(&id); err != nil {
+		if err := lockMailLabel(ctx, tx, owner, rule.LabelID); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return rule, errRuleLabel
 			}
 			return rule, err
 		}
 		// Base 36 fits a BIGINT label ID in the existing 16-character destination column.
-		target = strconv.FormatInt(id, 36)
+		target = strconv.FormatInt(rule.LabelID, 36)
 	}
 	if rule.ID == 0 {
 		var count int

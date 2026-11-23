@@ -56,7 +56,7 @@ function setupAdminDeliveryTools() {
   async function loadLimits() {
     const limits = await adminMailRequest("outbound-limits");
     limitRows.replaceChildren(...limits.map(item => deliveryRow([
-      item.scope === "account" ? "邮箱账号" : "邮件域名", item.target, item.used, item.limit
+      item.scope === "account" ? "邮箱账号" : "邮件域名", item.target, item.used, item.limit || "不限额"
     ])));
     limitStatus.textContent = limits.length ? "" : "暂无外发额度。";
   }
@@ -78,7 +78,7 @@ function setupAdminDeliveryTools() {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data)
       });
       await loadLimits();
-      void adminFeedback(data.limit ? "额度已保存。" : "额度已移除。");
+      void adminFeedback(data.limit ? "额度已保存。" : "已设置为不限额。");
     } catch (error) {
       void adminFeedback(error.message, "error");
     } finally {

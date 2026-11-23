@@ -71,13 +71,14 @@ type popMessage struct {
 }
 
 type popSession struct {
-	server   *popServer
-	writer   *textproto.Writer
-	username string
-	owner    string
-	messages []popMessage
-	failures int
-	peer     net.Addr
+	server     *popServer
+	writer     *textproto.Writer
+	username   string
+	owner      string
+	messages   []popMessage
+	failures   int
+	peer       net.Addr
+	credential protocolSession
 }
 
 func (server *popServer) serve(conn *tls.Conn) {
@@ -91,6 +92,8 @@ func (server *popServer) serve(conn *tls.Conn) {
 	}
 	reader := bufio.NewReaderSize(conn, 2048)
 	s := popSession{server: server, writer: textproto.NewWriter(bufio.NewWriter(conn)), peer: conn.RemoteAddr()}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	defer func() {
 		if s.owner != "" {
 			server.maildrop.Delete(s.owner)
@@ -111,7 +114,11 @@ func (server *popServer) serve(conn *tls.Conn) {
 			return
 		}
 		verb, arg, _ := strings.Cut(string(line[:len(line)-2]), " ")
+		authenticated := s.owner != ""
 		closeConnection, err := s.command(strings.ToUpper(verb), arg)
+		if !authenticated && s.owner != "" {
+			go server.app.watchProtocolSession(ctx, s.credential, conn.Close)
+		}
 		if closeConnection || err != nil {
 			return
 		}
@@ -152,15 +159,16 @@ func (s *popSession) command(verb, arg string) (bool, error) {
 }
 
 func (s *popSession) login(password string) (bool, error) {
-	owner, err := s.server.app.authenticateProtocol(s.peer, s.username, password, clientPOP3)
+	session, err := s.server.app.authenticateProtocol(s.peer, s.username, password, clientPOP3)
 	s.username = ""
-	if errors.Is(err, errLoginBusy) {
+	if errors.Is(err, errLoginBusy) || errors.Is(err, errLoginUnavailable) {
 		return false, s.writer.PrintfLine("-ERR Authentication temporarily unavailable")
 	}
 	if err != nil {
 		s.failures++
 		return s.failures >= 3, s.writer.PrintfLine("-ERR Invalid credentials")
 	}
+	owner := session.owner
 	if _, busy := s.server.maildrop.LoadOrStore(owner, struct{}{}); busy {
 		return false, s.writer.PrintfLine("-ERR Maildrop already in use")
 	}
@@ -172,6 +180,7 @@ func (s *popSession) login(password string) (bool, error) {
 	}
 	s.messages = messages
 	s.owner = owner
+	s.credential = session
 	return false, s.writer.PrintfLine("+OK Maildrop ready")
 }
 
@@ -382,17 +391,30 @@ func (s *popSession) moveMarkedToTrash() error {
 	if err := lockIMAPUIDs(ctx, tx); err != nil {
 		return err
 	}
+	changed := false
 	for _, m := range s.messages {
 		if !m.deleted {
 			continue
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE letters SET previous='inbox', folder='trash'
-			WHERE owner=? AND id=? AND folder='inbox'`, s.owner, m.id); err != nil {
+		result, err := tx.ExecContext(ctx, `UPDATE letters SET previous='inbox', folder='trash'
+			WHERE owner=? AND id=? AND folder='inbox'`, s.owner, m.id)
+		if err != nil {
 			return err
+		}
+		count, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if count == 0 {
+			continue
 		}
 		if err := invalidateMovedUID(ctx, tx, m.id); err != nil {
 			return err
 		}
+		changed = true
+	}
+	if !changed {
+		return nil
 	}
 	return s.server.app.commitMailbox(tx, s.owner)
 }

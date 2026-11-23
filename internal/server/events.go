@@ -148,7 +148,7 @@ func (a *app) streamMailboxEvents(w http.ResponseWriter, r *http.Request, owner 
 	// Subscribe before rechecking authorization so a concurrent revocation is observed.
 	session, err := a.browserSession(r)
 	if err != nil {
-		fail(w, http.StatusInternalServerError, "无法读取登录会话")
+		loginUnavailable(w)
 		return
 	}
 	if session.owner != owner {

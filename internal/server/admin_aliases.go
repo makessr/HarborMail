@@ -87,9 +87,7 @@ func (a *app) adminAliasChange(w http.ResponseWriter, r *http.Request, actor str
 		return
 	}
 	if _, err := a.authenticate(actor, input.Password); err != nil {
-		if errors.Is(err, errLoginBusy) {
-			fail(w, 429, "验证请求过多，请稍后重试")
-		} else {
+		if !loginTemporaryError(w, err) {
 			fail(w, 403, "管理员主邮箱密码不正确")
 		}
 		return

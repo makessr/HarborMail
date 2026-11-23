@@ -26,6 +26,8 @@ import (
 	"harbormail/web"
 
 	"golang.org/x/crypto/bcrypt"
+
+	"harbormail/internal/smtpadmission"
 )
 
 const cookieName = "harbor_session"
@@ -304,7 +306,14 @@ func runConfiguredServer(importOptions *imapImportOptions) {
 	if a.adminCache != nil {
 		defer a.adminCache.client.Close()
 	}
-	a.hardQuota, err = initHardQuota(a.db, driver, os.Getenv("HARBOR_HARD_QUOTA") == "true")
+	switch os.Getenv("HARBOR_PUBLIC_DEFAULTS") {
+	case "true":
+		a.publicDefaults = true
+	case "", "false":
+	default:
+		log.Fatal("HARBOR_PUBLIC_DEFAULTS must be true or false")
+	}
+	a.hardQuota, err = initHardQuota(a.db, driver, a.publicDefaults || os.Getenv("HARBOR_HARD_QUOTA") == "true")
 	if err != nil {
 		log.Fatal("initialize mailbox quota: ", err)
 	}
@@ -490,7 +499,7 @@ func (a *app) startMailServices(runtime *serviceRuntime, tlsConfig *tls.Config) 
 		return err
 	}
 	log.Printf("SMTP listening on %s", listener.Addr())
-	runtime.serveSMTP("SMTP", a.smtpServer(a, tlsConfig), listener)
+	runtime.serveSMTP("SMTP", a.smtpServer(a, tlsConfig), &smtpadmission.Listener{Listener: listener, Guard: &a.smtpAdmission})
 	if a.pauseOutbox {
 		log.Print("Outbox is paused: queued mail will not be processed")
 	} else {
@@ -545,8 +554,7 @@ func (a *app) cookie(w http.ResponseWriter, value string, age int) {
 
 func (a *app) login(w http.ResponseWriter, r *http.Request) {
 	source := loginSource(r, a.webLogin.proxies)
-	if retry := a.webLogin.reserve(r.Context(), source, "", false); retry > 0 {
-		a.rejectWebLoginRate(w, source, "", retry)
+	if !a.checkWebLoginRate(w, r.Context(), source, "", false) {
 		return
 	}
 	var input struct{ Email, Password, Code string }
@@ -558,11 +566,15 @@ func (a *app) login(w http.ResponseWriter, r *http.Request) {
 	if len(email) > 254 {
 		email = ""
 	}
-	if retry := a.webLogin.reserve(r.Context(), source, email, true); retry > 0 {
-		a.rejectWebLoginRate(w, source, loginAuditAccount(email), retry)
+	if !a.checkWebLoginRate(w, r.Context(), source, email, true) {
 		return
 	}
 	owner, verifiedHash, err := a.authenticatePrimary(r.Context(), input.Email, input.Password)
+	if errors.Is(err, errLoginUnavailable) {
+		a.recordLogin(source, loginAuditAccount(email), "error", "web")
+		loginUnavailable(w)
+		return
+	}
 	if errors.Is(err, errLoginBusy) {
 		a.recordLogin(source, loginAuditAccount(email), "busy", "web")
 		w.Header().Set("Retry-After", "1")
@@ -588,7 +600,7 @@ func (a *app) login(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		a.recordLogin(source, owner, "error", "web")
-		fail(w, 500, "无法创建登录会话")
+		loginUnavailable(w)
 		return
 	}
 	a.recordLogin(source, owner, "success", "web")
@@ -597,8 +609,9 @@ func (a *app) login(w http.ResponseWriter, r *http.Request) {
 }
 
 var (
-	errLoginBusy    = errors.New("too many concurrent login attempts")
-	errLoginInvalid = errors.New("invalid credentials")
+	errLoginBusy        = errors.New("too many concurrent login attempts")
+	errLoginUnavailable = errors.New("authentication storage unavailable")
+	errLoginInvalid     = errors.New("invalid credentials")
 )
 
 func (a *app) authenticate(email, password string) (string, error) {
@@ -618,7 +631,7 @@ func (a *app) authenticatePrimary(ctx context.Context, email, password string) (
 	owner := strings.ToLower(strings.TrimSpace(email))
 	hash, err := a.primaryPasswordHash(ctx, a.db, owner)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return "", nil, errLoginBusy
+		return "", nil, errLoginUnavailable
 	}
 	if errors.Is(err, sql.ErrNoRows) {
 		hash = credentialsFallback
@@ -638,7 +651,7 @@ func (a *app) auth(handler authorized) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		session, err := a.browserSession(r)
 		if err != nil {
-			fail(w, 500, "无法读取登录会话")
+			loginUnavailable(w)
 			return
 		}
 		if session.owner == "" {
@@ -1096,7 +1109,7 @@ func (a *app) deliverLocal(m letter, owner string, raw []byte) error {
 }
 
 func localDelivery(ctx context.Context, tx *sql.Tx, m letter, owner string, raw []byte) error {
-	if err := insert(tx, m.From, m, "sent", raw); err != nil {
+	if err := insert(ctx, tx, m.From, m, "sent", raw); err != nil {
 		return err
 	}
 	return insertIncoming(ctx, tx, owner, m.From, "inbox", m, raw)

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"net/netip"
 	"os"
 	"sync"
@@ -30,7 +31,13 @@ func TestMySQLLoginLimitSharedAcrossInstances(t *testing.T) {
 	var workers sync.WaitGroup
 	for i := range cap(results) {
 		guard := &guards[i%len(guards)]
-		workers.Go(func() { results <- guard.reserve(ctx, source, email, true) })
+		workers.Go(func() {
+			retry, err := guard.reserve(ctx, source, email, true)
+			if err != nil {
+				t.Error(err)
+			}
+			results <- retry
+		})
 	}
 	workers.Wait()
 	close(results)
@@ -46,16 +53,16 @@ func TestMySQLLoginLimitSharedAcrossInstances(t *testing.T) {
 		t.Fatalf("allowed %d shared reservations, want %d", allowed, loginPairLimit)
 	}
 	protocol := webLoginGuard{shared: guards[1].shared, scope: "protocol"}
-	if retry := protocol.reserve(ctx, source, email, true); retry != 0 {
+	if retry, err := protocol.reserve(ctx, source, email, true); err != nil || retry != 0 {
 		t.Fatalf("web limit affected protocol reservations: %s", retry)
 	}
 	otherSource := netip.MustParsePrefix("192.0.2.11/32")
-	if retry := guards[0].reserve(ctx, otherSource, email, true); retry != 0 {
+	if retry, err := guards[0].reserve(ctx, otherSource, email, true); err != nil || retry != 0 {
 		t.Fatalf("web limit affected a different source: %s", retry)
 	}
 	canceled, cancel := context.WithCancel(ctx)
 	cancel()
-	if retry := guards[0].reserve(canceled, otherSource, email, true); retry <= 0 {
+	if retry, err := guards[0].reserve(canceled, otherSource, email, true); retry != 0 || !errors.Is(err, errLoginUnavailable) {
 		t.Fatal("reservation succeeded without a database decision")
 	}
 }

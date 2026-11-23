@@ -27,7 +27,7 @@ func TestLegacyMailDetailMatchesCachedResponse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := insertLetter(tx, owner, m, "inbox", "inbox", raw)
+	id, err := insertLetter(t.Context(), tx, owner, m, "inbox", "inbox", raw)
 	if err != nil {
 		t.Fatal(err)
 	}

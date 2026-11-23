@@ -8,7 +8,7 @@
     &nbsp;·&nbsp;
     <a href="docs/deploy/README.md"><strong>部署与升级</strong></a>
     &nbsp;·&nbsp;
-    <a href="docs/releases/v0.2.23.md">v0.2.23 发行说明</a>
+    <a href="docs/releases/v0.2.24.md">v0.2.24 发行说明</a>
   </p>
 </div>
 
@@ -20,10 +20,13 @@ Harbor Mail 是一个用 Go 编写的自建域名邮箱。用户从网页收发�
 
 ### Docker 首次启动
 
-新用户建议从 **Docker 标准版**开始。在安装了 Git、OpenSSL 和 Docker Compose 的 Linux 服务器上执行。初始化时输入管理员邮箱和密码。
+新用户建议从 **Docker 标准版**开始。在安装了 Git、curl、OpenSSL 和 Docker Compose 的 Linux 服务器上执行。初始化时输入管理员邮箱和密码。
 
 ```bash
-git clone --branch v0.2.23 --depth 1 https://github.com/makessr/HarborMail.git &&
+release_url=$(curl -fsSL -o /dev/null -w '%{url_effective}' https://github.com/makessr/HarborMail/releases/latest) &&
+version=${release_url##*/} &&
+[[ $version =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] &&
+git clone --branch "$version" --depth 1 https://github.com/makessr/HarborMail.git &&
   cd HarborMail &&
   sudo bash ops/init-docker.sh standard &&
   sudo docker compose config --quiet &&
@@ -218,7 +221,9 @@ Docker 自动启动配套服务。Linux 三种方案使用同一发行二进制�
 
 Submission 容量计数可从 Prometheus 指标读取。MySQL 上，已有 UID 的 IMAP 文件夹使用只读一致性快照，缺失 UID 时仍由现有分配器补齐。
 
-[v0.2.23 发行说明](docs/releases/v0.2.23.md)涵盖邮箱两步验证、投递路径显示、邮件协议优化以及使用 `latest` 的升级流程。
+[v0.2.24 发行说明](docs/releases/v0.2.24.md)涵盖新安装默认额度、SMTP 接入限制、协议会话撤销和固定镜像摘要的安装方式。
+
+参与开发见[贡献指南](CONTRIBUTING.md)。发布维护见[发布检查清单](docs/release-checklist.md)。
 
 ## 许可证
 

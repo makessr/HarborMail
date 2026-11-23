@@ -111,7 +111,7 @@ func (a *app) deliverWebLocals(ctx context.Context, tx *sql.Tx, m letter, raw []
 	if queued {
 		err = a.insertQueuedSent(ctx, tx, m, raw)
 	} else {
-		err = insert(tx, m.From, m, "sent", raw)
+		err = insert(ctx, tx, m.From, m, "sent", raw)
 	}
 	if err != nil {
 		return nil, err

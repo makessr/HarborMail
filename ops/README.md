@@ -234,6 +234,10 @@ MySQL Compose 部署同时启动 Redis，运行在 Harbor Mail 专用内部网�
 
 ## 指标与告警
 
+SMTP 接入限制在每个进程生效，多实例各自维护连接预算。收信与两个提交端口共享预算，总并发连接上限为 256。单源最多同时保持 12 条连接，每分钟接受 120 条连接，最多允许 40 次永久性 RCPT 失败。单会话每分钟最多执行 120 次 RCPT，最多允许 10 次永久性失败。IPv6 按 /64 聚合。已有临时错误继续按 SMTP 原响应返回。
+
+Prometheus 规则还覆盖已到期积压、失败投递增长、磁盘只读和 inode 不足。使用自定义宿主机挂载路径时，将规则中的 `mountpoint` 匹配同步改成实际磁盘挂载点。
+
 原生部署可设置 `HARBOR_METRICS=127.0.0.1:9091`。Compose 在主机回环发布端口，可用 `HARBOR_METRICS_PORT` 调整。指标不含账号标识或邮件字段。每次抓取有三秒数据库查询期限。保持此端口在可信监控网络内。
 
 `harbor_submission_active_messages` 和 `harbor_submission_reserved_bytes` 分别表示每个实例的 Submission 处理中邮件数和预留字节数，包含 587 和 465。 `harbor_submission_capacity_deferred_total` 只累计因处理预算不足而返回的 SMTP 451。查看该计数器的增长可判断 Submission 是否因达到预算而需要客户端重试。

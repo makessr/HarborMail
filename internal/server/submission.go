@@ -17,6 +17,8 @@ import (
 	"github.com/emersion/go-message/textproto"
 	"github.com/emersion/go-sasl"
 	"github.com/emersion/go-smtp"
+
+	"harbormail/internal/smtpadmission"
 )
 
 func (a *app) listenSubmission(runtime *serviceRuntime, addr string, config *tls.Config, implicit bool) error {
@@ -33,6 +35,7 @@ func (a *app) listenSubmission(runtime *serviceRuntime, addr string, config *tls
 	if err != nil {
 		return fmt.Errorf("listen for SMTP submission: %w", err)
 	}
+	listener = &smtpadmission.Listener{Listener: listener, Guard: &a.smtpAdmission, ImplicitTLS: implicit}
 	mode := "STARTTLS"
 	if implicit {
 		listener = tls.NewListener(listener, server.TLSConfig)
@@ -44,12 +47,14 @@ func (a *app) listenSubmission(runtime *serviceRuntime, addr string, config *tls
 }
 
 type submission struct {
-	app        *app
-	conn       *smtp.Conn
-	owner      string
-	author     string
-	recipients []webTarget
-	failures   int
+	app           *app
+	conn          *smtp.Conn
+	owner         string
+	author        string
+	recipients    []webTarget
+	failures      int
+	cancelSession context.CancelFunc
+	rcptBudget    smtpadmission.RecipientBudget
 }
 
 func (s *submission) AuthMechanisms() []string { return []string{sasl.Plain} }
@@ -69,15 +74,21 @@ func (s *submission) Auth(mechanism string) (sasl.Server, error) {
 			s.failures++
 			return smtp.ErrAuthFailed
 		}
-		owner, err := s.app.authenticateProtocol(s.conn.Conn().RemoteAddr(), username, password, clientSMTP)
-		if errors.Is(err, errLoginBusy) {
+		session, err := s.app.authenticateProtocol(s.conn.Conn().RemoteAddr(), username, password, clientSMTP)
+		if errors.Is(err, errLoginBusy) || errors.Is(err, errLoginUnavailable) {
 			return &smtp.SMTPError{Code: 454, EnhancedCode: smtp.EnhancedCode{4, 7, 0}, Message: "Authentication temporarily unavailable"}
 		}
 		if err != nil {
 			s.failures++
 			return smtp.ErrAuthFailed
 		}
-		s.owner = owner
+		if s.cancelSession != nil {
+			s.cancelSession()
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		s.cancelSession = cancel
+		s.owner = session.owner
+		go s.app.watchProtocolSession(ctx, session, s.conn.Conn().Close)
 		return nil
 	}), nil
 }
@@ -105,6 +116,10 @@ func (s *submission) Mail(from string, _ *smtp.MailOptions) error {
 }
 
 func (s *submission) Rcpt(to string, _ *smtp.RcptOptions) error {
+	return s.rcptBudget.Check(&s.app.smtpAdmission, s.conn, func() error { return s.resolveRecipient(to) })
+}
+
+func (s *submission) resolveRecipient(to string) error {
 	recipient, err := address(to)
 	if err != nil || !strings.EqualFold(recipient, to) {
 		return &smtp.SMTPError{Code: 553, EnhancedCode: smtp.EnhancedCode{5, 1, 3}, Message: "Invalid recipient"}
@@ -192,7 +207,12 @@ func (s *submission) Reset() {
 	s.recipients = nil
 }
 
-func (s *submission) Logout() error { return nil }
+func (s *submission) Logout() error {
+	if s.cancelSession != nil {
+		s.cancelSession()
+	}
+	return nil
+}
 
 func submissionRecipients(raw []byte, targets []webTarget) webRecipients {
 	message, err := mail.ReadMessage(bytes.NewReader(raw))

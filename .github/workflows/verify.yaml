@@ -1,6 +1,8 @@
 name: Verify Harbor Mail
 
 on:
+  push:
+    branches: [main]
   pull_request:
   workflow_call:
   workflow_dispatch:
@@ -9,6 +11,28 @@ permissions:
   contents: read
 
 jobs:
+  concurrency-and-parsing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Run race detector
+        run: go test -race ./... -count=1
+      - name: Test independent SMTP, IMAP and POP3 clients
+        run: |
+          go build -o "$RUNNER_TEMP/harbormail" ./cmd/harbormail
+          python3 .github/scripts/test-mail-clients.py "$RUNNER_TEMP/harbormail"
+      - name: Fuzz mail parsers
+        run: |
+          go test ./internal/mailmime -run '^$' -fuzz '^FuzzInspectHTML$' -fuzztime=15s -parallel=2
+          go test ./internal/server -run '^$' -fuzz '^FuzzPOP3Top$' -fuzztime=15s -parallel=2
+          go test ./internal/server -run '^$' -fuzz '^FuzzEMLImport$' -fuzztime=15s -parallel=2
+
   go-vulnerabilities:
     runs-on: ubuntu-latest
     timeout-minutes: 12
@@ -83,7 +107,13 @@ jobs:
             exit 1
           fi
           address=$(docker port "$database" 3306/tcp)
-          HARBOR_TEST_MYSQL_DSN="harbor:$MYSQL_PASSWORD@tcp($address)/harbor_test" go test ./... -count=1
+          HARBOR_TEST_MYSQL_DSN="harbor:$MYSQL_PASSWORD@tcp($address)/harbor_test" go test ./... -count=1 -coverprofile="$RUNNER_TEMP/critical.cover"
+          {
+            printf '### 认证、授权、投递和迁移的函数覆盖率\n\n```text\n'
+            go tool cover -func="$RUNNER_TEMP/critical.cover" |
+              awk '/\/(account_access|account_password|app_passwords|admin_roles|admin_mfa|mailbox_mfa|web_login_guard|mysql_login_limiter|protocol_login_guard|protocol_sessions|web_sessions|outbox|recipient_delivery|migration)\.go:/ {print}'
+            printf '```\n'
+          } >> "$GITHUB_STEP_SUMMARY"
           go vet ./...
           redis=$(docker run -d -p 127.0.0.1::6379 redis:8.10.3-alpine)
           redis_address=$(docker port "$redis" 6379/tcp)

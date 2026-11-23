@@ -42,7 +42,7 @@ func TestMetricsCountUnresolvedMessages(t *testing.T) {
 		VALUES (1,'sender@harbor.test','spam',1,'failed',0)`)
 
 	counts, err := a.operationalCounts(t.Context(), now)
-	if want := (operationalCounts{OldestDueSeconds: 600, Uncertain: 3, FailedTraining: 1}); err != nil || counts != want {
+	if want := (operationalCounts{OldestDueSeconds: 600, Ready: 1, Uncertain: 3, FailedTraining: 1}); err != nil || counts != want {
 		t.Fatalf("counts = %+v, err = %v, want %+v", counts, err, want)
 	}
 
@@ -61,6 +61,8 @@ func TestMetricsCountUnresolvedMessages(t *testing.T) {
 	for _, metric := range []string{
 		"harbor_outbox_oldest_due_seconds 0\n",
 		"harbor_outbox_paused 0\n",
+		"harbor_outbox_ready_messages 0\n",
+		"harbor_outbox_failed_messages 5\n",
 		"harbor_outbox_uncertain_messages 0\n",
 		"harbor_spam_training_failed_samples 0\n",
 		"harbor_dkim_active_domains 0\n",

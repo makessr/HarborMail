@@ -20,12 +20,15 @@
 用能运行 Docker 并设置凭据文件权限的账号执行：
 
 ```bash
-git clone --depth 1 https://github.com/makessr/HarborMail.git
-cd HarborMail
-bash ops/init-docker.sh standard &&
-  docker compose config --quiet &&
-  docker compose up -d --no-build --wait --wait-timeout 900
-docker compose ps
+release_url=$(curl -fsSL -o /dev/null -w '%{url_effective}' https://github.com/makessr/HarborMail/releases/latest) &&
+version=${release_url##*/} &&
+[[ $version =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] &&
+git clone --branch "$version" --depth 1 https://github.com/makessr/HarborMail.git &&
+cd HarborMail &&
+sudo bash ops/init-docker.sh standard &&
+  sudo docker compose config --quiet &&
+  sudo docker compose up -d --no-build --wait --wait-timeout 900
+sudo docker compose ps
 ```
 
 初始化时输入 `admin@example.com` 和准备好的密码。留空才会使用演示邮箱 `hello@harbor.test`。脚本会生成 `.env` 和 `secrets/`，并选用 `compose.standard.yaml`。安装全量或极简版时，把 `standard` 换成 `full` 或 `minimal`，分别使用 `compose.full.yaml` 或 `compose.minimal.yaml`。三个方案只选一个。全量版首次加载病毒库可能需要几分钟。

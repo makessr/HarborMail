@@ -4,6 +4,32 @@ rule_files:
 evaluation_interval: 1m
 
 tests:
+  - name: Queue depth and abnormal disk mounts
+    input_series:
+      - series: 'harbor_outbox_ready_messages{job="harbor-mail",instance="queue"}'
+        values: '250+0x11'
+      - series: 'node_filesystem_readonly{job="harbor-node",mountpoint="/srv/harbor-data"}'
+        values: '1+0x11'
+      - series: 'node_filesystem_files{job="harbor-node",mountpoint="/srv/harbor-data"}'
+        values: '100+0x11'
+      - series: 'node_filesystem_files_free{job="harbor-node",mountpoint="/srv/harbor-data"}'
+        values: '5+0x11'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: HarborOutboxBacklogHigh
+        exp_alerts:
+          - exp_labels: {job: harbor-mail, instance: queue, severity: warning}
+            exp_annotations: {summary: Harbor Mail 有超过 200 封已到期邮件等待投递}
+      - eval_time: 2m
+        alertname: HarborVolumeReadOnly
+        exp_alerts:
+          - exp_labels: {job: harbor-node, mountpoint: /srv/harbor-data, severity: critical}
+            exp_annotations: {summary: Harbor Mail 存储挂载已变为只读}
+      - eval_time: 10m
+        alertname: HarborVolumeInodesLow
+        exp_alerts:
+          - exp_labels: {job: harbor-node, mountpoint: /srv/harbor-data, severity: warning}
+            exp_annotations: {summary: Harbor Mail 存储可用 inode 低于 10%}
   - name: DKIM alerts only for a Harbor Mail instance with unusable signing keys
     interval: 1m
     input_series:

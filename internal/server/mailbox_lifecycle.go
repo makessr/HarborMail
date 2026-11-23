@@ -58,15 +58,12 @@ func (a *app) adminMailboxLifecycle(w http.ResponseWriter, r *http.Request, acto
 	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
 	defer cancel()
 	source := loginSource(r, a.webLogin.proxies)
-	if retry := a.webLogin.reserve(ctx, source, actor, true); retry > 0 {
-		a.rejectWebLoginRate(w, source, actor, retry)
+	if !a.checkWebLoginRate(w, ctx, source, actor, true) {
 		return
 	}
 	_, verified, err := a.authenticatePrimary(ctx, actor, input.Password)
 	if err != nil {
-		if errors.Is(err, errLoginBusy) {
-			fail(w, http.StatusTooManyRequests, "验证请求过多，请稍后重试")
-		} else {
+		if !loginTemporaryError(w, err) {
 			fail(w, http.StatusForbidden, "管理员主邮箱密码不正确")
 		}
 		return
@@ -224,7 +221,7 @@ func mailboxHasPendingDelivery(ctx context.Context, tx *sql.Tx, owner string) (b
 }
 
 func suspendAndRevokeMailbox(ctx context.Context, tx *sql.Tx, owner string) error {
-	if _, err := tx.ExecContext(ctx, `UPDATE account_access SET suspended=TRUE WHERE owner=?`, owner); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE account_access SET suspended=TRUE,protocol_generation=protocol_generation+1 WHERE owner=?`, owner); err != nil {
 		return err
 	}
 	for _, table := range []string{"sessions", "web_session_details", "app_passwords"} {

@@ -62,8 +62,38 @@ if [[ ${admin_email#*@} == harbor.test ]]; then
   mail_host=harbor.test
 fi
 
-image=ghcr.io/makessr/harbormail:latest
+registry=ghcr.io/makessr/harbormail
+image=${HARBOR_IMAGE:-}
+if [[ -z $image ]]; then
+  version=$(git describe --tags --exact-match HEAD 2>/dev/null) || {
+    printf '请检出正式发行标签，或显式设置 HARBOR_IMAGE。\n' >&2
+    exit 1
+  }
+  [[ $version =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+    printf '当前标签不是正式发行版本。\n' >&2
+    exit 1
+  }
+  revision=$(git rev-parse --verify HEAD)
+  image="$registry:sha-${revision:0:7}"
+fi
+[[ $image =~ ^[a-zA-Z0-9][a-zA-Z0-9._/:@-]*$ ]] || {
+  printf 'HARBOR_IMAGE 格式无效。\n' >&2
+  exit 1
+}
 docker pull "$image"
+if [[ $image == "$registry":* ]]; then
+  digests=$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$image")
+  while IFS= read -r digest; do
+    if [[ $digest == "$registry"@sha256:* ]]; then
+      image=$digest
+      break
+    fi
+  done <<< "$digests"
+  [[ $image =~ ^ghcr\.io/makessr/harbormail@sha256:[a-f0-9]{64}$ ]] || {
+    printf '无法确认官方镜像的摘要。\n' >&2
+    exit 1
+  }
+fi
 if ! read -rsp '输入邮箱密码（12–72 字节）: ' mailbox_password; then
   printf '\n未读取到邮箱密码。\n' >&2
   exit 1
@@ -89,5 +119,5 @@ if [[ $mode != minimal ]]; then
 fi
 chgrp 10001 "${harbor_credentials[@]}"
 chmod 0640 "${harbor_credentials[@]}"
-printf 'COMPOSE_FILE=%s\nHARBOR_ADMINS=%s\nHARBOR_DOMAIN=%s\n' "$compose_files" "$admin_email" "$mail_host" > .env
+printf 'COMPOSE_FILE=%s\nHARBOR_ADMINS=%s\nHARBOR_DOMAIN=%s\nHARBOR_PUBLIC_DEFAULTS=true\nHARBOR_IMAGE=%s\n' "$compose_files" "$admin_email" "$mail_host" "$image" > .env
 printf '已生成部署配置。启动后使用 %s 登录。\n' "$admin_email"

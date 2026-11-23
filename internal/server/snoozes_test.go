@@ -34,7 +34,7 @@ func testMailSnoozes(t *testing.T, driver, source string) {
 		t.Fatal(err)
 	}
 	defer tx.Rollback()
-	id, err := insertLetter(tx, owner, letter{From: "sender@harbor.test", To: owner, Date: stamp, Star: true}, "inbox", "inbox", raw)
+	id, err := insertLetter(t.Context(), tx, owner, letter{From: "sender@harbor.test", To: owner, Date: stamp, Star: true}, "inbox", "inbox", raw)
 	if err != nil {
 		t.Fatal(err)
 	}

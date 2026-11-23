@@ -17,6 +17,21 @@ groups:
           severity: warning
         annotations:
           summary: 有已到期的邮件等待投递超过五分钟
+      - alert: HarborOutboxBacklogHigh
+        expr: |
+          (harbor_outbox_ready_messages{job="harbor-mail"} > 200)
+          unless on(job, instance) (harbor_outbox_paused{job="harbor-mail"} == 1)
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Harbor Mail 有超过 200 封已到期邮件等待投递
+      - alert: HarborOutboxFailuresIncreased
+        expr: delta(harbor_outbox_failed_messages{job="harbor-mail"}[15m]) >= 10
+        labels:
+          severity: warning
+        annotations:
+          summary: 过去 15 分钟内终止投递的邮件净增加至少 10 封
       - alert: HarborUncertainDeliveryIncreased
         expr: delta(harbor_outbox_uncertain_messages{job="harbor-mail"}[15m]) > 0
         labels:
@@ -43,6 +58,23 @@ groups:
           severity: warning
         annotations:
           summary: Harbor Mail 存储可用空间低于 20%
+      - alert: HarborVolumeReadOnly
+        expr: node_filesystem_readonly{job="harbor-node",mountpoint=~"/srv/harbor-(data|mysql|backup)"} == 1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Harbor Mail 存储挂载已变为只读
+      - alert: HarborVolumeInodesLow
+        expr: |
+          (node_filesystem_files_free{job="harbor-node",mountpoint=~"/srv/harbor-(data|mysql|backup)"}
+           / node_filesystem_files{job="harbor-node",mountpoint=~"/srv/harbor-(data|mysql|backup)"} < 0.1)
+          and node_filesystem_files{job="harbor-node",mountpoint=~"/srv/harbor-(data|mysql|backup)"} > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Harbor Mail 存储可用 inode 低于 10%
       - alert: HarborNodeMetricsUnavailable
         expr: up{job="harbor-node"} == 0
         for: 2m

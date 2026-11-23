@@ -169,7 +169,7 @@ func TestIMAPImportPreservesFlagsDateAndResumes(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer tx.Rollback()
-	if err := insert(tx, user, letter{From: user, To: user, Subject: "preserved", Date: stamp, Read: true, Star: true}, folder.ID, raw); err != nil {
+	if err := insert(t.Context(), tx, user, letter{From: user, To: user, Subject: "preserved", Date: stamp, Read: true, Star: true}, folder.ID, raw); err != nil {
 		t.Fatal(err)
 	}
 	if err := tx.Commit(); err != nil {

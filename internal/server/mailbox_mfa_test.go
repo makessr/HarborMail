@@ -68,7 +68,7 @@ func testMailboxMFA(t *testing.T, driver, source string) {
 	}
 	current := signIn("", http.StatusOK)
 	other := signIn("", http.StatusOK)
-	if _, err := a.authenticateClient(owner, password, clientIMAP); err != nil {
+	if _, _, err := a.authenticateClient(owner, password, clientIMAP); err != nil {
 		t.Fatalf("password should work before enrollment: %v", err)
 	}
 	var appCredential struct{ Secret string }
@@ -123,10 +123,10 @@ func testMailboxMFA(t *testing.T, driver, source string) {
 	signIn(adminTOTP(seed, now/30+1), http.StatusOK)
 	signIn(enabled.RecoveryCodes[0], http.StatusOK)
 	signIn(enabled.RecoveryCodes[0], http.StatusPreconditionRequired)
-	if _, err := a.authenticateClient(owner, password, clientIMAP); !errors.Is(err, errLoginInvalid) {
+	if _, _, err := a.authenticateClient(owner, password, clientIMAP); !errors.Is(err, errLoginInvalid) {
 		t.Fatalf("primary password bypassed two-factor authentication: %v", err)
 	}
-	if _, err := a.authenticateClient(owner, appCredential.Secret, clientIMAP); err != nil {
+	if _, _, err := a.authenticateClient(owner, appCredential.Secret, clientIMAP); err != nil {
 		t.Fatalf("existing app password was rejected: %v", err)
 	}
 	call("DELETE", "two-factor", current, map[string]string{
@@ -136,7 +136,7 @@ func testMailboxMFA(t *testing.T, driver, source string) {
 		"password": password, "code": enabled.RecoveryCodes[1],
 	}, http.StatusOK)
 	signIn("", http.StatusOK)
-	if _, err := a.authenticateClient(owner, password, clientIMAP); err != nil {
+	if _, _, err := a.authenticateClient(owner, password, clientIMAP); err != nil {
 		t.Fatalf("password should work after disabling: %v", err)
 	}
 }

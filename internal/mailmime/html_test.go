@@ -1,4 +1,4 @@
-package server
+package mailmime
 
 import (
 	"bytes"
@@ -42,11 +42,11 @@ func TestHTMLMailAllowsLocalImagesAndDropsActiveContent(t *testing.T) {
 		"--mail--",
 		"",
 	}, "\r\n")
-	view := inspectHTMLMail([]byte(raw), true)
-	if !view.hasHTML || view.hasText {
-		t.Fatalf("unexpected text alternatives: HTML=%t, plain=%t", view.hasHTML, view.hasText)
+	view := InspectHTML([]byte(raw), true)
+	if !view.HasHTML || view.HasText {
+		t.Fatalf("unexpected text alternatives: HTML=%t, plain=%t", view.HasHTML, view.HasText)
 	}
-	fragment, err := view.renderFragment()
+	fragment, err := view.RenderFragment()
 	if err != nil {
 		t.Fatal(err)
 	}

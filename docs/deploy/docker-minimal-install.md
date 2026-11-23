@@ -7,14 +7,17 @@
 在 Linux 服务器准备 Git 和 Docker Compose。 在**新目录**运行。初始化时输入完整管理员邮箱和 12–72 字节的密码。
 
 ~~~bash
-git clone --branch v0.2.23 --depth 1 https://github.com/makessr/HarborMail.git &&
+release_url=$(curl -fsSL -o /dev/null -w '%{url_effective}' https://github.com/makessr/HarborMail/releases/latest) &&
+version=${release_url##*/} &&
+[[ $version =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] &&
+git clone --branch "$version" --depth 1 https://github.com/makessr/HarborMail.git &&
   cd HarborMail &&
   sudo bash ops/init-docker.sh minimal &&
   sudo docker compose config --quiet &&
   sudo docker compose up -d --no-build --wait --wait-timeout 900
 ~~~
 
-初始化会为 `compose.minimal.yaml` 写好 `.env` 和 `secrets/`。默认使用 Docker 命名卷，镜像取 GHCR 的 `latest`。
+初始化会为 `compose.minimal.yaml` 写好 `.env` 和 `secrets/`。默认使用 Docker 命名卷，初始化按检出的发行标签选择同提交镜像，并在 `.env` 记录镜像摘要。
 
 ## 2. 验证
 
