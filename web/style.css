@@ -30,7 +30,21 @@ a { color: inherit; }
 #delivery-timeline-items { padding-inline-start: 1.5em; }
 #delivery-timeline-items li { margin-block: 6px; overflow-wrap: anywhere; }
 
-.mailbox { display: grid; grid-template-columns: 214px minmax(280px, 350px) minmax(0, 1fr); height: 100dvh; padding: 10px 10px 10px 0; background: var(--rail); }
+.mailbox {
+  --mail-rail-width: 214px; --mail-list-default: 350px; --mail-list-min: 280px;
+  --mail-list-max: 600px; --mail-reading-min: 300px;
+  display: grid;
+  grid-template-columns: var(--mail-rail-width)
+    clamp(var(--mail-list-min), var(--mail-list-width, var(--mail-list-default)),
+      min(var(--mail-list-max), calc(100% - var(--mail-rail-width) - var(--mail-reading-min))))
+    0 minmax(0, 1fr);
+  height: 100dvh; padding: 10px 10px 10px 0; background: var(--rail);
+}
+.mail-list-divider { position: relative; z-index: 1; width: 10px; margin-inline-start: -5px; cursor: col-resize; touch-action: none; }
+.mail-list-divider::before { content: ""; position: absolute; inset: 50% 3px auto; height: 26px; border-radius: 2px; background: var(--line); transform: translateY(-50%); }
+.mail-list-divider::after { content: ""; position: absolute; inset: 0 4px; background: transparent; }
+.mail-list-divider:is(:hover, :focus-visible)::after, .resizing-mail-list .mail-list-divider::after { background: var(--accent); }
+.resizing-mail-list { cursor: col-resize; user-select: none; }
 .mail-topbar { display: none; }
 .rail { background: var(--rail); padding: 11px 12px 4px; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
 .brand { display: flex; align-items: center; gap: 8px; padding-inline: 6px; font-size: 18px; font-weight: 650; letter-spacing: -.02em; white-space: nowrap; }
@@ -79,7 +93,7 @@ a { color: inherit; }
 .profile .disclosure-panel { inset: auto 0 calc(100% + 4px); width: 100%; }
 .profile .disclosure-panel > :is(a, button), .profile-group > summary, .profile-group-items > button { display: flex; align-items: center; gap: 8px; }
 .profile .disclosure-panel .glyph { font-size: 16px; color: var(--muted); }
-.profile-group > summary::after {
+:is(.profile-group, .letter-menu-section) > summary::after {
   content: "";
   width: 6px;
   height: 6px;
@@ -89,7 +103,7 @@ a { color: inherit; }
   border-block-end: 1px solid var(--muted);
   transform: rotate(-45deg);
 }
-.profile-group[open] > summary::after { transform: rotate(45deg); }
+:is(.profile-group, .letter-menu-section)[open] > summary::after { transform: rotate(45deg); }
 .profile-group-items { display: grid; gap: 2px; margin: 2px 0 2px 16px; border-inline-start: 1px solid var(--line); padding-inline-start: 4px; }
 .avatar { flex: 0 0 26px; aspect-ratio: 1; display: grid; place-items: center; background: var(--selected); color: var(--accent-ink); border-radius: 50%; font-size: 13px; font-weight: 650; }
 #account { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
@@ -171,15 +185,29 @@ h1 { font-size: 24px; line-height: 1.3; }
 .letter-quick-actions { margin-inline-start: auto; }
 .letter-quick-actions time { margin-inline-end: 6px; }
 .letter-quick-actions [aria-pressed="true"] { color: var(--accent-ink); }
-.letter-menu { width: min(232px, calc(100vw - 36px)); max-height: min(48vh, 530px); gap: 0; }
-.letter-menu-group { display: grid; padding-block: 4px; }
+.letter-menu { --letter-menu-row-height: 30px; width: min(198px, calc(100vw - 36px)); max-height: min(60dvh, 26rem); gap: 0; }
+.letter-menu-group { display: grid; grid-template-columns: minmax(0, 1fr); padding-block: 2px; }
 .letter-menu-group:not(:has(> :not([hidden]))) { display: none; }
 .letter-menu-group + .letter-menu-group { border-top: 1px solid var(--line); }
-.letter-menu-group > :is(button, a) { display: flex; align-items: center; gap: 9px; min-height: 33px; padding: 6px 9px; border: 0; border-radius: 5px; background: transparent; color: var(--ink); text-align: start; font-size: 13px; text-decoration: none; }
-.letter-menu-group > select { max-width: 100%; }
-.letter-menu-group > :is(button, a):hover { background: var(--hover); }
-.letter-menu-group > :focus-visible { outline-offset: -2px; }
-.letter-menu-group .glyph { color: var(--muted); font-size: 16px; }
+.letter-menu-group > :is(button, a), .letter-menu-section > summary {
+  display: flex; align-items: center; gap: 8px; min-height: var(--letter-menu-row-height);
+  padding: 5px 9px; border: 0; border-radius: 5px; background: transparent;
+  color: var(--ink); text-align: start; font-size: 13px; text-decoration: none;
+}
+.letter-menu-section:not(:has(.letter-menu-group > :not([hidden]))) { display: none; }
+.letter-menu-section > .letter-menu-group { margin-inline-start: 12px; padding-inline-start: 3px; border-inline-start: 1px solid var(--line); }
+#move-folder {
+  width: 100%; min-height: var(--letter-menu-row-height); padding-block: 4px; padding-inline-start: 33px;
+  border: 0; border-radius: 5px; background-color: transparent; font-size: 13px; font-weight: 400;
+}
+#move-folder::picker-icon { color: var(--muted); font-size: 12px; }
+#move-folder::picker(select) { max-block-size: min(16rem, 55dvh); }
+.letter-menu-group > :is(button, a):hover, .letter-menu-section > summary:hover, #move-folder:hover { background-color: var(--hover); }
+:is(.letter-menu-group, .letter-menu-section) > :focus-visible { outline-offset: -2px; }
+.letter-menu-group .glyph { flex: none; color: var(--muted); font-size: 16px; }
+@media (pointer: coarse) {
+  .letter-menu { --letter-menu-row-height: 38px; }
+}
 .letter-labels, .letter-labels ul { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .letter-labels { margin-top: 12px; }
 .letter-labels ul { list-style: none; margin: 0; padding: 0; min-width: 0; }
@@ -475,7 +503,7 @@ dialog.app-drawer {
 .theme-preview { height: 42px; border: 1px solid var(--control-line); border-radius: 5px; background-color: #eef3fb; background-image: linear-gradient(90deg, #2455c7 25%, transparent 25%); background-size: 100% 3px; background-repeat: no-repeat; background-position: 8px 8px; }
 .theme-preview-dark { background-color: #1a2536; background-image: linear-gradient(90deg, #aac6ff 25%, transparent 25%); }
 .theme-preview-system { background: linear-gradient(90deg, #eef3fb 50%, #1a2536 50%); }
-#preferences-form input { width: auto; flex: none; margin: 0; accent-color: var(--action); }
+#preferences-form input:is([type="checkbox"], [type="radio"]) { width: auto; flex: none; margin: 0; accent-color: var(--action); }
 .preference-send-delay { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
 #undo-seconds { min-width: min(98px, 100%); }
 .density-options { display: flex; gap: 8px 22px; flex-wrap: wrap; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); }
@@ -546,6 +574,11 @@ dialog.app-drawer {
 .recipient-options [role="option"] { cursor: pointer; padding: 8px 12px; }
 .recipient-options [role="option"]:hover, .recipient-options [aria-selected="true"] { background: var(--selected); }
 .app-passwords-panel { display: grid; gap: 14px; }
+.two-factor-form, .two-factor-setup, .two-factor-recovery { display: grid; gap: 12px; }
+#two-factor-status:empty { display: none; }
+.two-factor-setup canvas { width: 158px; height: 158px; image-rendering: pixelated; border: 1px solid var(--line); border-radius: 6px; }
+.two-factor-recovery h3 { margin: 0; font-size: 15px; }
+#two-factor-codes { margin: 0; padding: 9px 12px; border-radius: 6px; background: var(--paper); font-size: 13px; overflow: auto; }
 .app-passwords-list { list-style: none; padding: 0; margin: 0; }
 .app-passwords-list:empty, #app-passwords-status:empty, #app-password-copy-status:empty { display: none; }
 .app-passwords-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 12px 0; border-top: 1px solid var(--line); }
@@ -598,10 +631,11 @@ dialog.app-drawer {
 .undo-send-notice:not([hidden]) + .toast { bottom: 80px; }
 
 @media (max-width: 900px) {
-  .mailbox { grid-template-columns: 200px minmax(245px, 310px) minmax(0, 1fr); }
+  .mailbox { --mail-rail-width: 200px; --mail-list-default: 310px; --mail-list-min: 245px; }
 }
 @media (max-width: 760px) {
   .mailbox { display: flex; flex-direction: column; padding: 0; }
+  .mail-list-divider { display: none; }
   .mail-topbar { display: flex; align-items: center; gap: 6px; min-width: 0; background: var(--surface); padding: 6px 10px; }
   .mail-topbar .brand { gap: 4px; padding: 0; font-size: 16px; }
   .mail-topbar .brand img { width: 40px; height: 40px; }
@@ -636,7 +670,13 @@ dialog.app-drawer {
 #recipient-summary, #sender-detail-status { color: var(--muted); font-size: 12px; min-width: 0; }
 .sender-details .disclosure-panel { inset-inline: 46px auto; width: min(440px, calc(100% - 46px)); max-width: 100%; min-width: 0; gap: 9px; padding: 13px 15px; }
 .sender-details .envelope { margin: 0; font-size: 13px; gap: 6px 12px; }
+.copy-letter-address { padding: 2px 5px; border: 0; border-radius: 4px; background: transparent; color: var(--accent-ink); font-size: 12px; }
+.copy-letter-address:hover { background: var(--hover); }
 .sender-details .envelope + .envelope { border-top: 1px solid var(--line); padding-top: 8px; }
+
+.attachment-reminder { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); font-size: 13px; }
+.attachment-reminder p { margin: 0; }
+.attachment-reminder > div { display: flex; flex-wrap: wrap; gap: 8px; }
 #sender-detail-status:empty { display: none; }
 @media (max-width: 550px) {
   .sender-details .disclosure-panel { inset-inline: 0 auto; width: min(440px, 100%); }

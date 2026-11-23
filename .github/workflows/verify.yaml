@@ -115,6 +115,10 @@ jobs:
           npm ci --no-audit --no-fund
           npm run build:ui
           git diff --exit-code -- web/harbor-ui.css
+      - name: Test Webmail in Chromium
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:web
       - name: Check Web and operations files
         shell: bash
         run: |

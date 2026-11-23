@@ -137,9 +137,17 @@ func (s *submission) Data(r io.Reader) error {
 	if len(s.recipients) == 0 {
 		return &smtp.SMTPError{Code: 503, EnhancedCode: smtp.EnhancedCode{5, 5, 1}, Message: "At least one accepted recipient is required"}
 	}
-	raw, err := io.ReadAll(r)
+	maxBytes := s.app.messageLimit()
+	if !s.app.submissions.beginMessage(maxBytes) {
+		return &smtp.SMTPError{Code: 451, EnhancedCode: smtp.EnhancedCode{4, 3, 2}, Message: "Submission temporarily at capacity; try again later"}
+	}
+	defer s.app.submissions.endMessage(maxBytes)
+	raw, err := io.ReadAll(io.LimitReader(r, int64(maxBytes)+1))
 	if err != nil {
 		return err
+	}
+	if len(raw) > maxBytes {
+		return smtp.ErrDataTooLarge
 	}
 	raw, err = validateSubmission(raw, s.author)
 	if err != nil {

@@ -23,6 +23,7 @@ function resetDraftTracking() {
   clearTimeout(composeDraft?.timer);
   composeDraft = null;
   editorForm.inert = false;
+  byId("attachment-reminder").hidden = true;
   renderDraftTracking();
 }
 
@@ -66,6 +67,7 @@ function queueDraftSave(draft) {
 
 function markDraftEdited() {
   if (!composeDraft || composeDraft.busy) return;
+  byId("attachment-reminder").hidden = true;
   composeDraft.edit++;
   renderDraftTracking();
   queueDraftSave(composeDraft);
@@ -110,9 +112,23 @@ function closeTrackedEditor() {
   editor.close();
 }
 
-async function finishCompose(action) {
+function mentionsMissingAttachment() {
+  if (selectedFiles.length) return false;
+  const body = editorForm.elements.body.value.split(forwardDivider, 1)[0];
+  return body.split("\n").some(line => !/^\s*>/.test(line) &&
+    /(?:请(?:查收|查看|参阅)附件|(?:见|详见|随信附上)\s*附件|附件\s*(?:中|里|如下|是|为|请查收)|\b(?:see (?:the )?attachments?|attached (?:is|are|the|a|my)|please find attached)\b)/iu.test(line));
+}
+
+async function finishCompose(action, sendWithoutAttachment = false) {
   const draft = composeDraft;
   if (!draft || draft.busy || draft.composing) return;
+  const reminder = byId("attachment-reminder");
+  if (action === "send" && !sendWithoutAttachment && mentionsMissingAttachment()) {
+    reminder.hidden = false;
+    byId("add-reminded-attachment").focus();
+    return;
+  }
+  reminder.hidden = true;
   draft.busy = true;
   clearTimeout(draft.timer);
   const focused = document.activeElement;
@@ -165,6 +181,10 @@ async function finishCompose(action) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  byId("add-reminded-attachment").addEventListener("click", () => byId("attachments").click());
+  byId("send-without-attachment").addEventListener("click", () => {
+    if (editorForm.reportValidity()) void finishCompose("send", true);
+  });
   editorForm.addEventListener("input", event => {
     if (["to", "cc", "bcc", "subject", "body", "author", "formatted"].includes(event.target.name)) markDraftEdited();
   });

@@ -201,6 +201,10 @@ CI 用两个独立 Harbor Mail 实例，验证默认中继、按域中继和跨�
 
 ## 存储上限
 
+SMTP Submission 的 587 和 465 监听器合用独立的进程预算。 `HARBOR_SUBMISSION_MAX_INFLIGHT` 默认 4，`HARBOR_SUBMISSION_MAX_MIB` 默认 64。每封邮件在读取正文前预留一个名额和单封大小上限对应的字节数。预算用完时返回 SMTP 451，客户端可稍后重试。字节预算须至少等于 `HARBOR_MAX_MESSAGE_MIB`。公网收信继续使用独立的 `HARBOR_INBOUND_*` 预算。
+
+升级后会后台逐封回填历史邮件的 POP3 字节数。回填期间旧邮件仍可访问，完成后 POP3 登录只返回尺寸和邮件标识。大库升级后可在回填期间观察数据库读写与磁盘负载。
+
 为数据挂载独立且容量固定的文件系统，例如 LVM 逻辑卷或云盘。将挂载写入主机的持久配置，并为 Compose 启动服务设置相应的 systemd `RequiresMountsFor=`。启动前用 `findmnt --mountpoint` 检查挂载来源，避免主机重启后数据被写入根分区。备份放在另一块文件系统，并保留异地副本。
 
 单文件与 Compose 的服务模板均保留 125 秒停机宽限。超过期限或进程异常退出时，发件箱继续用持久化状态和租约恢复。
@@ -232,6 +236,8 @@ MySQL Compose 部署同时启动 Redis，运行在 Harbor Mail 专用内部网�
 
 原生部署可设置 `HARBOR_METRICS=127.0.0.1:9091`。Compose 在主机回环发布端口，可用 `HARBOR_METRICS_PORT` 调整。指标不含账号标识或邮件字段。每次抓取有三秒数据库查询期限。保持此端口在可信监控网络内。
 
+`harbor_submission_active_messages` 和 `harbor_submission_reserved_bytes` 分别表示每个实例的 Submission 处理中邮件数和预留字节数，包含 587 和 465。 `harbor_submission_capacity_deferred_total` 只累计因处理预算不足而返回的 SMTP 451。查看该计数器的增长可判断 Submission 是否因达到预算而需要客户端重试。
+
 用同主机 Prometheus 加载 `prometheus.example.yaml` 与 `prometheus-rules.yaml`，另接入已有 Alertmanager 和通知渠道。让 node_exporter 在回环监听 9100，并设置 `--collector.textfile.directory=/var/lib/node_exporter/textfile`。如果修改挂载或指标端口，同时调整抓取配置或规则。确认 Prometheus 能看到预期文件系统序列。多实例共享 MySQL 时，队列指标为同库视图，仪表板按数据库取最大值，避免累加。
 
 | 信号 | 起始阈值与处置 |
@@ -251,6 +257,8 @@ MySQL Compose 部署同时启动 Redis，运行在 Harbor Mail 专用内部网�
 在仓库根目录运行 `promtool test rules ops/prometheus-rules.test.yaml`，验证告警规则的触发和恢复。 [Prometheus 规则测试](https://prometheus.io/docs/prometheus/latest/configuration/unit_testing_rules/)
 
 ### 公网入口与证书监控
+
+先确认站点承诺提供的客户端协议。Compose 部署核对监听环境变量、端口映射及宿主机和云防火墙。systemd 部署核对实际监听地址及 TCP 转发。 `HARBOR_SUBMISSIONS` 控制隐式 TLS Submission（通常为 465），`HARBOR_POP3S` 控制 POP3S（通常为 995）。网页的客户端配置只列出已配置的监听协议。若协议仅用于内部访问，应把公开端口配置和外部文档与实际入口对应。最后从独立外部网络完成握手核验。
 
 在能代表用户接入路径的监控主机运行 Blackbox Exporter。以下示例使用与 Prometheus 同主机的回环地址。探测接口接受目标地址参数，应仅对可信监控网络开放。 [Blackbox Exporter](https://github.com/prometheus/blackbox_exporter/tree/v0.29.1)
 
@@ -401,6 +409,19 @@ mv -T -- /var/lib/node_exporter/textfile/harbor-backup.tmp /var/lib/node_exporte
 ```
 
 另外加密备份部署环境、账号与别名配置、应用及中继凭据、TLS PEM 或 ACME 缓存、代理配置。ACME 缓存内含私钥，须限制访问。Rspamd 训练数据按其后端的备份流程处理，数据库中的反馈状态无法替代已训练的数据。不要在异地副本报告或监控标签里写凭据。
+
+### 使用 latest 升级单实例 MySQL Compose
+
+已运行的 Compose 项目若使用同项目的 `mysql` 服务，并在最后加载的 `compose.server.yaml` 中使用 `ghcr.io/makessr/harbormail:latest`，可以从原部署目录运行：
+
+```sh
+sudo bash ops/upgrade-compose.sh --check "$VERSION" "$HEALTH_URL"
+sudo bash ops/upgrade-compose.sh "$VERSION" "$HEALTH_URL"
+```
+
+`VERSION` 是 `latest` 应报告的发行版本，例如 `v0.2.22`。`HEALTH_URL` 使用站点的 HTTPS `/healthz` 地址。项目名默认 `harbor-mail`，备份父目录默认 `/root`，可通过 `HARBOR_UPGRADE_PROJECT` 和 `HARBOR_UPGRADE_BACKUP_DIR` 指定。主机需提供 Bash、Docker Compose、Python 3、curl、flock、tar、gzip 和 sha256sum，MySQL 容器使用官方镜像的 `MYSQL_ROOT_PASSWORD_FILE` 配置。
+
+`--check` 检查当前服务与部署配置，无需拉取目标镜像。执行升级时，脚本为正在运行的镜像保留本地回滚标签，再拉取 `latest` 并核对版本。如果镜像 ID 已在运行则结束。否则校验配置、数据卷和 MySQL 转储备份，再仅重建 `harbor` 服务。若新容器验证失败，脚本将本地 `latest` 指回旧镜像并重新启动 Harbor。Compose 文件始终使用 `latest`。跨版本升级前仍需核对数据库迁移的回退兼容性。数据库恢复遵循下文的隔离恢复流程。
 
 ## 恢复与校验
 

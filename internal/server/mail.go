@@ -40,6 +40,7 @@ type app struct {
 	spamScanner         *rspamdScanner
 	scanPolicy          inboundScanPolicy
 	inbound             inboundCapacity
+	submissions         inboundCapacity
 	sizes               mailSizeLimits
 	spamTrainer         *rspamdTrainer
 	sharedMailboxEvents bool
@@ -119,10 +120,10 @@ func insertLetter(tx *sql.Tx, owner string, m letter, folder, origin string, raw
 			m.Body, _ = renderRichCompose(m.Body)
 		}
 	}
-	result, err := tx.Exec(`INSERT INTO letters(owner,sender,recipient,subject,body,stamp,folder,origin,seen,star,raw,detail_meta)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, owner, strings.ToValidUTF8(m.wireFrom(), "\uFFFD"), m.To,
+	result, err := tx.Exec(`INSERT INTO letters(owner,sender,recipient,subject,body,stamp,folder,origin,seen,star,raw,detail_meta,pop_octets)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, owner, strings.ToValidUTF8(m.wireFrom(), "\uFFFD"), m.To,
 		strings.ToValidUTF8(m.Subject, "\uFFFD"), strings.ToValidUTF8(m.Body, "\uFFFD"),
-		m.Date, folder, origin, m.Read || folder == "sent", m.Star, raw, detail)
+		m.Date, folder, origin, m.Read || folder == "sent", m.Star, raw, detail, popOctets(raw))
 	if err != nil {
 		return 0, err
 	}

@@ -88,16 +88,24 @@ const recipientProgressLabels = {
 function renderDeliveryTimeline(events) {
   const details = byId("delivery-timeline");
   details.hidden = !events?.length;
+  const routeLabels = { mx: "收件服务器已接收", relay: "中继服务器已接收" };
   const labels = { ...recipientProgressLabels, enqueued: "加入发件箱", local_delivered: "站内投递完成",
-    sent: "外部投递完成", retry_requested: "管理员安排重试" };
-  byId("delivery-timeline-items").replaceChildren(...(events || []).map(({state, address, at, due, code}) => {
+    sent: "外部投递已确认", retry_requested: "管理员安排重试" };
+  const accepts = new Set();
+  byId("delivery-timeline-items").replaceChildren(...(events || []).map(({state, address, at, due, code, route}) => {
     const row = document.createElement("li");
-    const fields = [fullDate.format(at * 1000), labels[state] || state, address];
+    const accepted = state === "accepted" || state === "sent";
+    const label = accepted && routeLabels[route] || labels[state] || state;
+    if (accepted) accepts.add(label);
+    const fields = [fullDate.format(at * 1000), label, address];
     if (code) fields.push("SMTP " + code);
     if (due && state !== "enqueued") fields.push("下次尝试 " + fullDate.format(due * 1000));
     row.textContent = fields.filter(Boolean).join(" · ");
     return row;
   }));
+  const summary = byId("delivery-acceptance");
+  summary.hidden = accepts.size === 0;
+  summary.textContent = summary.hidden ? "" : [...accepts].join("、") + "。接收确认无法判断邮件进入收件箱还是垃圾箱。";
 }
 
 function renderOutboxRecipients(delivery) {

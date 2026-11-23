@@ -217,6 +217,12 @@ docker compose up -d
 
 本地回归执行 `go test ./...`。修改 Tailwind 样式后，用 `npm ci && npm run build:ui` 生成前端样式。 [GitHub CI](https://github.com/makessr/HarborMail/actions/workflows/verify.yaml)
 
+修改协议、邮件存储或投递流程时，参考[开发与验证](docs/development.md)。SMTP Submission 的并发和内存预算、POP3 历史邮件尺寸回填及客户端端口核对见[生产运行手册](ops/README.md)。安全问题请通过[安全报告入口](SECURITY.md)提交。
+
+Submission 容量计数可从 Prometheus 指标读取。MySQL 上，已有 UID 的 IMAP 文件夹使用只读一致性快照，缺失 UID 时仍由现有分配器补齐。
+
+[v0.2.23 发行说明](docs/releases/v0.2.23.md)涵盖邮箱两步验证、投递路径显示、邮件协议优化以及使用 `latest` 的升级流程。
+
 ## 许可证
 
 Harbor Mail 自有代码采用 [Apache-2.0](LICENSE)。第三方组件按各自条款分发。 [第三方许可声明](THIRD_PARTY_NOTICES.md)

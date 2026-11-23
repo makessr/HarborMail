@@ -27,33 +27,35 @@ type webPushService struct {
 func (a *app) loadWebPushKeys(ctx context.Context) (*webPushService, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	tx, err := a.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback()
-	if err := lockIMAPUIDs(ctx, tx); err != nil {
-		return nil, err
-	}
 	keys := &webPushService{client: &http.Client{
 		Timeout: 5 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
 	}}
-	err = tx.QueryRowContext(ctx, `SELECT private_key,public_key FROM web_push_identity WHERE id=1`).
-		Scan(&keys.privateKey, &keys.publicKey)
-	if errors.Is(err, sql.ErrNoRows) {
-		keys.privateKey, keys.publicKey, err = webpush.GenerateVAPIDKeys()
-		if err == nil {
-			_, err = tx.ExecContext(ctx, `INSERT INTO web_push_identity(id,private_key,public_key) VALUES(1,?,?)`,
-				keys.privateKey, keys.publicKey)
-		}
+	const get = `SELECT private_key,public_key FROM web_push_identity WHERE id=1`
+	if err := a.db.QueryRowContext(ctx, get).Scan(&keys.privateKey, &keys.publicKey); err == nil {
+		return keys, nil
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
 	}
+	privateKey, publicKey, err := webpush.GenerateVAPIDKeys()
 	if err != nil {
 		return nil, err
 	}
-	return keys, tx.Commit()
+	insert := `INSERT INTO web_push_identity(id,private_key,public_key) VALUES(1,?,?)`
+	if a.dbDriver == "mysql" {
+		insert += " ON DUPLICATE KEY UPDATE id=id"
+	} else {
+		insert += " ON CONFLICT(id) DO NOTHING"
+	}
+	if _, err := a.db.ExecContext(ctx, insert, privateKey, publicKey); err != nil {
+		return nil, err
+	}
+	if err := a.db.QueryRowContext(ctx, get).Scan(&keys.privateKey, &keys.publicKey); err != nil {
+		return nil, err
+	}
+	return keys, nil
 }
 
 func validWebPushEndpoint(endpoint string) bool {

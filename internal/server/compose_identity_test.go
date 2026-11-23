@@ -148,12 +148,13 @@ func testAliasAndRichDraft(t *testing.T, driver, source string) {
 	}
 	select {
 	case received := <-captured:
+		assertFrom(received)
 		verifyTestDKIM(t, received, "alias.test", selector, public)
 	default:
 		t.Fatal("SMTP message not received")
 	}
 	events, err = readDeliveryTimeline(t.Context(), db, owner, external)
-	if err != nil || len(events) != 3 || events[0].State != "sent" || events[0].Code != 250 ||
+	if err != nil || len(events) != 3 || events[0].State != "sent" || events[0].Code != 250 || events[0].Route != "relay" ||
 		events[0].Address != prefix+"@outside.test" {
 		t.Fatalf("missing relay acceptance timeline: %+v, %v", events, err)
 	}

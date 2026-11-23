@@ -122,7 +122,7 @@ func (a *app) createBrowserSession(r *http.Request, owner string, digest, verifi
 	if err := a.checkPrimaryPassword(ctx, tx, owner, verified); err != nil {
 		return err
 	}
-	if err := a.consumeAdminMFA(ctx, tx, owner, mfaCode, now); err != nil {
+	if err := a.consumeBrowserMFA(ctx, tx, owner, mfaCode, now); err != nil {
 		return err
 	}
 	expires := now.Add(sessionAge).Unix()

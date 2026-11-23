@@ -216,6 +216,16 @@ func (a *app) imapSnapshot(owner, folder string) ([]imapMessage, uint32, uint32,
 func (a *app) imapSnapshotContext(ctx context.Context, owner, folder string) (messages []imapMessage, validity, next uint32, err error) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
+	if a.dbDriver == "mysql" {
+		messages, validity, next, err = a.readIMAPSnapshot(ctx, owner, folder)
+		if !errors.Is(err, errIMAPMissingUID) {
+			return messages, validity, next, err
+		}
+	}
+	return a.imapSnapshotWithUIDAssignment(ctx, owner, folder)
+}
+
+func (a *app) imapSnapshotWithUIDAssignment(ctx context.Context, owner, folder string) (messages []imapMessage, validity, next uint32, err error) {
 	tx, err := a.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, 0, 0, err
@@ -249,10 +259,45 @@ func (a *app) imapSnapshotContext(ctx context.Context, owner, folder string) (me
 	return messages, validity, next, nil
 }
 
+var errIMAPMissingUID = errors.New("mailbox contains messages without IMAP UIDs")
+
+func (a *app) readIMAPSnapshot(ctx context.Context, owner, folder string) ([]imapMessage, uint32, uint32, error) {
+	// The folder, UID counter and messages must come from the same view even
+	// when the database defaults to READ COMMITTED.
+	tx, err := a.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	defer tx.Rollback()
+	if err := verifyFolder(ctx, tx, owner, folder); err != nil {
+		return nil, 0, 0, err
+	}
+	var validity, next uint32
+	if err := tx.QueryRowContext(ctx, `SELECT validity,next_uid FROM imap_uid_state WHERE id=1`).Scan(&validity, &next); err != nil {
+		return nil, 0, 0, err
+	}
+	messages, err := queryIMAPSnapshotMessages(ctx, tx, owner, folder, true)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, 0, 0, err
+	}
+	return messages, validity, next, nil
+}
+
 func queryIMAPMessages(ctx context.Context, tx *sql.Tx, owner, folder string) ([]imapMessage, error) {
+	return queryIMAPSnapshotMessages(ctx, tx, owner, folder, false)
+}
+
+func queryIMAPSnapshotMessages(ctx context.Context, tx *sql.Tx, owner, folder string, requireUIDs bool) ([]imapMessage, error) {
+	join := "JOIN"
+	if requireUIDs {
+		join = "LEFT JOIN"
+	}
 	rows, err := tx.QueryContext(ctx, `SELECT l.id,l.stamp,l.seen,l.star,length(l.raw),u.uid,
 		CASE WHEN d.uid IS NULL THEN 0 ELSE 1 END
-		FROM letters l JOIN imap_uids u ON u.letter_id=l.id AND u.folder=l.folder
+		FROM letters l `+join+` imap_uids u ON u.letter_id=l.id AND u.folder=l.folder
 		LEFT JOIN imap_deleted d ON d.letter_id=l.id AND d.uid=u.uid
 		WHERE l.owner=? AND l.folder=? ORDER BY u.uid`, owner, folder)
 	if err != nil {
@@ -262,11 +307,16 @@ func queryIMAPMessages(ctx context.Context, tx *sql.Tx, owner, folder string) ([
 	var messages []imapMessage
 	for rows.Next() {
 		var msg imapMessage
+		var uid sql.Null[uint32]
 		var stamp int64
 		var seen, star, deleted bool
-		if err := rows.Scan(&msg.id, &stamp, &seen, &star, &msg.Size, &msg.Uid, &deleted); err != nil {
+		if err := rows.Scan(&msg.id, &stamp, &seen, &star, &msg.Size, &uid, &deleted); err != nil {
 			return nil, err
 		}
+		if !uid.Valid {
+			return nil, errIMAPMissingUID
+		}
+		msg.Uid = uid.V
 		msg.Date = time.Unix(stamp, 0).UTC()
 		msg.Flags = mailboxFlags(seen, star, deleted, folder == "drafts")
 		messages = append(messages, msg)

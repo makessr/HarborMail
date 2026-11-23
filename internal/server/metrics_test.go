@@ -49,6 +49,10 @@ func TestMetricsCountUnresolvedMessages(t *testing.T) {
 	exec(`UPDATE outbox SET state='failed' WHERE state='uncertain' OR id IN (2,6,7)`)
 	exec(`UPDATE outbox_recipient_progress SET state='accepted' WHERE outbox_id IN (2,3)`)
 	exec(`UPDATE spam_feedback SET state='queued'`)
+	if !a.submissions.beginMessage(mailLimit) || a.submissions.beginMessage(defaultInboundLimits.bytes) {
+		t.Fatal("expected one Submission reservation and one deferral")
+	}
+	defer a.submissions.endMessage(mailLimit)
 	result := httptest.NewRecorder()
 	a.metrics(result, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	if result.Code != http.StatusOK {
@@ -61,6 +65,10 @@ func TestMetricsCountUnresolvedMessages(t *testing.T) {
 		"harbor_spam_training_failed_samples 0\n",
 		"harbor_dkim_active_domains 0\n",
 		"harbor_dkim_unusable_domains 0\n",
+		"harbor_submission_active_messages 1\n",
+		"harbor_submission_reserved_bytes 10485760\n",
+		"harbor_submission_capacity_deferred_total 1\n",
+		"harbor_inbound_capacity_deferred_total 0\n",
 	} {
 		if !strings.Contains(result.Body.String(), metric) {
 			t.Errorf("metrics missing %q: %s", metric, result.Body)

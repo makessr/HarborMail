@@ -236,7 +236,7 @@ func suspendAndRevokeMailbox(ctx context.Context, tx *sql.Tx, owner string) erro
 }
 
 var mailboxOwnedSettings = []string{"contacts", "custom_folders", "mail_rules", "mail_labels", "mail_templates",
-	"mailbox_preferences", "mailbox_send_delay", "mailbox_storage_alerts", "signature_settings", "saved_searches",
+	"mailbox_mfa", "mailbox_preferences", "mailbox_send_delay", "mailbox_storage_alerts", "signature_settings", "saved_searches",
 	"account_password_overrides", "managed_admin_roles", "draft_creation_keys", "mail_threads", "spam_feedback"}
 
 func purgeRetiredMailbox(ctx context.Context, tx *sql.Tx, owner string) error {

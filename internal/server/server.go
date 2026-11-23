@@ -139,6 +139,10 @@ func Run() {
 		fmt.Println(string(hash))
 		return
 	}
+	runConfiguredServer(importOptions)
+}
+
+func runConfiguredServer(importOptions *imapImportOptions) {
 	if dir := os.Getenv("HARBOR_CHECK_DATA_DIR"); dir != "" {
 		if err := checkDataDir(dir); err != nil {
 			log.Fatal("HARBOR_CHECK_DATA_DIR is not writable: ", err)
@@ -156,12 +160,7 @@ func Run() {
 	if err := json.Unmarshal([]byte(accountJSON), &configured); err != nil || len(configured) == 0 {
 		log.Fatal("set HARBOR_ACCOUNTS or HARBOR_ACCOUNTS_FILE to account JSON mapping email addresses to bcrypt hashes")
 	}
-	a := &app{accounts: make(map[string][]byte), domain: domain}
-	a.sizes, err = loadMailSizeLimits()
-	if err != nil {
-		log.Fatal(err)
-	}
-	a.inbound.limits, err = loadInboundLimits(a.messageLimit())
+	a, err := configureMailApp(domain, configured)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -214,14 +213,6 @@ func Run() {
 	a.scanPolicy, err = loadInboundScanPolicy(a.spamScanner != nil)
 	if err != nil {
 		log.Fatal(err)
-	}
-	for key, hash := range configured {
-		email, err := address(key)
-		_, hashErr := bcrypt.Cost([]byte(hash))
-		if err != nil || hashErr != nil || email != key || email != strings.ToLower(email) {
-			log.Fatal("invalid account address or bcrypt hash")
-		}
-		a.accounts[email] = []byte(hash)
 	}
 	admins, err := fileSetting("HARBOR_ADMINS")
 	if err != nil {
@@ -295,7 +286,7 @@ func Run() {
 		log.Fatal(err)
 	}
 	if a.dkimCipher == nil && os.Getenv("HARBOR_DKIM_LOCAL_KEY_FILE") != "" && !a.recoveryMode {
-		log.Print("DKIM keys already exist; restore the original wrapping key")
+		log.Print("Protected DKIM or two-factor data already exists; restore the original wrapping key")
 	}
 	if driver == "mysql" {
 		limiter := &mysqlLoginLimiter{db: a.db}
@@ -380,6 +371,29 @@ func Run() {
 	if err := a.serve(ctx, transportTLS); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func configureMailApp(domain string, configured map[string]string) (*app, error) {
+	a := &app{accounts: make(map[string][]byte, len(configured)), domain: domain}
+	var err error
+	if a.sizes, err = loadMailSizeLimits(); err != nil {
+		return nil, err
+	}
+	if a.inbound.limits, err = loadInboundLimits(a.messageLimit()); err != nil {
+		return nil, err
+	}
+	if a.submissions.limits, err = loadSMTPProcessingLimits("HARBOR_SUBMISSION", a.messageLimit()); err != nil {
+		return nil, err
+	}
+	for key, hash := range configured {
+		email, err := address(key)
+		_, hashErr := bcrypt.Cost([]byte(hash))
+		if err != nil || hashErr != nil || email != key || email != strings.ToLower(email) {
+			return nil, errors.New("invalid account address or bcrypt hash")
+		}
+		a.accounts[email] = []byte(hash)
+	}
+	return a, nil
 }
 
 func (a *app) serve(ctx context.Context, transportTLS inboundTLS) error {
@@ -488,6 +502,11 @@ func (a *app) startMailServices(runtime *serviceRuntime, tlsConfig *tls.Config) 
 	runtime.worker(a.runSnoozes)
 	runtime.worker(a.runLoginAudit)
 	runtime.worker(func(ctx context.Context) {
+		if err := a.backfillPOPOctets(ctx); err != nil && ctx.Err() == nil {
+			log.Print("index existing POP3 message sizes: ", err)
+		}
+	})
+	runtime.worker(func(ctx context.Context) {
 		if err := a.backfillThreads(ctx); err != nil && ctx.Err() == nil {
 			log.Print("index existing mail conversations: ", err)
 		}
@@ -560,7 +579,7 @@ func (a *app) login(w http.ResponseWriter, r *http.Request) {
 	if err := a.createBrowserSession(r, owner, digest[:], verifiedHash, input.Code); err != nil {
 		if errors.Is(err, errAdminMFA) {
 			a.recordLogin(source, owner, "failed", "web")
-			fail(w, http.StatusPreconditionRequired, "请输入有效的管理员验证码或未使用的恢复码")
+			fail(w, http.StatusPreconditionRequired, "请输入有效的两步验证码或未使用的恢复码")
 			return
 		}
 		if errors.Is(err, errAccountSuspended) || errors.Is(err, errPrimaryPasswordChanged) {
@@ -695,6 +714,10 @@ func (a *app) routes() http.Handler {
 		a.replySession(w, r, owner)
 	}))
 	mux.HandleFunc("POST /api/logout", a.auth(a.logout))
+	mux.HandleFunc("GET /api/two-factor", a.auth(a.mailboxMFAStatus))
+	mux.HandleFunc("POST /api/two-factor/setup", a.auth(a.prepareMailboxMFA))
+	mux.HandleFunc("POST /api/two-factor", a.auth(a.enableMailboxMFA))
+	mux.HandleFunc("DELETE /api/two-factor", a.auth(a.disableMailboxMFA))
 	mux.HandleFunc("GET /api/events", a.auth(a.streamMailboxEvents))
 	mux.HandleFunc("GET /api/web-sessions", a.auth(a.listBrowserSessions))
 	mux.HandleFunc("DELETE /api/web-sessions", a.auth(a.revokeOtherBrowserSessions))
@@ -715,13 +738,13 @@ func (a *app) routes() http.Handler {
 	mux.HandleFunc("GET /api/templates", a.auth(a.getMailTemplates))
 	mux.HandleFunc("PUT /api/templates", a.auth(a.putMailTemplates))
 	mux.HandleFunc("GET /api/preferences", a.auth(a.getMailboxPreferences))
+	mux.HandleFunc("GET /api/web-push", a.auth(a.webPushStatus))
+	mux.HandleFunc("PUT /api/web-push", a.auth(a.updateWebPush))
+	mux.HandleFunc("DELETE /api/web-push", a.auth(a.disableWebPush))
 	mux.HandleFunc("PUT /api/preferences", a.auth(a.putMailboxPreferences))
 	mux.HandleFunc("GET /api/saved-searches", a.auth(a.listSavedSearches))
 	mux.HandleFunc("POST /api/saved-searches", a.auth(a.saveSearch))
 	mux.HandleFunc("PUT /api/saved-searches/{id}", a.auth(a.saveSearch))
-	mux.HandleFunc("GET /api/web-push", a.auth(a.webPushStatus))
-	mux.HandleFunc("PUT /api/web-push", a.auth(a.updateWebPush))
-	mux.HandleFunc("DELETE /api/web-push", a.auth(a.disableWebPush))
 	mux.HandleFunc("DELETE /api/saved-searches/{id}", a.auth(a.deleteSavedSearch))
 	mux.HandleFunc("GET /api/labels", a.auth(a.listMailLabels))
 	mux.HandleFunc("POST /api/labels", a.auth(a.saveMailLabel))

@@ -178,7 +178,8 @@ func (s *popSession) login(password string) (bool, error) {
 func (a *app) popSnapshot(owner string) ([]popMessage, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	rows, err := a.db.QueryContext(ctx, `SELECT id, raw FROM letters WHERE owner=? AND folder='inbox' ORDER BY id`, owner)
+	rows, err := a.db.QueryContext(ctx, `SELECT id,pop_octets,CASE WHEN pop_octets IS NULL THEN raw END
+		FROM letters WHERE owner=? AND folder='inbox' ORDER BY id`, owner)
 	if err != nil {
 		return nil, err
 	}
@@ -186,14 +187,40 @@ func (a *app) popSnapshot(owner string) ([]popMessage, error) {
 	var messages []popMessage
 	for rows.Next() {
 		var m popMessage
-		var raw sql.RawBytes
-		if err := rows.Scan(&m.id, &raw); err != nil {
+		var size sql.NullInt64
+		var legacyRaw sql.RawBytes
+		if err := rows.Scan(&m.id, &size, &legacyRaw); err != nil {
 			return nil, err
 		}
-		m.size = popOctets(raw)
+		m.size = size.Int64
+		if !size.Valid {
+			m.size = popOctets(legacyRaw)
+		}
 		messages = append(messages, m)
 	}
 	return messages, rows.Err()
+}
+
+func (a *app) backfillPOPOctets(ctx context.Context) error {
+	var after int64
+	for {
+		// Read one message at a time and release the connection before updating it.
+		var id int64
+		var raw []byte
+		err := a.db.QueryRowContext(ctx, `SELECT id,raw FROM letters
+			WHERE id>? AND pop_octets IS NULL ORDER BY id LIMIT 1`, after).Scan(&id, &raw)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if _, err := a.db.ExecContext(ctx, `UPDATE letters SET pop_octets=?
+			WHERE id=? AND pop_octets IS NULL AND raw=COALESCE(?,X'')`, popOctets(raw), id, raw); err != nil {
+			return err
+		}
+		after = id
+	}
 }
 
 // POP3 sizes include CRLF line endings but exclude dot escaping and the terminator.

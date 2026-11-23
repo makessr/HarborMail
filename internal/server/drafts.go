@@ -108,8 +108,8 @@ func (a *app) saveWebDraft(w http.ResponseWriter, r *http.Request, owner string,
 		return
 	}
 	if existing {
-		if _, err := tx.ExecContext(ctx, `UPDATE letters SET sender=?,recipient=?,subject=?,body=?,stamp=?,raw=?,detail_meta=NULL
-			WHERE id=? AND owner=? AND folder='drafts'`, m.wireFrom(), m.To, m.Subject, m.Body, m.Date, raw, id, owner); letterError(w, err) {
+		if _, err := tx.ExecContext(ctx, `UPDATE letters SET sender=?,recipient=?,subject=?,body=?,stamp=?,raw=?,detail_meta=NULL,pop_octets=?
+			WHERE id=? AND owner=? AND folder='drafts'`, m.wireFrom(), m.To, m.Subject, m.Body, m.Date, raw, popOctets(raw), id, owner); letterError(w, err) {
 			return
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM web_letter_recipients WHERE letter_id=?`, id); letterError(w, err) {

@@ -194,7 +194,7 @@ func (a *app) adminCreateAccount(w http.ResponseWriter, r *http.Request, actor s
 func (a *app) priorMailboxExists(ctx context.Context, tx *sql.Tx, email string) (bool, error) {
 	tables := []string{
 		"account_access", "letters", "sessions", "web_session_details", "app_passwords", "custom_folders",
-		"contacts", "mail_rules", "mail_labels", "mailbox_preferences",
+		"contacts", "mail_rules", "mail_labels", "mailbox_preferences", "mailbox_mfa",
 		"signature_settings", "mail_templates", "saved_searches", "mailbox_send_delay", "managed_aliases",
 		"draft_creation_keys", "mail_threads", "account_password_overrides", "mailbox_storage_alerts", "mailbox_quota", "mailbox_retirements",
 	}

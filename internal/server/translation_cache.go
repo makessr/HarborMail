@@ -61,12 +61,15 @@ func (a *app) storeTranslation(ctx context.Context, key translationCacheKey, sub
 		return err
 	}
 	defer tx.Rollback()
-	// Serialize with mail deletion, draft changes and mailbox moves after the external call.
-	if err := lockIMAPUIDs(ctx, tx); err != nil {
+	// Revalidate and lock only the source letter on MySQL after the external call.
+	queryLetter := `SELECT id FROM letters WHERE id=? AND owner=? AND folder<>'drafts' AND subject=? AND raw=?`
+	if a.dbDriver == "mysql" {
+		queryLetter += " FOR UPDATE"
+	} else if err := lockIMAPUIDs(ctx, tx); err != nil {
 		return err
 	}
 	var id int64
-	if err := tx.QueryRowContext(ctx, `SELECT id FROM letters WHERE id=? AND owner=? AND folder<>'drafts' AND subject=? AND raw=?`,
+	if err := tx.QueryRowContext(ctx, queryLetter,
 		key.id, key.owner, subject, raw).Scan(&id); err != nil {
 		return err
 	}

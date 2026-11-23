@@ -31,19 +31,20 @@ type deliveryStatus struct {
 }
 
 type outboxJob struct {
-	tracked      bool
-	message      letter
-	raw          []byte
-	claim        string
-	attempts     int
-	sendAt       int64
-	localOwner   string
-	envelope     *webEnvelope
-	localDone    bool
-	dkimPrepared bool
-	dkimHeader   string
-	dkimErr      error
-	smtpCode     int
+	tracked       bool
+	message       letter
+	raw           []byte
+	claim         string
+	attempts      int
+	sendAt        int64
+	localOwner    string
+	envelope      *webEnvelope
+	localDone     bool
+	dkimPrepared  bool
+	dkimHeader    string
+	dkimErr       error
+	smtpCode      int
+	deliveryRoute string
 }
 
 func (job *outboxJob) singleRecipient() string {
@@ -349,6 +350,7 @@ func (a *app) processOutboxForRecipient(job *outboxJob, connect recipientConnect
 		return a.resolveOutboxError(job, err, true)
 	}
 	job.smtpCode = 250
+	job.deliveryRoute = client.route
 	return a.finishOutbox(job, "sent", "", 0)
 }
 
@@ -430,7 +432,7 @@ func (a *app) finishOutbox(job *outboxJob, state, reason string, due int64) erro
 	if err != nil || count != 1 {
 		return err
 	}
-	if err := recordDeliveryEvent(tx, m.From, m.ID, job.singleRecipient(), state, job.smtpCode, due); err != nil {
+	if err := recordDeliveryEventWithRoute(tx, m.From, m.ID, job.singleRecipient(), state, job.smtpCode, due, job.deliveryRoute); err != nil {
 		return err
 	}
 	switch state {

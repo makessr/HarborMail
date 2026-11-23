@@ -59,6 +59,10 @@ func (a *app) metrics(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "# TYPE harbor_inbound_reserved_bytes gauge\nharbor_inbound_reserved_bytes %d\n", inbound.bytes)
 	fmt.Fprintf(w, "# TYPE harbor_inbound_active_scans gauge\nharbor_inbound_active_scans %d\n", inbound.scans)
 	fmt.Fprintf(w, "# TYPE harbor_inbound_capacity_deferred_total counter\nharbor_inbound_capacity_deferred_total %d\n", inbound.deferred)
+	submission := a.submissions.snapshot()
+	fmt.Fprintf(w, "# TYPE harbor_submission_active_messages gauge\nharbor_submission_active_messages %d\n", submission.messages)
+	fmt.Fprintf(w, "# TYPE harbor_submission_reserved_bytes gauge\nharbor_submission_reserved_bytes %d\n", submission.bytes)
+	fmt.Fprintf(w, "# TYPE harbor_submission_capacity_deferred_total counter\nharbor_submission_capacity_deferred_total %d\n", submission.deferred)
 }
 
 func (a *app) dkimKeyCounts(ctx context.Context) (active, unusable int, err error) {

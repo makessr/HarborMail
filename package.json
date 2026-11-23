@@ -2,10 +2,12 @@
   "name": "harbor-mail-ui",
   "private": true,
   "scripts": {
-    "build:ui": "tailwindcss -i ./ui/harbor.css -o ./web/harbor-ui.css --minify"
+    "build:ui": "tailwindcss -i ./ui/harbor.css -o ./web/harbor-ui.css --minify",
+    "test:web": "node .github/scripts/test-web.mjs"
   },
   "devDependencies": {
     "@tailwindcss/cli": "4.3.5",
+    "playwright": "1.65.1",
     "tailwindcss": "4.3.5"
   }
 }

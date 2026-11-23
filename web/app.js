@@ -43,6 +43,7 @@ let mailMessageMiB = 10;
 const attachmentLimitMessage = () => "每封邮件最多添加 10 个附件，合计不超过 " + attachmentSizeLimit / 1048576 + " MiB。";
 const customFolders = new Map();
 const mailMenu = installNavigationDrawer("mail", byId("mail-rail"));
+installMailListResize(byId("mailbox"), byId("mail-rail"));
 const folderDialog = byId("folder-dialog");
 const folderForm = byId("folder-form");
 const rulesDialog = byId("rules-dialog");
@@ -115,6 +116,7 @@ function showLogin() {
   byId("app-password-secret").value = "";
   if (byId("app-passwords-dialog").open) byId("app-passwords-dialog").close();
   if (byId("web-sessions-dialog").open) byId("web-sessions-dialog").close();
+  resetTwoFactor();
   if (byId("mail-transfer-dialog").open) byId("mail-transfer-dialog").close();
   if (filterDialog.open) filterDialog.close();
   setBatchMode(false);
@@ -131,6 +133,7 @@ async function openSession({ email, role, recoveryMode = false, attachmentMiB = 
     return;
   }
   state.recoveryMode = recoveryMode;
+  byId("show-two-factor").disabled = recoveryMode;
   state.canTranslate = configureLetterTranslation(translationProviders ?? (canTranslate ? ["microsoft"] : []), !recoveryMode);
   attachmentSizeLimit = attachmentMiB * 1048576;
   mailMessageMiB = messageMiB;
@@ -588,15 +591,8 @@ function renderLetter(item) {
   folderLabel.textContent = mailFolderName(item.folder);
   folderLabel.hidden = !item.folder;
   renderSenderSummary(item);
-  byId("sender").textContent = item.from || "退信";
+  renderLetterAddresses(item);
   byId("add-sender").hidden = !item.senderAddress || ["sent", "drafts", "junk"].includes(item.folder);
-  byId("recipient").textContent = item.to;
-  for (const field of ["cc", "bcc"]) {
-    const value = item[field] || "";
-    const cell = byId("letter-" + field);
-    cell.textContent = value;
-    cell.hidden = byId("letter-" + field + "-label").hidden = !value;
-  }
   const timestamp = new Date(item.date * 1000);
   const time = byId("letter-time");
   time.dateTime = timestamp.toISOString();
@@ -1280,12 +1276,13 @@ function setupMailRules() {
 }
 
 setupMailRules();
-const profile = document.querySelector(".profile");
-profile.addEventListener("toggle", () => {
-  if (profile.open) return;
-  const group = profile.querySelector(".profile-group[open]");
-  if (group) group.open = false;
-});
+for (const menu of document.querySelectorAll(".profile, #letter-actions")) {
+  menu.addEventListener("toggle", () => {
+    if (menu.open) return;
+    const group = menu.querySelector(".disclosure[open]");
+    if (group) group.open = false;
+  });
+}
 byId("letter-actions").addEventListener("click", event => {
   if (!event.target.closest(".letter-menu :is(button, a)")) return;
   const menu = event.currentTarget;

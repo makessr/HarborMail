@@ -166,6 +166,14 @@ func TestDirectMXOutboxAcknowledgements(t *testing.T) {
 			if err != nil || got != tt.want {
 				t.Fatalf("state %s, want %s (%v)", got, tt.want, err)
 			}
+			events, err := readDeliveryTimeline(t.Context(), db, m.From, id)
+			wantRoute := ""
+			if tt.want == "sent" {
+				wantRoute = "mx"
+			}
+			if err != nil || len(events) == 0 || events[0].Route != wantRoute {
+				t.Fatalf("delivery route: %+v, want %q (%v)", events, wantRoute, err)
+			}
 		})
 	}
 }
@@ -245,6 +253,11 @@ func TestDirectMXWebmailRoutesEachRecipient(t *testing.T) {
 		case <-wait.C:
 			t.Fatal("worker never finalized both deliveries")
 		}
+	}
+	var accepted int
+	if err := db.QueryRow("SELECT COUNT(*) FROM delivery_events WHERE owner=? AND state='accepted' AND route='mx'", sender).
+		Scan(&accepted); err != nil || accepted != 2 {
+		t.Fatalf("direct acceptance events: got %d, want 2 (%v)", accepted, err)
 	}
 }
 

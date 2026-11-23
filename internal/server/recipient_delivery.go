@@ -9,11 +9,12 @@ import (
 )
 
 type recipientProgress struct {
-	Address  string `json:"address"`
-	State    string `json:"state"`
-	Attempts int    `json:"attempts"`
-	Due      int64  `json:"due"`
-	Code     int    `json:"code"`
+	deliveryRoute string
+	Address       string `json:"address"`
+	State         string `json:"state"`
+	Attempts      int    `json:"attempts"`
+	Due           int64  `json:"due"`
+	Code          int    `json:"code"`
 }
 
 type recipientQueryer interface {
@@ -141,6 +142,7 @@ func (a *app) sendToOneRecipient(ctx context.Context, job *outboxJob, item recip
 	if err := a.recordRecipientAttempt(job, item, "preparing", "sending", 0, 0); err != nil {
 		return err
 	}
+	item.deliveryRoute = client.route
 	return a.recordRecipientResult(job, item, data.Close(), true)
 }
 
@@ -190,7 +192,11 @@ func (a *app) recordRecipientAttempt(job *outboxJob, item recipientProgress, pha
 	if err := requireAffectedRow(result, err); err != nil {
 		return err
 	}
-	if err := recordDeliveryEvent(tx, job.message.From, job.message.ID, item.Address, state, code, due); err != nil {
+	route := ""
+	if state == "accepted" {
+		route = item.deliveryRoute
+	}
+	if err := recordDeliveryEventWithRoute(tx, job.message.From, job.message.ID, item.Address, state, code, due, route); err != nil {
 		return err
 	}
 	return a.commitMailbox(tx, job.message.From)

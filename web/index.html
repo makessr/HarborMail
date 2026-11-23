@@ -24,6 +24,7 @@
   <script src="/commands.js" defer></script>
   <script src="/draft-autosave.js" defer></script>
   <script src="/letter-sender.js" defer></script>
+  <script src="/two-factor.js" defer></script>
   <script src="/translation.js" defer></script>
   <script src="/app.js" defer></script>
   <script src="/compose-options.js" defer></script>
@@ -39,7 +40,7 @@
       <h1 class="brand"><img src="/harbor-mail-logo.png" alt="" width="64" height="64"> Harbor Mail</h1>
       <label>邮箱<input name="email" type="email" autocomplete="username" required></label>
       <label>密码<input name="password" type="password" autocomplete="current-password" required></label>
-      <label id="login-mfa-field" hidden>管理员验证码或恢复码<input name="code" type="text" autocomplete="one-time-code" maxlength="32" spellcheck="false"></label>
+      <label id="login-mfa-field" hidden>两步验证码或恢复码<input name="code" type="text" autocomplete="one-time-code" maxlength="32" spellcheck="false"></label>
       <p id="login-error" class="error" role="alert"></p>
       <button class="primary" type="submit">登录</button>
     </form>
@@ -96,6 +97,7 @@
           <details class="profile-group disclosure" name="profile-settings">
             <summary><svg class="glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#shield"></use></svg> 账号与安全</summary>
             <div class="profile-group-items">
+              <button id="show-two-factor" type="button" aria-haspopup="dialog"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#shield"></use></svg> 两步验证</button>
               <button id="show-web-sessions"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#device-line"></use></svg> 登录设备</button>
               <button id="show-app-passwords"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#key-2-line"></use></svg> 应用密码</button>
               <button id="show-client-settings" type="button" aria-haspopup="dialog"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#computer-line"></use></svg> 邮件客户端</button>
@@ -107,7 +109,7 @@
       <div class="project-links" aria-label="项目与作者"><a class="project-link" href="https://github.com/makessr/HarborMail" target="_blank" rel="noopener noreferrer" aria-label="在 GitHub 打开 Harbor Mail（新标签页）"><svg class="glyph" aria-hidden="true"><use href="/icons.svg#github-fill"></use></svg> GitHub</a><a class="project-author" href="https://github.com/makessr" target="_blank" rel="noopener noreferrer">作者 <strong>MakeSSR</strong></a></div>
     </aside>
 
-    <section class="index" aria-labelledby="folder-title">
+    <section id="mail-list-pane" class="index" aria-labelledby="folder-title">
       <header class="index-header">
         <div class="heading">
           <h1 id="folder-title" tabindex="-1">收件箱</h1>
@@ -150,6 +152,9 @@
       </div>
     </section>
 
+    <div id="mail-list-divider" class="mail-list-divider" role="separator" tabindex="0" aria-orientation="vertical"
+      aria-label="邮件列表宽度" aria-controls="mail-list-pane" aria-valuemin="245" aria-valuemax="600" aria-valuenow="350"
+      title="拖动或用方向键调整宽度，双击恢复默认"></div>
     <section class="reading" aria-label="阅读邮件">
       <div id="no-selection" class="no-selection">
         <svg class="glyph" aria-hidden="true"><use href="/icons.svg#mail-line"></use></svg>
@@ -216,18 +221,26 @@
                   <button id="purge-trash" type="button" hidden><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#delete-bin-6-line"></use></svg> <span>永久删除</span></button>
                 </div>
                 <div class="letter-menu-group">
-                  <button id="block-sender" type="button" aria-haspopup="dialog" hidden><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#forbid-line"></use></svg> <span>屏蔽发件地址</span></button>
-                  <button id="mark-junk" type="button"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#spam-2-line"></use></svg> <span>标记为垃圾邮件</span></button>
-                  <button id="flag-phishing" type="button" hidden><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#spam-2-line"></use></svg> <span>报告钓鱼邮件</span></button>
-                  <button id="filter-sender" type="button" aria-haspopup="dialog" hidden><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#search-line"></use></svg> <span>筛选此发件人的邮件</span></button>
-                  <button id="add-sender" type="button" hidden><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#contacts-book-line"></use></svg> <span>添加发件人</span></button>
-                </div>
-                <div class="letter-menu-group">
-                  <button id="translate-letter" type="button" aria-haspopup="dialog" hidden><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#translate-2"></use></svg> <span>翻译</span></button>
-                  <a id="menu-print" target="_blank" rel="noopener"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#printer-line"></use></svg> <span>打印</span></a>
-                  <a id="download"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#download-2-line"></use></svg> <span>下载邮件</span></a>
-                  <a id="view-original" target="_blank" rel="noopener"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#code-line"></use></svg> <span>显示原始邮件</span></a>
-                  <button id="toggle-format" type="button" hidden><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#code-line"></use></svg> <span>查看 HTML 正文</span></button>
+                  <details class="letter-menu-section disclosure" name="letter-menu-tools">
+                    <summary><svg class="glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#shield"></use></svg>发件人与安全</summary>
+                    <div class="letter-menu-group">
+                      <button id="block-sender" type="button" aria-haspopup="dialog" hidden><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#forbid-line"></use></svg> <span>屏蔽发件地址</span></button>
+                      <button id="mark-junk" type="button"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#spam-2-line"></use></svg> <span>标记为垃圾邮件</span></button>
+                      <button id="flag-phishing" type="button" hidden><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#spam-2-line"></use></svg> <span>报告钓鱼邮件</span></button>
+                      <button id="filter-sender" type="button" aria-haspopup="dialog" hidden><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#search-line"></use></svg> <span>筛选此发件人的邮件</span></button>
+                      <button id="add-sender" type="button" hidden><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#contacts-book-line"></use></svg> <span>添加联系人</span></button>
+                    </div>
+                  </details>
+                  <details class="letter-menu-section disclosure" name="letter-menu-tools">
+                    <summary><svg class="glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#file-text"></use></svg>邮件工具</summary>
+                    <div class="letter-menu-group">
+                      <button id="translate-letter" type="button" aria-haspopup="dialog" hidden><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#translate-2"></use></svg> <span>翻译</span></button>
+                      <a id="menu-print" target="_blank" rel="noopener"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#printer-line"></use></svg> <span>打印</span></a>
+                      <a id="download"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#download-2-line"></use></svg> <span>下载邮件</span></a>
+                      <a id="view-original" target="_blank" rel="noopener"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#code-line"></use></svg> <span>显示原始邮件</span></a>
+                      <button id="toggle-format" type="button" hidden><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#code-line"></use></svg> <span>查看 HTML 正文</span></button>
+                    </div>
+                  </details>
                 </div>
               </div>
             </details>
@@ -243,6 +256,7 @@
           <button id="translation-settings" class="icon" type="button" aria-label="翻译设置" title="翻译设置"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#settings-3-line"></use></svg></button>
         </section>
         <p id="delivery-status" class="delivery-status" hidden></p>
+        <p id="delivery-acceptance" class="delivery-status" hidden></p>
         <details id="delivery-recipients" hidden>
           <summary>按地址查看外部投递</summary>
           <ul id="delivery-recipient-items"></ul>
@@ -384,6 +398,13 @@
           <small id="schedule-zone"></small>
         </div>
         <p id="compose-undo-hint" class="rule-help" hidden></p>
+        <div id="attachment-reminder" class="attachment-reminder" hidden>
+          <p role="status">正文提到了附件，但这封邮件还没有添加文件。</p>
+          <div>
+            <button id="add-reminded-attachment" class="secondary" type="button">添加附件</button>
+            <button id="send-without-attachment" class="secondary" type="button">继续发送</button>
+          </div>
+        </div>
         <p id="send-error" class="error" role="alert"></p>
         <div id="draft-save-status" class="draft-save-status" hidden>
           <p id="draft-save-message" role="status"></p>
@@ -743,10 +764,7 @@
       </header>
       <section id="contacts-overview" class="contacts-overview">
         <div class="contacts-toolbar">
-          <label class="contact-search">
-            <span class="visually-hidden">查找联系人</span>
-            <input id="contact-search" type="search" placeholder="搜索姓名或邮箱" autocomplete="off">
-          </label>
+          <input id="contact-search" class="contact-search" type="search" aria-label="查找联系人" placeholder="搜索姓名或邮箱" autocomplete="off">
           <button id="new-contact" class="secondary" type="button">新建联系人</button>
         </div>
         <p id="contacts-status" class="rule-help" role="status"></p>
@@ -824,6 +842,38 @@
           <button id="copy-app-password" class="secondary" type="button">复制密码</button>
           <button id="finish-app-password" class="primary" type="button">完成</button>
         </footer>
+      </section>
+    </section>
+  </dialog>
+  <dialog id="two-factor-dialog" aria-labelledby="two-factor-title">
+    <section class="editor">
+      <header class="heading">
+        <h2 id="two-factor-title">两步验证</h2>
+        <button id="close-two-factor" class="icon" type="button" aria-label="关闭"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#close-line"></use></svg></button>
+      </header>
+      <p id="two-factor-status" class="rule-help" role="status"></p>
+      <footer id="two-factor-actions" hidden>
+        <button id="setup-two-factor" class="primary" type="button">设置两步验证</button>
+        <button id="disable-two-factor" class="secondary" type="button" hidden>关闭两步验证</button>
+      </footer>
+      <form id="two-factor-form" class="two-factor-form" hidden>
+        <div id="two-factor-setup" class="two-factor-setup" hidden>
+          <p class="rule-help">用认证器扫描二维码，或手动输入设置密钥。</p>
+          <canvas id="two-factor-qr" aria-label="认证器二维码" role="img"></canvas>
+          <label>设置密钥<input id="two-factor-key" type="text" readonly autocomplete="off" spellcheck="false"></label>
+        </div>
+        <label>当前邮箱密码<input name="password" type="password" required autocomplete="current-password"></label>
+        <label><span id="two-factor-code-label">认证器验证码</span><input name="code" type="text" required maxlength="32" autocomplete="one-time-code" spellcheck="false"></label>
+        <footer>
+          <button id="cancel-two-factor" class="secondary" type="button">返回</button>
+          <button id="submit-two-factor" class="primary" type="submit">确认开启</button>
+        </footer>
+      </form>
+      <section id="two-factor-recovery" class="two-factor-recovery" hidden>
+        <h3>一次性恢复码</h3>
+        <p class="rule-help">恢复码只显示这一次。请离线保存，失去认证器时可用其中一个登录。</p>
+        <pre id="two-factor-codes"></pre>
+        <footer><button id="finish-two-factor" class="primary" type="button">已保存</button></footer>
       </section>
     </section>
   </dialog>

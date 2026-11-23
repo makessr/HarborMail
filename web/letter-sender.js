@@ -39,6 +39,57 @@ function renderSenderSummary(item) {
   void loadSenderHeaders(item);
 }
 
+function renderLetterAddresses(item) {
+  const sender = item.senderAddress || (item.delivery ? item.from : "");
+  for (const [id, address, label] of [
+    ["sender", sender, "发件人"],
+    ["recipient", item.headerRecipients?.to || item.to, "收件人"],
+    ["letter-cc", item.headerRecipients?.cc || item.cc, "抄送"],
+    ["letter-bcc", item.bcc, "密送"]
+  ]) {
+    const field = byId(id);
+    const heading = byId(id + "-label");
+    if (heading) heading.hidden = field.hidden = !address;
+    if (!address) {
+      field.textContent = id === "sender" ? item.from || "退信" : "";
+      continue;
+    }
+    const value = document.createElement("span");
+    value.textContent = address;
+    const name = id === "sender" && item.senderName !== address ? item.senderName : "";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "copy-letter-address";
+    button.textContent = "复制";
+    button.setAttribute("aria-label", "复制" + label + "地址");
+    button.addEventListener("click", async () => {
+      const selectAddress = () => {
+        const range = document.createRange();
+        range.selectNodeContents(value);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        return selection;
+      };
+      try {
+        if (navigator.clipboard) {
+          await navigator.clipboard.writeText(address);
+        } else {
+          const selection = selectAddress();
+          if (!document.execCommand("copy")) throw new Error();
+          selection.removeAllRanges();
+        }
+        toast("已复制" + label + "地址");
+      } catch {
+        if (!value.isConnected) return;
+        selectAddress();
+        toast("已选中地址，请手动复制");
+      }
+    });
+    field.replaceChildren(name ? name + " " : "", value, " ", button);
+  }
+}
+
 async function loadSenderHeaders(item) {
   if (!item || item.delivery || senderHeadersLoaded || senderRequest) return;
   const request = new AbortController();

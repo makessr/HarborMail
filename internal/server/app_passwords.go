@@ -110,12 +110,13 @@ func (a *app) authenticateClientPrimary(ctx context.Context, email, password str
 	if err != nil {
 		return "", err
 	}
-	var suspended bool
+	var blocked bool
 	if err := a.db.QueryRowContext(ctx, `SELECT EXISTS(
-		SELECT 1 FROM account_access WHERE owner=? AND suspended=TRUE)`, owner).Scan(&suspended); err != nil {
+		SELECT 1 FROM account_access WHERE owner=? AND suspended=TRUE UNION ALL
+		SELECT 1 FROM mailbox_mfa WHERE owner=?)`, owner, owner).Scan(&blocked); err != nil {
 		return "", errLoginBusy
 	}
-	if suspended {
+	if blocked {
 		return "", errLoginInvalid
 	}
 	if err := a.checkPrimaryPassword(ctx, a.db, owner, verified); err != nil {

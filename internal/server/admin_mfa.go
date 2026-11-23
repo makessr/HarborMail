@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"crypto/sha1"
 	"crypto/sha256"
-	"crypto/subtle"
 	"database/sql"
 	"encoding/base32"
 	"encoding/binary"
@@ -157,30 +156,20 @@ func (a *app) consumeAdminMFA(ctx context.Context, tx *sql.Tx, owner, code strin
 	if !enabled {
 		return nil
 	}
-	unix := now.Unix()
-	if a.dbDriver == "mysql" {
-		// Check validity and prune spent proofs with the same clock on every instance.
-		if err := tx.QueryRowContext(ctx, "SELECT UNIX_TIMESTAMP()").Scan(&unix); err != nil {
-			return err
-		}
+	unix, err := a.mfaUnix(ctx, tx, now)
+	if err != nil {
+		return err
 	}
 	code = strings.ToLower(strings.TrimSpace(code))
 	var proof [32]byte
 	var expires int64
 	if len(code) == 6 {
-		step := unix / 30
-		found := false
-		for candidate := step + 1; candidate >= step-1; candidate-- {
-			if subtle.ConstantTimeCompare([]byte(code), []byte(adminTOTP(entry.secret, candidate))) == 1 {
-				proof = sha256.Sum256(fmt.Appendf(nil, "Harbor Mail TOTP step\x00%d", candidate))
-				expires = (candidate + 2) * 30
-				found = true
-				break
-			}
-		}
-		if !found {
+		step, valid := totpStep(entry.secret, code, unix)
+		if !valid {
 			return errAdminMFA
 		}
+		proof = sha256.Sum256(fmt.Appendf(nil, "Harbor Mail TOTP step\x00%d", step))
+		expires = (step + 2) * 30
 	} else {
 		proof = adminRecoveryHash(code)
 		if len(code) != 32 || !entry.recovery[proof] {
@@ -188,7 +177,7 @@ func (a *app) consumeAdminMFA(ctx context.Context, tx *sql.Tx, owner, code strin
 		}
 	}
 	var used bool
-	err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM admin_mfa_used
+	err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM admin_mfa_used
 		WHERE owner=? AND enrollment=? AND proof=?)`, owner, entry.enrollment[:], proof[:]).Scan(&used)
 	if err != nil {
 		return err

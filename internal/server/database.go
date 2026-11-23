@@ -15,6 +15,10 @@ import (
 )
 
 var sqliteSchema = []string{
+	`CREATE TABLE IF NOT EXISTS mailbox_mfa (
+		owner TEXT NOT NULL PRIMARY KEY, sealed_seed BLOB NOT NULL,
+		recovery_hashes TEXT NOT NULL, last_step INTEGER NOT NULL
+	)`,
 	`CREATE TABLE IF NOT EXISTS imap_import_checkpoints (
 		source_key TEXT NOT NULL PRIMARY KEY, owner TEXT NOT NULL, folder TEXT NOT NULL,
 		uid_validity INTEGER NOT NULL, last_uid INTEGER NOT NULL
@@ -38,7 +42,8 @@ var sqliteSchema = []string{
 		id INTEGER PRIMARY KEY, owner TEXT NOT NULL, sender TEXT NOT NULL,
 		recipient TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL,
 		stamp INTEGER NOT NULL, folder TEXT NOT NULL, origin TEXT NOT NULL, previous TEXT NOT NULL DEFAULT '',
-		seen INTEGER NOT NULL DEFAULT 0, star INTEGER NOT NULL DEFAULT 0, raw BLOB NOT NULL, detail_meta BLOB, delivery_job_id INTEGER
+		seen INTEGER NOT NULL DEFAULT 0, star INTEGER NOT NULL DEFAULT 0, raw BLOB NOT NULL, detail_meta BLOB, delivery_job_id INTEGER,
+		pop_octets INTEGER
 	)`,
 	`CREATE INDEX IF NOT EXISTS mailbox_order ON letters(owner, folder, id DESC)`,
 	`CREATE TABLE IF NOT EXISTS mail_translations (
@@ -74,10 +79,6 @@ var sqliteSchema = []string{
 	)`,
 	`CREATE INDEX IF NOT EXISTS web_sessions_owner ON sessions(owner,expires)`,
 	`CREATE INDEX IF NOT EXISTS web_sessions_expiry ON sessions(expires)`,
-	`CREATE TABLE IF NOT EXISTS web_session_details (
-		digest BLOB PRIMARY KEY, owner TEXT NOT NULL, device TEXT NOT NULL,
-		created INTEGER NOT NULL, last_active INTEGER NOT NULL, expires INTEGER NOT NULL
-	)`,
 	`CREATE TABLE IF NOT EXISTS web_push_identity (
 		id INTEGER PRIMARY KEY, private_key TEXT NOT NULL, public_key TEXT NOT NULL
 	)`,
@@ -88,6 +89,10 @@ var sqliteSchema = []string{
 	)`,
 	`CREATE INDEX IF NOT EXISTS web_push_due ON web_push_subscriptions(due_at)`,
 	`CREATE INDEX IF NOT EXISTS web_push_owner ON web_push_subscriptions(owner)`,
+	`CREATE TABLE IF NOT EXISTS web_session_details (
+		digest BLOB PRIMARY KEY, owner TEXT NOT NULL, device TEXT NOT NULL,
+		created INTEGER NOT NULL, last_active INTEGER NOT NULL, expires INTEGER NOT NULL
+	)`,
 	`CREATE INDEX IF NOT EXISTS web_session_details_owner ON web_session_details(owner)`,
 	`CREATE INDEX IF NOT EXISTS web_session_details_expiry ON web_session_details(expires)`,
 	`CREATE TABLE IF NOT EXISTS outbox (
@@ -217,6 +222,10 @@ var sqliteSchema = []string{
 }
 
 var mysqlSchema = []string{
+	`CREATE TABLE IF NOT EXISTS mailbox_mfa (
+		owner VARCHAR(254) CHARACTER SET ascii COLLATE ascii_bin NOT NULL PRIMARY KEY,
+		sealed_seed VARBINARY(64) NOT NULL, recovery_hashes TEXT NOT NULL, last_step BIGINT NOT NULL
+	) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin`,
 	`CREATE TABLE IF NOT EXISTS imap_import_checkpoints (
 		source_key CHAR(64) NOT NULL PRIMARY KEY, owner VARCHAR(254) NOT NULL, folder VARCHAR(16) NOT NULL,
 		uid_validity BIGINT NOT NULL, last_uid BIGINT NOT NULL
@@ -259,6 +268,7 @@ var mysqlSchema = []string{
 		raw LONGBLOB NOT NULL,
 		detail_meta LONGBLOB,
 		delivery_job_id BIGINT,
+		pop_octets BIGINT,
 		KEY mailbox_order (owner, folder, id)
 	) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin`,
 	`CREATE TABLE IF NOT EXISTS mail_translations (
@@ -522,6 +532,10 @@ func openDB(driver, source string) (*sql.DB, error) {
 	if err := ensureMailDetailColumn(ctx, db, driver); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("initialize %s letter details: %w", driver, err)
+	}
+	if err := ensureColumn(ctx, db, driver, "letters", "pop_octets", "INTEGER", "BIGINT"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("initialize %s POP3 sizes: %w", driver, err)
 	}
 	if err := ensureColumn(ctx, db, driver, "mailbox_preferences", "sender_display_name", "TEXT NOT NULL DEFAULT ''", "VARCHAR(80) NOT NULL DEFAULT ''"); err != nil {
 		db.Close()

@@ -15,15 +15,27 @@ type inboundLimits struct {
 var defaultInboundLimits = inboundLimits{messages: 4, bytes: 64 << 20, scans: 2}
 
 func loadInboundLimits(messageLimit int) (inboundLimits, error) {
+	limits, err := loadSMTPProcessingLimits("HARBOR_INBOUND", messageLimit)
+	if err != nil {
+		return limits, err
+	}
+	scans, err := strconv.Atoi(env("HARBOR_INBOUND_SCAN_CONCURRENCY", strconv.Itoa(defaultInboundLimits.scans)))
+	if err != nil || scans < 1 || scans > 64 {
+		return limits, fmt.Errorf("HARBOR_INBOUND_SCAN_CONCURRENCY must be an integer from 1 to 64")
+	}
+	limits.scans = scans
+	return limits, nil
+}
+
+func loadSMTPProcessingLimits(prefix string, messageLimit int) (inboundLimits, error) {
 	var limits inboundLimits
 	for _, setting := range []struct {
 		name          string
 		dest          *int
 		fallback, max int
 	}{
-		{"HARBOR_INBOUND_MAX_INFLIGHT", &limits.messages, defaultInboundLimits.messages, 64},
-		{"HARBOR_INBOUND_MAX_MIB", &limits.bytes, defaultInboundLimits.bytes >> 20, 1024},
-		{"HARBOR_INBOUND_SCAN_CONCURRENCY", &limits.scans, defaultInboundLimits.scans, 64},
+		{prefix + "_MAX_INFLIGHT", &limits.messages, defaultInboundLimits.messages, 64},
+		{prefix + "_MAX_MIB", &limits.bytes, defaultInboundLimits.bytes >> 20, 1024},
 	} {
 		value, err := strconv.Atoi(env(setting.name, strconv.Itoa(setting.fallback)))
 		if err != nil || value < 1 || value > setting.max {
@@ -33,7 +45,7 @@ func loadInboundLimits(messageLimit int) (inboundLimits, error) {
 	}
 	limits.bytes <<= 20
 	if limits.bytes < messageLimit {
-		return limits, fmt.Errorf("HARBOR_INBOUND_MAX_MIB must be at least HARBOR_MAX_MESSAGE_MIB")
+		return limits, fmt.Errorf("%s_MAX_MIB must be at least HARBOR_MAX_MESSAGE_MIB", prefix)
 	}
 	return limits, nil
 }

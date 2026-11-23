@@ -20,9 +20,10 @@ import (
 )
 
 type outboundSMTP struct {
-	mail func(string) error
-	rcpt func(string) error
-	data func() (io.WriteCloser, error)
+	mail  func(string) error
+	rcpt  func(string) error
+	data  func() (io.WriteCloser, error)
+	route string
 }
 
 type recipientConnector func(context.Context, string) (outboundSMTP, func(), error)
@@ -34,9 +35,10 @@ func relayForRecipient(connect relayConnector) recipientConnector {
 			return outboundSMTP{}, nil, err
 		}
 		return outboundSMTP{
-			mail: func(from string) error { return client.Mail(from, nil) },
-			rcpt: func(to string) error { return client.Rcpt(to, nil) },
-			data: func() (io.WriteCloser, error) { return client.Data() },
+			mail:  func(from string) error { return client.Mail(from, nil) },
+			rcpt:  func(to string) error { return client.Rcpt(to, nil) },
+			data:  func() (io.WriteCloser, error) { return client.Data() },
+			route: "relay",
 		}, closeClient, nil
 	}
 }
@@ -266,5 +268,5 @@ func (route *directMX) open(ctx context.Context, host string, ip netip.Addr) (ou
 		cleanup()
 		return outboundSMTP{}, nil, err
 	}
-	return outboundSMTP{client.Mail, client.Rcpt, client.Data}, cleanup, nil
+	return outboundSMTP{mail: client.Mail, rcpt: client.Rcpt, data: client.Data, route: "mx"}, cleanup, nil
 }
