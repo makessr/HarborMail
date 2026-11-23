@@ -61,7 +61,7 @@ function setupAdminAudit() {
         const previousDue = event.previousDue > 0 ? formatTime(event.previousDue) : "—";
         const detail = event.alias || (event.action === "retry" ? "任务 #" + event.jobId + "\n原重试时间 " + previousDue :
           event.jobId ? "任务 #" + event.jobId :
-          ["sessions", "app_passwords", "suspend", "password_reset", "password_change", "admin_grant", "admin_revoke"].includes(event.action) ? "撤销 " + event.affected + " 条记录" : "—");
+          ["sessions", "app_passwords", "suspend", "password_reset", "password_change", "password_recovery", "admin_grant", "admin_revoke"].includes(event.action) ? "撤销 " + event.affected + " 条记录" : "—");
         return deliveryRow([formatTime(event.stamp), labels[event.action] || event.action, event.actor, event.target, detail]);
       }));
       next = data.next;

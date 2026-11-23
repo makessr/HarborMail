@@ -42,7 +42,8 @@ function setupAdminQuarantine() {
       before = data.items.at(-1)?.id || 0;
       more.hidden = data.items.length < 100;
       activePanel.hidden = false;
-      statusOutput.textContent = data.items.length ? "" : "没有隔离邮件";
+      adminElement("admin-quarantine-empty").hidden = data.items.length !== 0;
+      statusOutput.textContent = "";
     } catch {
       statusOutput.textContent = "无法读取隔离邮件";
     } finally {

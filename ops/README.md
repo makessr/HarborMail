@@ -368,6 +368,16 @@ MySQL 备份账户需读取整个 Harbor 数据库，以涵盖后续版本增加
 
 起始目标为每日一次，保留 14 个日备和 4 个周备，异地保存加密副本。此频率的恢复点目标为 24 小时，以演练量出的恢复耗时确定恢复时间目标。要求更小的丢失窗口时，增加备份频率或使用 MySQL 的 binlog 时间点恢复方案。
 
+#### 全量 Compose 的本机回读与巡检
+
+全量 Compose 可以运行 `ops/compose-maintenance.sh backup` 生成加密异地备份之外的同机副本。它校验压缩文件和 SHA-256，导入临时 MySQL 库并读取邮件、队列、账号、DKIM、UID 和配额计数。临时库的写入跳过 binlog。脚本仅轮换其生成且完成回读的副本，保留约 14 天。目录须由 root 独占，默认是 `/var/backups/harbor-mail`。它只备份数据库，配置、证书和密钥仍按「成功标记与配套数据」单独保存。
+
+全量部署可把 `harbor-compose-maintenance@.service`、`harbor-compose-check.timer` 和 `harbor-compose-backup.timer` 安装到 `/etc/systemd/system/`，把脚本安装到 `/opt/harbor-mail/ops/` 并设为可执行。创建 `/etc/harbor/compose-maintenance.env`，设置 `HARBOR_MAINTENANCE_PUBLIC_URL=https://mail.example.com`。同一主机开放邮件 TLS 时，可设 `HARBOR_MAINTENANCE_MAIL_TLS=25,587,993`，只列出实际提供 TLS 的端口。改变部署或备份目录时，同时设置 `HARBOR_MAINTENANCE_COMPOSE_DIR` 或 `HARBOR_MAINTENANCE_BACKUP_DIR`。先手动运行两个服务并确认成功，再启用定时器。
+
+巡检每五分钟检查已到期队列、磁盘可用空间和 inode、公开 HTTPS、证书到期、Rspamd 与 ClamAV 的容器健康，以及最近的扫描异常。失败时服务以非零状态退出，可通过 `journalctl -u 'harbor-compose-maintenance@*.service'` 查看；跨主机告警仍由 Prometheus、Alertmanager 或现有监控接收。
+
+外部发信验收应从收件端下载合成测试邮件的 EML 文件，同时记录测试时间、编号、文件夹分类及收件服务添加的 `Authentication-Results`。邮件原件应保存在访问受限的验收目录。每次调整出站路由或签名后复验，并分别记录 SPF、DKIM、DMARC 和是否进收件箱。
+
 使用专门备份账户和受限目录。以下命令中的日期为示例，每次任务生成唯一 UTC 文件名。配置调度器串行运行，每步检查退出状态，任何一步失败都保留上次成功标记并告警。终止或中断产生的 `.part` 文件只用于排障。
 
 ### SQLite

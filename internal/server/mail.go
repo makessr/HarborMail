@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"database/sql"
 	"encoding/hex"
@@ -205,6 +206,7 @@ type delivery struct {
 	sender     string
 	size       int64
 	recipients []mailDestination
+	identities map[string][sha256.Size]byte
 	rcptBudget smtpadmission.RecipientBudget
 }
 
@@ -251,6 +253,16 @@ func (s *delivery) resolveRecipient(to string) error {
 			return err
 		}
 	}
+	if _, bound := s.identities[target.owner]; !bound {
+		identity, err := s.app.baseAccountDigest(ctx, s.app.db, target.owner)
+		if err != nil {
+			return &smtp.SMTPError{Code: 451, Message: "Temporary mailbox failure"}
+		}
+		if s.identities == nil {
+			s.identities = make(map[string][sha256.Size]byte)
+		}
+		s.identities[target.owner] = identity
+	}
 	s.recipients = append(s.recipients, target)
 	return nil
 }
@@ -284,7 +296,7 @@ func (s *delivery) Data(r io.Reader) error {
 		err = lockIMAPUIDs(ctx, tx)
 		if err == nil {
 			for _, recipient := range s.recipients {
-				if err = s.app.checkDestination(ctx, tx, recipient.address, recipient.owner); err != nil {
+				if err = s.checkRecipient(ctx, tx, recipient); err != nil {
 					break
 				}
 				m.To = recipient.address
@@ -313,6 +325,23 @@ func (s *delivery) Reset() {
 	s.sender = ""
 	s.size = 0
 	s.recipients = nil
+	s.identities = nil
+}
+
+func (s *delivery) checkRecipient(ctx context.Context, tx *sql.Tx, recipient mailDestination) error {
+	if err := s.app.checkDestination(ctx, tx, recipient.address, recipient.owner); err != nil {
+		return err
+	}
+	if before, bound := s.identities[recipient.owner]; bound {
+		identity, err := s.app.baseAccountDigest(ctx, tx, recipient.owner)
+		if err != nil {
+			return err
+		}
+		if identity != before {
+			return errDestinationChanged
+		}
+	}
+	return nil
 }
 
 func (s *delivery) Logout() error { return nil }

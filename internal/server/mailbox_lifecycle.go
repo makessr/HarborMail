@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -38,7 +39,7 @@ func (a *app) adminMailboxLifecycle(w http.ResponseWriter, r *http.Request, acto
 		return
 	}
 	switch input.Action {
-	case "mailbox_retire", "mailbox_restore", "mailbox_purge", "mailbox_rename":
+	case "mailbox_retire", "mailbox_restore", "mailbox_purge", "mailbox_rename", "mailbox_delete":
 	default:
 		fail(w, http.StatusBadRequest, "请选择有效的邮箱管理操作")
 		return
@@ -51,8 +52,9 @@ func (a *app) adminMailboxLifecycle(w http.ResponseWriter, r *http.Request, acto
 			return
 		}
 	}
-	if input.Action == "mailbox_purge" && input.Confirm != owner {
-		fail(w, http.StatusBadRequest, "请输入完整邮箱地址确认清除")
+	deleting := input.Action == "mailbox_delete"
+	if (input.Action == "mailbox_purge" || deleting) && input.Confirm != owner {
+		fail(w, http.StatusBadRequest, "请输入完整邮箱地址确认操作")
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
@@ -79,6 +81,10 @@ func (a *app) adminMailboxLifecycle(w http.ResponseWriter, r *http.Request, acto
 		return
 	}
 	_, configured := a.accounts[owner]
+	if deleting && a.mailboxReleaseConfigured(owner) {
+		fail(w, http.StatusConflict, "此地址仍用于服务器的账号、权限或别名配置，请先移除相关配置")
+		return
+	}
 	if configured && input.Action == "mailbox_rename" {
 		fail(w, http.StatusConflict, "服务器配置的邮箱不能改名，可回收或永久删除")
 		return
@@ -101,14 +107,6 @@ func (a *app) adminMailboxLifecycle(w http.ResponseWriter, r *http.Request, acto
 			return
 		}
 	}
-	hash, err := a.baseAccountHash(ctx, tx, owner)
-	if errors.Is(err, sql.ErrNoRows) {
-		fail(w, http.StatusNotFound, "邮箱不存在或已永久删除")
-		return
-	}
-	if letterError(w, err) {
-		return
-	}
 	var previouslySuspended bool
 	err = tx.QueryRowContext(ctx, `SELECT previous_suspended FROM mailbox_retirements WHERE owner=?`, owner).Scan(&previouslySuspended)
 	retired := err == nil
@@ -117,17 +115,36 @@ func (a *app) adminMailboxLifecycle(w http.ResponseWriter, r *http.Request, acto
 		return
 	}
 	mustBeRetired := input.Action == "mailbox_restore" || input.Action == "mailbox_purge"
-	if retired != mustBeRetired {
+	if !deleting && retired != mustBeRetired {
 		fail(w, http.StatusConflict, "邮箱状态已变化，请刷新账号列表")
 		return
 	}
+	hash, err := a.baseAccountHash(ctx, tx, owner)
+	if errors.Is(err, sql.ErrNoRows) {
+		if !deleting || !retired {
+			fail(w, http.StatusNotFound, "邮箱不存在或已永久删除")
+			return
+		}
+	} else if letterError(w, err) {
+		return
+	}
 	if input.Action != "mailbox_restore" {
-		pending, err := mailboxHasPendingDelivery(ctx, tx, owner)
+		pending, err := mailboxHasPendingDelivery(ctx, tx, owner, deleting)
 		if letterError(w, err) {
 			return
 		}
 		if pending {
-			fail(w, http.StatusConflict, "该邮箱仍有待处理或待确认的投递，应先结案")
+			fail(w, http.StatusConflict, "该邮箱仍涉及未结案的投递，请先处理相关任务")
+			return
+		}
+	}
+	if deleting {
+		pending, err := mailboxHasQuarantine(ctx, tx, owner)
+		if letterError(w, err) {
+			return
+		}
+		if pending {
+			fail(w, http.StatusConflict, "该邮箱仍有隔离邮件，请先处置后再释放地址")
 			return
 		}
 	}
@@ -148,8 +165,21 @@ func (a *app) adminMailboxLifecycle(w http.ResponseWriter, r *http.Request, acto
 		if err == nil {
 			_, err = tx.ExecContext(ctx, `UPDATE account_access SET suspended=? WHERE owner=?`, previouslySuspended, owner)
 		}
-	case "mailbox_purge":
+	case "mailbox_purge", "mailbox_delete":
 		err = purgeRetiredMailbox(ctx, tx, owner)
+		if err == nil && deleting {
+			for _, table := range []string{"mailbox_retirements", "configured_mailbox_removals", "account_access", "web_push_subscriptions", "admin_mfa_used", "mailbox_revisions"} {
+				if table == "mailbox_revisions" && a.dbDriver != "mysql" {
+					continue
+				}
+				if _, err = tx.ExecContext(ctx, "DELETE FROM "+table+" WHERE owner=?", owner); err != nil {
+					break
+				}
+			}
+			if err == nil {
+				_, err = tx.ExecContext(ctx, `DELETE FROM outbound_limits WHERE scope='account' AND target=?`, owner)
+			}
+		}
 		if err == nil && configured {
 			_, err = tx.ExecContext(ctx, `INSERT INTO configured_mailbox_removals(owner) VALUES(?)`, owner)
 		}
@@ -184,20 +214,43 @@ func (a *app) adminMailboxLifecycle(w http.ResponseWriter, r *http.Request, acto
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO admin_account_actions(actor,target,action,affected,stamp) VALUES(?,?,?,?,?)`,
 		actor, owner, input.Action, 0, now)
-	if !letterError(w, err) && !letterError(w, a.commitMailbox(tx, owner, destination)) {
+	owners := []string{owner, destination}
+	if deleting {
+		// The address must not acquire another revision reservation on commit.
+		owners = nil
+	}
+	if !letterError(w, err) && !letterError(w, a.commitMailbox(tx, owners...)) {
+		if deleting {
+			a.events.notify(owner)
+		}
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
 
-func mailboxHasPendingDelivery(ctx context.Context, tx *sql.Tx, owner string) (bool, error) {
+func (a *app) mailboxReleaseConfigured(owner string) bool {
+	_, account := a.accounts[owner]
+	_, mfa := a.adminMFA[owner]
+	if account || mfa || a.admins[owner] || len(a.domainAdmins[owner]) != 0 {
+		return true
+	}
+	for _, target := range a.aliases {
+		if target == owner {
+			return true
+		}
+	}
+	return false
+}
+
+func mailboxHasPendingDelivery(ctx context.Context, tx *sql.Tx, owner string, includeFailedIncoming bool) (bool, error) {
 	var pending bool
 	err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM outbox o LEFT JOIN outbox_schedule s ON s.outbox_id=o.id
-		WHERE o.state<>'failed' AND (o.sender=? OR s.local_owner=? OR o.recipient=?))`, owner, owner, owner).Scan(&pending)
+		WHERE (o.state<>'failed' OR (? AND o.sender<>?)) AND (o.sender=? OR s.local_owner=? OR o.recipient=?))`,
+		includeFailedIncoming, owner, owner, owner, owner).Scan(&pending)
 	if err != nil || pending {
 		return pending, err
 	}
 	rows, err := tx.QueryContext(ctx, `SELECT e.envelope FROM outbox o JOIN web_outbox_envelopes e ON e.outbox_id=o.id
-		WHERE o.state<>'failed' AND instr(e.envelope,?)>0`, owner)
+		WHERE (o.state<>'failed' OR (? AND o.sender<>?)) AND instr(e.envelope,?)>0`, includeFailedIncoming, owner, owner)
 	if err != nil {
 		return false, err
 	}
@@ -213,6 +266,30 @@ func mailboxHasPendingDelivery(ctx context.Context, tx *sql.Tx, owner string) (b
 		}
 		for _, target := range envelope.Targets {
 			if target.Owner == owner {
+				return true, nil
+			}
+		}
+	}
+	return false, rows.Err()
+}
+
+func mailboxHasQuarantine(ctx context.Context, tx *sql.Tx, owner string) (bool, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT recipients FROM inbound_quarantine WHERE instr(recipients,?)>0`, owner)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var encoded string
+		var recipients []quarantinedRecipient
+		if err := rows.Scan(&encoded); err != nil {
+			return false, err
+		}
+		if err := json.Unmarshal([]byte(encoded), &recipients); err != nil {
+			return false, err
+		}
+		for _, recipient := range recipients {
+			if recipient.Owner == owner {
 				return true, nil
 			}
 		}
@@ -249,6 +326,7 @@ func purgeRetiredMailbox(ctx context.Context, tx *sql.Tx, owner string) error {
 		}
 	}
 	for _, query := range []string{
+		`DELETE FROM password_recovery_codes WHERE owner=?`,
 		`DELETE FROM letters WHERE owner=?`, `DELETE FROM outbox WHERE sender=?`,
 		`DELETE FROM outbox_recipient_progress WHERE sender=?`,
 		`DELETE FROM managed_aliases WHERE owner=?`, `DELETE FROM alias_send_permissions WHERE owner=?`,
@@ -269,6 +347,9 @@ func purgeRetiredMailbox(ctx context.Context, tx *sql.Tx, owner string) error {
 
 func (a *app) renameManagedMailbox(ctx context.Context, tx *sql.Tx, owner, destination string, hash []byte, suspended bool) error {
 	if err := suspendAndRevokeMailbox(ctx, tx, owner); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM password_recovery_codes WHERE owner=?`, owner); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO managed_accounts(email,password_hash) VALUES(?,?)`, destination, hash); err != nil {

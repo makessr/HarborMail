@@ -2,6 +2,7 @@
 
 function setupAdminAliases() {
   const items = adminElement("admin-alias-items");
+  const empty = adminElement("admin-alias-empty");
   const search = adminElement("admin-alias-search");
   const add = adminElement("admin-alias-add");
   const dialog = adminElement("admin-alias-dialog");
@@ -55,7 +56,9 @@ function setupAdminAliases() {
       }
       return deliveryRow([entry.alias, entry.owner, entry.managed ? "后台" : "服务器配置", states[entry.state], entry.sendAs ? "已授权" : "未授权", actions.childElementCount ? actions : "—"]);
     }));
-    adminElement("admin-alias-empty").hidden = matching.length !== 0;
+    empty.textContent = aliases.length ? "没有匹配的别名" :
+      (owners.length ? "暂无收信别名" : "请先创建主邮箱");
+    empty.hidden = matching.length !== 0;
   }
 
   async function load() {

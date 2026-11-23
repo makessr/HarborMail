@@ -149,6 +149,9 @@ var sqliteSchema = []string{
 	`CREATE TABLE IF NOT EXISTS managed_admin_roles (
 		owner TEXT NOT NULL PRIMARY KEY, base_digest BLOB NOT NULL
 	)`,
+	`CREATE TABLE IF NOT EXISTS password_recovery_codes (
+		owner TEXT NOT NULL PRIMARY KEY, base_digest BLOB NOT NULL, code_digest BLOB NOT NULL
+	)`,
 	`CREATE TABLE IF NOT EXISTS outbound_limits (
 		scope TEXT NOT NULL, target TEXT NOT NULL, daily_limit INTEGER NOT NULL,
 		day INTEGER NOT NULL, used INTEGER NOT NULL, PRIMARY KEY(scope,target)
@@ -379,6 +382,10 @@ var mysqlSchema = []string{
 	) ENGINE=InnoDB`,
 	`CREATE TABLE IF NOT EXISTS managed_admin_roles (
 		owner VARCHAR(254) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY, base_digest BINARY(32) NOT NULL
+	) ENGINE=InnoDB`,
+	`CREATE TABLE IF NOT EXISTS password_recovery_codes (
+		owner VARCHAR(254) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+		base_digest BINARY(32) NOT NULL, code_digest BINARY(32) NOT NULL
 	) ENGINE=InnoDB`,
 	`CREATE TABLE IF NOT EXISTS outbound_limits (
 		scope VARCHAR(12) NOT NULL, target VARCHAR(254) NOT NULL, daily_limit INT NOT NULL,

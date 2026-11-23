@@ -109,7 +109,7 @@ func (s *delivery) quarantineIncoming(raw []byte) error {
 	}
 	recipients := make([]quarantinedRecipient, 0, len(s.recipients))
 	for _, r := range s.recipients {
-		if err := s.app.checkDestination(ctx, tx, r.address, r.owner); err != nil {
+		if err := s.checkRecipient(ctx, tx, r); err != nil {
 			return err
 		}
 		recipients = append(recipients, quarantinedRecipient{r.address, r.owner})

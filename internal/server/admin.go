@@ -126,6 +126,8 @@ type adminAccount struct {
 	Managed         bool     `json:"managed"`
 	ConfiguredAdmin bool     `json:"configuredAdmin,omitempty"`
 	Retired         bool     `json:"retired"`
+	Purged          bool     `json:"purged,omitempty"`
+	CanDelete       bool     `json:"canDelete,omitempty"`
 }
 
 func (a *app) adminAccounts(names, suspended, retired, admins map[string]bool, effectiveAliases map[string]string) []adminAccount {

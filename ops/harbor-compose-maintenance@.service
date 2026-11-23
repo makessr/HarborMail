@@ -1,0 +1,12 @@
+[Unit]
+Description=Harbor Mail Compose maintenance (%i)
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+UMask=0077
+EnvironmentFile=/etc/harbor/compose-maintenance.env
+ExecStart=/opt/harbor-mail/ops/compose-maintenance.sh %i
+TimeoutStartSec=30min

@@ -46,7 +46,8 @@ function setupAdminDeliveryTools() {
       ])));
       cursor = next;
       more.hidden = !next;
-      status.textContent = !rows.children.length ? "暂无匹配的投递事件。" : "";
+      adminElement("admin-delivery-log-empty").hidden = rows.children.length !== 0;
+      status.textContent = "";
     } catch (error) {
       status.textContent = error.message;
     } finally {
@@ -58,7 +59,8 @@ function setupAdminDeliveryTools() {
     limitRows.replaceChildren(...limits.map(item => deliveryRow([
       item.scope === "account" ? "邮箱账号" : "邮件域名", item.target, item.used, item.limit || "不限额"
     ])));
-    limitStatus.textContent = limits.length ? "" : "暂无外发额度。";
+    adminElement("admin-limit-empty").hidden = limits.length !== 0;
+    limitStatus.textContent = "";
   }
   filters.addEventListener("submit", event => {
     event.preventDefault();
@@ -134,7 +136,8 @@ function setupAdminDMARC() {
           report.total, report.aligned + " / " + report.total, button
         ]);
       }));
-      status.textContent = reports.length ? "" : "暂无报告。可导入收件服务器发送的聚合报告附件。";
+      adminElement("admin-dmarc-empty").hidden = reports.length !== 0;
+      status.textContent = "";
     } catch (error) {
       status.textContent = error.message;
     }

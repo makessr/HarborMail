@@ -153,6 +153,7 @@ h1 { font-size: 24px; line-height: 1.3; }
 [data-density="compact"] .row:not([data-delivery]) .row-preview { display: none; }
 .row.unread:not([aria-pressed]) .row-name::before { content: ""; display: inline-block; width: 7px; height: 7px; background: var(--accent); border-radius: 50%; margin-right: 7px; }
 .list-status, .more { margin: 20px; color: var(--muted); font-size: 14px; }
+.list-status.is-empty { margin: 0; padding: 24px 16px; text-align: center; font-size: 13px; }
 .more { background: transparent; border: 1px solid var(--line); padding: 8px 12px; border-radius: 7px; }
 
 .reading { min-width: 0; min-height: 0; overflow: auto; background: var(--surface); border: 1px solid var(--line); border-inline-start: 0; border-radius: 0 var(--radius-panel) var(--radius-panel) 0; }
@@ -258,6 +259,9 @@ h1 { font-size: 24px; line-height: 1.3; }
 .login > .login-form { padding: clamp(16px, 4vw, 28px); border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--surface); }
 .login-form, .editor { display: grid; gap: 17px; }
 .login-project { justify-content: center; margin-top: 14px; }
+.login .login-recovery-link { justify-self: center; color: var(--action); background: transparent; border: 0; font-size: 14px; }
+.login .login-recovery-link:hover { text-decoration: underline; }
+.login-password-status:empty { display: none; }
 .editor { min-width: 0; padding: clamp(18px, 4vw, 28px); gap: 14px; }
 .login-form .brand { flex-direction: column; padding: 0; margin-bottom: 8px; text-align: center; font-size: 24px; }
 label { display: grid; gap: 7px; font-size: 14px; font-weight: 600; }

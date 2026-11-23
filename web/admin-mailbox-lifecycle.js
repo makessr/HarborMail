@@ -6,7 +6,7 @@ function renderMailboxLifecycle() {
   const form = adminElement("admin-mailbox-lifecycle-form");
   const action = form.elements.action.value;
   const rename = action === "mailbox_rename";
-  const purge = action === "mailbox_purge";
+  const purge = action === "mailbox_purge" || action === "mailbox_delete";
   const handoff = action === "mailbox_retire" && mailboxLifecycleAccount.configuredAdmin;
   adminElement("admin-mailbox-lifecycle-destination").hidden = !rename;
   adminElement("admin-mailbox-lifecycle-confirm").hidden = !purge;
@@ -20,19 +20,20 @@ function renderMailboxLifecycle() {
     mailbox_rename: "邮件和设置迁移到新地址。旧地址保留为收信别名，原会话及应用密码失效。",
     mailbox_retire: handoff ? "请先授予另一邮箱全站管理员权限，并用该账号在另一浏览器登录后台。回收后当前账号将退出，邮件会保留，接手人可恢复或永久删除。" : "暂停登录和收信，保留邮件、设置和别名。仍可通过后台恢复。",
     mailbox_restore: mailboxLifecycleAccount.configuredAdmin ? "恢复邮箱、收信和安装时配置的管理员权限。" : "恢复邮箱与别名的收信能力，并恢复回收前的登录状态。",
-    mailbox_purge: "永久清除这个已回收邮箱的数据和别名。旧地址继续保留，无法分给新邮箱。"
+    mailbox_purge: "永久清除这个已回收邮箱的数据和别名。旧地址继续保留。",
+    mailbox_delete: "永久删除邮箱及数据并释放主地址。重新创建同名邮箱后，从空邮箱开始。"
   }[action];
   const button = form.querySelector('[type="submit"]');
   button.textContent = handoff ? "交接并回收" : accessLabels[action];
   button.toggleAttribute("data-destructive", purge);
 }
 
-function openMailboxLifecycle(account) {
+function openMailboxLifecycle(account, action = "") {
   const form = adminElement("admin-mailbox-lifecycle-form");
   mailboxLifecycleAccount = account;
   form.reset();
   adminElement("admin-mailbox-lifecycle-target").textContent = account.email;
-  const actions = account.retired ? ["mailbox_restore", "mailbox_purge"] : account.managed ? ["mailbox_rename", "mailbox_retire"] : ["mailbox_retire"];
+  const actions = action ? [action] : account.retired ? ["mailbox_restore", "mailbox_purge"] : account.managed ? ["mailbox_rename", "mailbox_retire"] : ["mailbox_retire"];
   form.elements.action.replaceChildren(...actions.map(action => new Option(accessLabels[action], action)));
   renderMailboxLifecycle();
   adminElement("admin-mailbox-lifecycle").showModal();

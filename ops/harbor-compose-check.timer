@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Harbor Mail Compose health every five minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Unit=harbor-compose-maintenance@check.service
+
+[Install]
+WantedBy=timers.target

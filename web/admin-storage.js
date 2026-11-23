@@ -22,7 +22,7 @@ function storageSize(bytes) {
 function renderStorageBuckets(container, buckets, labels, total, queue = false) {
   if (!buckets.length) {
     const empty = document.createElement("p");
-    empty.className = "admin-note";
+    empty.className = "admin-list-empty";
     empty.textContent = queue ? "该账号没有投递任务。" : "该账号没有存储邮件。";
     container.replaceChildren(empty);
     return;
@@ -62,11 +62,13 @@ function renderStorageBuckets(container, buckets, labels, total, queue = false) 
 }
 
 function setupAdminStorage() {
-  const form = adminElement("admin-storage-form");
-  const owner = adminElement("admin-storage-owner");
-  const submit = form.querySelector("button");
+  let owner = new URLSearchParams(location.search).get("owner") || "";
+  let page = 1;
+  let pages = 1;
+  const list = adminElement("admin-storage-items");
+  const previous = adminElement("admin-storage-prev");
+  const next = adminElement("admin-storage-next");
   const result = adminElement("admin-storage-result");
-  const hint = adminElement("admin-storage-hint");
   const alertEditor = adminElement("admin-storage-alert-dialog");
   const alertForm = adminElement("admin-storage-alert-form");
   const alertClose = adminElement("admin-storage-alert-close");
@@ -115,33 +117,50 @@ function setupAdminStorage() {
     return data;
   }
 
-  async function load(refreshDirectory) {
+  async function load(refreshDirectory, requestedPage = page) {
     if (busy) return;
-    busy = refresh.disabled = owner.disabled = submit.disabled = true;
-    result.hidden = hint.hidden = true;
+    busy = refresh.disabled = previous.disabled = next.disabled = true;
+    result.hidden = true;
     statusOutput.textContent = refreshDirectory ? "正在读取邮箱账号…" : "正在统计存储用量…";
     try {
       const url = new URL(location.href);
       if (refreshDirectory) {
-        const data = await request("/api/admin/accounts");
+        const data = await request("/api/admin/storage?" + new URLSearchParams({ page: requestedPage }));
         if (!data) return;
         adminElement("admin-identity").textContent = data.email;
-        const names = data.accounts.map(({ email }) => email);
-        const target = owner.value || url.searchParams.get("owner");
-        owner.replaceChildren(new Option("请选择主邮箱", ""), ...names.map(name => new Option(name, name)));
-        if (names.includes(target)) owner.value = target;
+        page = data.page;
+        pages = data.pages;
+        list.replaceChildren(...data.items.map(item => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "admin-account-open";
+          button.textContent = item.email;
+          button.addEventListener("click", async () => {
+            if (busy) return;
+            owner = item.email;
+            await load(false);
+            if (!result.hidden) {
+              const title = adminElement("admin-storage-account");
+              title.focus();
+            }
+          });
+          return deliveryRow([button, storageNumber.format(item.messageCount), storageSize(item.messageBytes), storageSize(item.queueBytes)]);
+        }));
+        adminElement("admin-storage-empty").hidden = data.items.length > 0;
+        adminElement("admin-storage-page").textContent = "第 " + page + " / " + pages + " 页 · 共 " + data.total + " 个邮箱";
         activePanel.hidden = false;
       }
-      if (!owner.value) {
-        hint.hidden = false;
+      if (!owner) {
         statusOutput.textContent = "";
         return;
       }
-      url.searchParams.set("owner", owner.value);
+      url.searchParams.set("owner", owner);
       history.replaceState(null, "", url);
       statusOutput.textContent = "正在统计存储用量…";
-      const data = await request("/api/admin/accounts/" + encodeURIComponent(owner.value) + "/storage");
+      const data = await request("/api/admin/accounts/" + encodeURIComponent(owner) + "/storage");
       if (!data) return;
+      adminElement("admin-storage-account").textContent = data.email;
+      adminElement("admin-storage-account").tabIndex = -1;
       adminElement("admin-storage-stamp").textContent = "统计于 " + queueTime(data.at);
       renderDetails("admin-storage-summary", [
         ["邮件占用", storageSize(data.messageBytes)],
@@ -158,31 +177,28 @@ function setupAdminStorage() {
     } catch (error) {
       statusOutput.textContent = error.message || "无法读取存储用量，请刷新重试。";
     } finally {
-      busy = refresh.disabled = owner.disabled = false;
-      submit.disabled = !owner.value;
+      busy = refresh.disabled = false;
+      previous.disabled = page <= 1;
+      next.disabled = page >= pages;
     }
   }
 
-  owner.addEventListener("change", () => {
-    result.hidden = true;
-    hint.hidden = false;
-    submit.disabled = !owner.value;
-    statusOutput.textContent = "";
+  function changePage(target) {
+    owner = "";
     const url = new URL(location.href);
     url.searchParams.delete("owner");
     history.replaceState(null, "", url);
-  });
-  form.addEventListener("submit", event => {
-    event.preventDefault();
-    if (owner.value) void load(false);
-  });
+    void load(true, target);
+  }
+  previous.addEventListener("click", () => changePage(page - 1));
+  next.addEventListener("click", () => changePage(page + 1));
   function openEditor(quota) {
     const limit = quota ? currentQuota?.limitMiB : currentAlert?.thresholdMiB;
     if (busy || limit === undefined) return;
     editingQuota = quota;
     alertForm.reset();
     alertForm.elements.threshold.value = limit;
-    adminElement("admin-storage-alert-target").textContent = owner.value;
+    adminElement("admin-storage-alert-target").textContent = owner;
     adminElement("admin-storage-alert-dialog-title").textContent = quota ? "设置邮箱硬配额" : "设置容量预警";
     adminElement("admin-storage-alert-input-label").textContent = quota ? "硬配额（MiB）" : "容量阈值（MiB）";
     adminElement("admin-storage-alert-help").textContent = quota
@@ -208,7 +224,7 @@ function setupAdminStorage() {
     alertForm.elements.password.value = "";
     alertSave.disabled = alertClose.disabled = true;
     try {
-      const path = "/api/admin/accounts/" + encodeURIComponent(owner.value) + (editingQuota ? "/storage-quota" : "/storage-alert");
+      const path = "/api/admin/accounts/" + encodeURIComponent(owner) + (editingQuota ? "/storage-quota" : "/storage-alert");
       const response = await fetch(path, {
         method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
       });

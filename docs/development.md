@@ -11,9 +11,13 @@ SMTP 收信在事务外准备 MIME 索引元数据，并在多个收件人间复
 
 当前每个数据库使用一个 UID 分配器。若要按邮箱文件夹拆分，需保留已公开的 UID 和 UIDVALIDITY，为每个文件夹设置高于既有 UID 的 UIDNEXT，并把唯一约束改为按文件夹判断。迁移还要验证 COPY、MOVE、删信后的 UID 单调性，避免新旧实例并行时同时分配。应先隔离和验证账户状态、草稿和文件夹操作现在依赖的事务约束，再替换分配器。
 
+拆分时先区分两个热点。只要 SMTP 收信、网页草稿和账号操作仍共享 `lockIMAPUIDs`，新计数表也无法减少这些事务的行锁等待。先为相关操作明确各自的邮箱或文件夹锁，跨文件夹操作按稳定顺序加锁，再用现有共享 MySQL 并发测试验证。
+
+切换计数器时，用旧的全局 `next_uid` 初始化既有文件夹的计数器下限，空文件夹也一样，避免重用已删除邮件的 UID。保留可见 UID 和 UIDVALIDITY，以邮箱及文件夹作为 UID 的唯一范围。验收覆盖 IMAP APPEND、UID COPY/MOVE、空文件夹、重启、邮箱回收后重建，以及多个实例并发写同一个和不同文件夹。切换前停写并备份。跨文件夹重复 UID 开始出现后，旧版全局唯一约束无法直接恢复，回滚须使用切换前快照或经过验收的反向迁移。
+
 ## 包结构
 
-`internal/mailmime` 解析邮件正文与内嵌图片，并提供 Web 阅读、打印和翻译共用的 HTML 清理策略。`internal/mailqueue` 通过存储接口获取可投递任务、恢复租约和确定下次运行时间。投递状态事务、SMTP 路由和邮箱通知由 `internal/server` 的实现负责。
+`internal/mailmime` 解析邮件正文与内嵌图片，并提供 Web 阅读、打印和翻译共用的 HTML 清理策略。`internal/mailqueue` 通过存储接口获取可投递任务、恢复租约和确定下次运行时间。`internal/mailstore` 保存各协议共用的邮件字段。运行 `go test ./internal/mailqueue ./internal/mailstore` 可单独验证调度、重试、写入及回滚。投递状态事务、SMTP 路由和邮箱通知由 `internal/server` 的实现负责。
 
 ## 本地回归
 

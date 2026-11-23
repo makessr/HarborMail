@@ -95,6 +95,8 @@ function renderDetails(id, entries) {
 const accountList = adminElement("admin-accounts");
 const accountSheet = adminElement("admin-account-sheet");
 const accountSheetAccess = adminElement("admin-account-sheet-access");
+const accountSheetPassword = adminElement("admin-account-sheet-password");
+const accountSheetDelete = adminElement("admin-account-sheet-delete");
 const accountSheetLifecycle = adminElement("admin-account-sheet-lifecycle");
 const accountRoleLabels = { admin: "全站管理员", domain_admin: "域管理员", user: "普通用户" };
 const accountStatusLabels = { retired: "已回收", suspended: "已停用", active: "启用" };
@@ -106,16 +108,20 @@ function renderAccountSheet(account) {
   adminElement("admin-account-sheet-email").textContent = account.email;
   renderDetails("admin-account-sheet-details", [
     ["角色", accountRoleLabels[accountRoleOf(account)]],
-    ["状态", accountStatusLabels[accountStatusOf(account)]],
+    ["状态", account.purged ? "已清空 · 地址保留" : accountStatusLabels[accountStatusOf(account)]],
     ["来源", account.managed ? "后台" : "服务器配置"],
     ["别名", account.aliases?.join("、") || "无"]
   ]);
   adminElement("admin-account-sheet-actions").hidden = domainAdminOnly;
   accountSheetAccess.hidden = account.retired;
+  accountSheetPassword.hidden = account.retired || (account.admin && account.email !== signedInAdmin);
+  accountSheetDelete.hidden = !account.canDelete;
+  accountSheetDelete.textContent = account.purged ? "释放地址" : "删除邮箱";
   const ownInstallationAdmin = account.configuredAdmin && account.email === signedInAdmin;
-  accountSheetLifecycle.hidden = account.admin && !account.configuredAdmin;
+  accountSheetLifecycle.hidden = account.purged || (account.admin && !account.configuredAdmin);
   accountSheetLifecycle.textContent = ownInstallationAdmin ? "交接并回收" : account.admin ? "交接与删除" : "邮箱管理";
   adminElement("admin-account-sheet-storage").href = "/admin/storage?" + new URLSearchParams({ owner: account.email });
+  adminElement("admin-account-sheet-storage").hidden = Boolean(account.purged);
 }
 
 function renderAccounts() {
@@ -147,7 +153,7 @@ function renderAccounts() {
     const status = document.createElement("span");
     status.className = "admin-account-state";
     status.dataset.state = accountStatusOf(account);
-    status.textContent = accountStatusLabels[status.dataset.state];
+    status.textContent = account.purged ? "地址保留" : accountStatusLabels[status.dataset.state];
     row.insertCell().append(status);
     content.append(row);
   }
@@ -171,7 +177,10 @@ function renderDomains(domains) {
   if (domains.some(({ name }) => name === previousFilter)) accountDomain.value = previousFilter;
   if (domains.some(({ name }) => name === previousCheck)) dnsDomain.value = previousCheck;
   dnsCheck.disabled = dnsDomain.disabled || domains.length === 0;
-  if (showDomains) renderDomainRows(domains);
+  if (showDomains) {
+    renderDomainRows(domains);
+    adminElement("admin-domain-empty").hidden = domains.length !== 0;
+  }
 }
 
 async function loadOverview() {
@@ -354,7 +363,8 @@ const accessConfirmPassword = accessForm.elements.confirmPassword;
 const accessLabels = {
   sessions: "强制退出全部会话", app_passwords: "撤销应用密码", suspend: "停用账号登录", restore: "恢复账号登录",
   password_reset: "重置主邮箱密码", password_change: "修改自己的密码", admin_grant: "设为全站管理员", admin_revoke: "撤销全站管理员权限", outbound_limit: "更新外发额度", account_create: "创建邮箱账号", storage_alert: "更新容量预警", storage_quota: "更新邮箱硬配额",
-  mailbox_retire: "回收邮箱", mailbox_restore: "恢复已回收邮箱", mailbox_purge: "清除邮箱数据", mailbox_rename: "迁移邮箱地址"
+  mailbox_retire: "回收邮箱", mailbox_restore: "恢复已回收邮箱", mailbox_purge: "清除邮箱数据", mailbox_rename: "迁移邮箱地址",
+  mailbox_delete: "删除并释放邮箱地址", password_recovery: "使用重置码找回密码"
 };
 let accessTarget = "";
 let accessRequest = 0;
@@ -383,7 +393,7 @@ function updateAccessImpact() {
   submit.dataset.intent = ["sessions", "app_passwords", "suspend", "admin_revoke", "password_reset"].includes(accessScope.value) ? "caution" : "normal";
 }
 
-function openAccountAccess(email) {
+function openAccountAccess(email, initialScope = "") {
   accessTarget = email;
   accessForm.reset();
   accessControls.hidden = true;
@@ -394,10 +404,10 @@ function openAccountAccess(email) {
   adminElement("admin-access-all").href = "/admin/audit?" + new URLSearchParams({ target: email });
   updateAccessImpact();
   accessDialog.showModal();
-  void loadAccountAccess("正在读取账号访问状态…");
+  void loadAccountAccess("正在读取账号访问状态…", initialScope);
 }
 
-async function loadAccountAccess(message) {
+async function loadAccountAccess(message, initialScope = "") {
   const revision = ++accessRequest;
   accessStatus.textContent = message;
   try {
@@ -418,7 +428,7 @@ async function loadAccountAccess(message) {
     renderDetails("admin-access-counts", [
       ["账号状态", data.suspended ? "已停用" : "启用"], ["有效网页会话", data.sessions], ["有效应用密码", data.appPasswords]
     ]);
-    const selected = accessScope.value;
+    const selected = initialScope || accessScope.value;
     const scopes = data.suspended ? ["restore"] : ["sessions", "app_passwords"];
     if (!data.suspended && data.canSuspend) scopes.push("suspend");
     if (data.canSuspend) scopes.push("password_reset");
@@ -428,7 +438,7 @@ async function loadAccountAccess(message) {
     updateAccessImpact();
     const audit = data.audit.map(record => {
       const item = document.createElement("li");
-      const affected = ["sessions", "app_passwords", "suspend", "password_reset", "password_change", "admin_grant", "admin_revoke"].includes(record.action) ? "（撤销 " + record.affected + " 条记录）" : "";
+      const affected = ["sessions", "app_passwords", "suspend", "password_reset", "password_change", "password_recovery", "admin_grant", "admin_revoke"].includes(record.action) ? "（撤销 " + record.affected + " 条记录）" : "";
       item.textContent = queueTime(record.stamp) + " · " + record.actor + " · " + accessLabels[record.action] + affected;
       return item;
     });
@@ -825,6 +835,14 @@ if (showAccounts) {
     (trigger || find).focus({ preventScroll: true });
   });
   accountSheetAccess.addEventListener("click", () => openAccountAccess(selectedAccountEmail));
+  accountSheetPassword.addEventListener("click", () => {
+    if (selectedAccountEmail === signedInAdmin) adminElement("admin-password-dialog").showModal();
+    else openAccountAccess(selectedAccountEmail, "password_reset");
+  });
+  accountSheetDelete.addEventListener("click", () => {
+    const account = accounts.find(item => item.email === selectedAccountEmail);
+    if (account) openMailboxLifecycle(account, "mailbox_delete");
+  });
   accountSheetLifecycle.addEventListener("click", () => {
     const account = accounts.find(item => item.email === selectedAccountEmail);
     if (account?.configuredAdmin && account.admin && account.email !== signedInAdmin) {

@@ -27,6 +27,7 @@
   <script src="/two-factor.js" defer></script>
   <script src="/translation.js" defer></script>
   <script src="/app.js" defer></script>
+  <script src="/password-settings.js" defer></script>
   <script src="/compose-options.js" defer></script>
   <script src="/contacts.js" defer></script>
   <script src="/app-passwords.js" defer></script>
@@ -42,7 +43,9 @@
       <label>密码<input name="password" type="password" autocomplete="current-password" required></label>
       <label id="login-mfa-field" hidden>两步验证码或恢复码<input name="code" type="text" autocomplete="one-time-code" maxlength="32" spellcheck="false"></label>
       <p id="login-error" class="error" role="alert"></p>
+      <p id="login-password-status" class="rule-help login-password-status" role="status"></p>
       <button class="primary" type="submit">登录</button>
+      <button class="login-recovery-link" id="show-password-recovery" type="button" aria-haspopup="dialog">忘记密码？</button>
     </form>
     <nav class="project-links login-project" aria-label="项目与作者"><a class="project-link" href="https://github.com/makessr/HarborMail" target="_blank" rel="noopener noreferrer" aria-label="在 GitHub 打开 Harbor Mail（新标签页）"><svg class="glyph" aria-hidden="true"><use href="/icons.svg#github-fill"></use></svg> GitHub</a><a class="project-author" href="https://github.com/makessr" target="_blank" rel="noopener noreferrer">作者 <strong>MakeSSR</strong></a></nav>
   </main>
@@ -97,6 +100,8 @@
           <details class="profile-group disclosure" name="profile-settings">
             <summary><svg class="glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#shield"></use></svg> 账号与安全</summary>
             <div class="profile-group-items">
+              <button id="show-password-settings" type="button" aria-haspopup="dialog"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#key-2-line"></use></svg> 修改密码</button>
+              <button id="show-recovery-code" type="button" aria-haspopup="dialog"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#shield"></use></svg> 密码重置码</button>
               <button id="show-two-factor" type="button" aria-haspopup="dialog"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/kubai-icons.svg#shield"></use></svg> 两步验证</button>
               <button id="show-web-sessions"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#device-line"></use></svg> 登录设备</button>
               <button id="show-app-passwords"><svg class="glyph" aria-hidden="true" focusable="false"><use href="/icons.svg#key-2-line"></use></svg> 应用密码</button>
@@ -844,6 +849,46 @@
         </footer>
       </section>
     </section>
+  </dialog>
+  <dialog id="password-settings-dialog" aria-labelledby="password-settings-title">
+    <form id="password-settings-form" class="editor" method="post">
+      <header class="heading"><h2 id="password-settings-title">修改邮箱密码</h2><button class="icon" type="button" data-close aria-label="关闭"><svg class="glyph" aria-hidden="true"><use href="/icons.svg#close-line"></use></svg></button></header>
+      <label>当前密码<input name="password" type="password" required autocomplete="current-password"></label>
+      <label>新密码<input name="newPassword" type="password" required autocomplete="new-password"></label>
+      <label>确认新密码<input name="confirmation" type="password" required autocomplete="new-password"></label>
+      <p class="rule-help">保存后需重新登录，已生成的应用密码和密码重置码会失效。</p>
+      <p id="password-settings-error" class="error" role="alert"></p>
+      <footer><button class="primary" type="submit">修改密码</button></footer>
+    </form>
+  </dialog>
+  <dialog id="recovery-code-dialog" aria-labelledby="recovery-code-title">
+    <section class="editor">
+      <header class="heading"><h2 id="recovery-code-title">密码重置码</h2><button class="icon" type="button" data-close aria-label="关闭"><svg class="glyph" aria-hidden="true"><use href="/icons.svg#close-line"></use></svg></button></header>
+      <p class="rule-help">忘记密码时可用此码重设一次。生成新码后，旧码立即失效。</p>
+      <form id="recovery-code-form" class="two-factor-form" method="post">
+        <label>当前密码<input name="password" type="password" required autocomplete="current-password"></label>
+        <p id="recovery-code-error" class="error" role="alert"></p>
+        <footer><button class="primary" type="submit">生成重置码</button></footer>
+      </form>
+      <section id="recovery-code-output" class="two-factor-form" hidden>
+        <label>一次性密码重置码<input id="recovery-code-secret" readonly autocomplete="off" spellcheck="false"></label>
+        <p class="rule-help">重置码只显示一次，请保存到密码管理器。</p>
+        <footer><button id="copy-recovery-code" class="secondary" type="button">复制重置码</button></footer>
+        <p id="recovery-code-copy-status" class="rule-help" role="status"></p>
+      </section>
+    </section>
+  </dialog>
+  <dialog id="password-recovery-dialog" aria-labelledby="password-recovery-title">
+    <form id="password-recovery-form" class="editor" method="post">
+      <header class="heading"><h2 id="password-recovery-title">找回密码</h2><button class="icon" type="button" data-close aria-label="关闭"><svg class="glyph" aria-hidden="true"><use href="/icons.svg#close-line"></use></svg></button></header>
+      <label>邮箱<input name="email" type="email" required autocomplete="username" maxlength="254"></label>
+      <label>密码重置码<input name="code" type="password" required autocomplete="off" maxlength="64" spellcheck="false"></label>
+      <label>新密码<input name="newPassword" type="password" required autocomplete="new-password"></label>
+      <label>确认新密码<input name="confirmation" type="password" required autocomplete="new-password"></label>
+      <p class="rule-help">请使用提前保存的密码重置码。没有重置码时，请联系此邮箱的管理员。</p>
+      <p id="password-recovery-error" class="error" role="alert"></p>
+      <footer><button class="primary" type="submit">重设密码</button></footer>
+    </form>
   </dialog>
   <dialog id="two-factor-dialog" aria-labelledby="two-factor-title">
     <section class="editor">

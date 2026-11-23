@@ -155,6 +155,7 @@ jobs:
           set -Eeuo pipefail
           find web -name '*.js' -print0 | xargs -0 -n 1 node --check
           bash -n ops/backup.sh
+          bash -n ops/compose-maintenance.sh
           bash -n ops/init-docker.sh
           export HARBOR_DATA_PATH=/tmp/harbor-data HARBOR_MYSQL_DATA_PATH=/tmp/harbor-mysql
           export HARBOR_ACME_HOSTS=mail.harbor.test

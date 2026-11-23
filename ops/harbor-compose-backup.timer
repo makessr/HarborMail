@@ -1,0 +1,11 @@
+[Unit]
+Description=Back up and verify Harbor Mail Compose daily
+
+[Timer]
+OnCalendar=*-*-* 04:15:00 Asia/Shanghai
+RandomizedDelaySec=15min
+Persistent=true
+Unit=harbor-compose-maintenance@backup.service
+
+[Install]
+WantedBy=timers.target

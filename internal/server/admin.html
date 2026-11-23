@@ -81,7 +81,7 @@
         <div class="admin-table"><table>
           <thead><tr><th scope="col">范围</th><th scope="col">目标</th><th scope="col">今日已用</th><th scope="col">每日额度</th></tr></thead>
           <tbody id="admin-limit-items"></tbody>
-        </table></div>
+        </table><p class="admin-list-empty" id="admin-limit-empty" role="status" hidden>暂无外发额度</p></div>
       </details>
       <form id="admin-delivery-log-form" class="admin-tool-form">
         <label>发件邮箱<input name="owner" type="email" maxlength="254"></label>
@@ -93,7 +93,7 @@
       <div class="admin-table"><table>
         <thead><tr><th scope="col">时间</th><th scope="col">投递编号</th><th scope="col">发件邮箱</th><th scope="col">收件人</th><th scope="col">事件</th><th scope="col">SMTP</th></tr></thead>
         <tbody id="admin-delivery-log-items"></tbody>
-      </table></div>
+      </table><p class="admin-list-empty" id="admin-delivery-log-empty" role="status" hidden>暂无匹配的投递事件</p></div>
       <button class="secondary" id="admin-delivery-log-more" type="button" hidden>下一页</button>
     </section>
     <section id="admin-dmarc-tools" class="admin-panel" hidden>
@@ -111,7 +111,7 @@
       <div class="admin-table"><table>
         <thead><tr><th scope="col">域名</th><th scope="col">报告组织</th><th scope="col">周期（UTC）</th><th scope="col">邮件数</th><th scope="col">DMARC 通过</th><th scope="col">来源</th></tr></thead>
         <tbody id="admin-dmarc-items"></tbody>
-      </table></div>
+      </table><p class="admin-list-empty" id="admin-dmarc-empty" role="status" hidden>暂无 DMARC 报告</p></div>
       <div id="admin-dmarc-sources" hidden>
         <h2 id="admin-dmarc-sources-title">发信来源</h2>
         <div class="admin-table"><table>
@@ -121,7 +121,9 @@
       </div>
     </section>
     <section id="admin-quarantine-view" class="admin-panel" hidden>
-      <div class="admin-table"><table><thead><tr><th>时间</th><th>发件地址</th><th>原收件地址</th><th>大小</th><th>操作</th></tr></thead><tbody id="admin-quarantine-items"></tbody></table></div>
+      <div class="admin-table"><table><thead><tr><th>时间</th><th>发件地址</th><th>原收件地址</th><th>大小</th><th>操作</th></tr></thead><tbody id="admin-quarantine-items"></tbody></table>
+        <p class="admin-list-empty" id="admin-quarantine-empty" role="status" hidden>暂无隔离邮件</p>
+      </div>
       <button type="button" class="secondary" id="admin-quarantine-more" hidden>下一页</button>
       <dialog id="admin-quarantine-dialog"><form class="editor" id="admin-quarantine-form">
         <h2 id="admin-quarantine-action"></h2>
@@ -171,7 +173,7 @@
             <thead><tr><th scope="col">任务</th><th scope="col">发件账号</th><th scope="col">状态</th><th scope="col">尝试</th><th scope="col">下次处理</th><th scope="col">投递说明</th></tr></thead>
             <tbody id="admin-recent"></tbody>
           </table>
-          <p class="admin-note" id="admin-recent-empty" hidden>当前没有待处理或异常任务。</p>
+          <p class="admin-list-empty" id="admin-recent-empty" role="status" hidden>暂无待处理或异常任务</p>
         </div>
       </section>
       <section class="admin-panel admin-directory" aria-labelledby="admin-service-title">
@@ -214,15 +216,25 @@ docker compose up -d</code></pre>
       </section>
     </div>
     <div id="admin-storage-view" hidden>
-      <section class="admin-panel admin-storage-controls" aria-label="选择邮箱">
-        <form class="admin-dns-form" id="admin-storage-form">
-          <label>主邮箱<select name="owner" id="admin-storage-owner" required></select></label>
-          <button class="primary" type="submit">查看用量</button>
-        </form>
-        <p class="admin-note">原始邮件及附件用量</p>
+      <section class="admin-panel" aria-labelledby="admin-storage-list-title">
+        <h2 id="admin-storage-list-title">邮箱用量</h2>
+        <div class="admin-table">
+          <table>
+            <thead><tr><th scope="col">主邮箱</th><th scope="col">邮件数量</th><th scope="col">邮件占用</th><th scope="col">队列占用</th></tr></thead>
+            <tbody id="admin-storage-items"></tbody>
+          </table>
+          <p class="admin-list-empty" id="admin-storage-empty" role="status" hidden>暂无邮箱</p>
+        </div>
+        <nav class="admin-security-pagination" aria-label="邮箱用量分页">
+          <span id="admin-storage-page" class="admin-note" role="status"></span>
+          <div class="admin-filters">
+            <button id="admin-storage-prev" class="secondary" type="button" disabled>上一页</button>
+            <button id="admin-storage-next" class="secondary" type="button" disabled>下一页</button>
+          </div>
+        </nav>
       </section>
-      <p id="admin-storage-hint" class="admin-note">选择主邮箱后查看存储用量。</p>
       <div id="admin-storage-result" hidden>
+        <h2 id="admin-storage-account"></h2>
         <p id="admin-storage-stamp" class="admin-note"></p>
         <dl class="admin-kpis" id="admin-storage-summary" aria-label="存储用量汇总"></dl>
         <section class="admin-panel admin-storage-alert" aria-labelledby="admin-storage-alert-title">
@@ -279,7 +291,7 @@ docker compose up -d</code></pre>
               <tbody id="admin-accounts"></tbody>
             </table>
           </div>
-          <p id="admin-empty" hidden>没有匹配的邮箱账号。</p>
+          <p class="admin-list-empty" id="admin-empty" role="status" hidden>没有匹配的邮箱账号</p>
           <p class="admin-account-count" id="admin-account-count" role="status"></p>
         </div>
       </section>
@@ -295,6 +307,7 @@ docker compose up -d</code></pre>
             <thead><tr><th scope="col">域名</th><th scope="col">主邮箱</th><th scope="col">别名</th><th scope="col">来源</th><th scope="col">操作</th></tr></thead>
             <tbody id="admin-domain-list"></tbody>
           </table>
+          <p class="admin-list-empty" id="admin-domain-empty" role="status" hidden>暂无邮件域名</p>
         </div>
       </section>
       <section class="admin-panel admin-directory" aria-labelledby="admin-dns-title">
@@ -329,7 +342,7 @@ docker compose up -d</code></pre>
             <thead><tr><th scope="col">任务 / 发件账号</th><th scope="col">状态 / 尝试次数</th><th scope="col">邮件时间 / 下次处理</th><th scope="col">投递说明</th><th scope="col">操作</th></tr></thead>
             <tbody id="admin-delivery-items"></tbody>
           </table>
-          <p id="admin-delivery-empty" hidden>没有符合条件的投递任务。</p>
+          <p class="admin-list-empty" id="admin-delivery-empty" role="status" hidden>没有符合条件的投递任务</p>
         </div>
         <button class="secondary admin-queue-more" id="admin-queue-more" type="button" hidden>加载更多</button>
       </section>
@@ -343,7 +356,7 @@ docker compose up -d</code></pre>
             <thead><tr><th scope="col">操作时间</th><th scope="col">操作者</th><th scope="col">任务 / 发件账号</th><th scope="col">原重试时间</th></tr></thead>
             <tbody id="admin-queue-audit"></tbody>
           </table>
-          <p id="admin-retry-audit-empty" hidden>暂无提前重试记录。</p>
+          <p class="admin-list-empty" id="admin-retry-audit-empty" role="status" hidden>暂无提前重试记录</p>
         </div>
       </section>
     </div>
@@ -364,7 +377,7 @@ docker compose up -d</code></pre>
             <thead><tr><th scope="col">时间</th><th scope="col">操作</th><th scope="col">操作者</th><th scope="col">目标</th><th scope="col">详情</th></tr></thead>
             <tbody id="admin-audit-events"></tbody>
           </table>
-          <p id="admin-audit-empty" hidden>没有符合条件的操作记录。</p>
+          <p class="admin-list-empty" id="admin-audit-empty" role="status" hidden>没有符合条件的操作记录</p>
         </div>
         <button class="secondary admin-queue-more" id="admin-audit-more" type="button" hidden>加载更多</button>
       </section>
@@ -386,7 +399,7 @@ docker compose up -d</code></pre>
             <thead><tr><th scope="col">别名</th><th scope="col">主邮箱</th><th scope="col">来源</th><th scope="col">状态</th><th scope="col">别名发信</th><th scope="col">操作</th></tr></thead>
             <tbody id="admin-alias-items"></tbody>
           </table>
-          <p id="admin-alias-empty" hidden>没有匹配的别名。</p>
+          <p class="admin-list-empty" id="admin-alias-empty" role="status" hidden></p>
         </div>
       </section>
     </div>
@@ -460,7 +473,7 @@ docker compose up -d</code></pre>
             <thead><tr><th scope="col">时间</th><th scope="col">账号</th><th scope="col">来源</th><th scope="col">协议</th><th scope="col">结果</th></tr></thead>
             <tbody id="admin-security-items"></tbody>
           </table>
-          <p class="admin-note" id="admin-security-empty" hidden>没有匹配的登录记录。</p>
+          <p class="admin-list-empty" id="admin-security-empty" role="status" hidden>没有匹配的登录记录</p>
         </div>
         <nav class="admin-security-pagination" aria-label="登录记录分页">
           <span class="admin-note" id="admin-security-page-status" role="status"></span>
@@ -492,8 +505,10 @@ docker compose up -d</code></pre>
       <dl id="admin-account-sheet-details"></dl>
       <div class="admin-account-sheet-actions" id="admin-account-sheet-actions">
         <button class="secondary" type="button" id="admin-account-sheet-access">权限与访问</button>
+        <button class="secondary" type="button" id="admin-account-sheet-password">修改密码</button>
         <a class="secondary" id="admin-account-sheet-storage">查看用量</a>
         <button class="secondary" type="button" id="admin-account-sheet-lifecycle">邮箱管理</button>
+        <button class="secondary" type="button" id="admin-account-sheet-delete">删除邮箱</button>
       </div>
     </div>
   </dialog>

@@ -77,7 +77,7 @@ func (a *app) adminResetPassword(w http.ResponseWriter, r *http.Request, actor s
 	a.updatePrimaryPassword(w, r, actor, target, "password_reset")
 }
 
-func (a *app) adminChangeOwnPassword(w http.ResponseWriter, r *http.Request, actor string) {
+func (a *app) changeOwnPassword(w http.ResponseWriter, r *http.Request, actor string) {
 	a.updatePrimaryPassword(w, r, actor, actor, "password_change")
 }
 
@@ -104,7 +104,7 @@ func (a *app) updatePrimaryPassword(w http.ResponseWriter, r *http.Request, acto
 	_, verified, err := a.authenticatePrimary(ctx, actor, input.Password)
 	if err != nil {
 		if !loginTemporaryError(w, err) {
-			fail(w, http.StatusForbidden, "管理员主邮箱密码不正确")
+			fail(w, http.StatusForbidden, "当前主邮箱密码不正确")
 		}
 		return
 	}
@@ -152,22 +152,31 @@ func (a *app) updatePrimaryPassword(w http.ResponseWriter, r *http.Request, acto
 		fail(w, http.StatusConflict, "密码已被其他操作更新，请刷新后重试")
 		return
 	}
-	if letterError(w, err) || letterError(w, a.storePrimaryPassword(ctx, tx, target, hash)) {
-		return
-	}
-	affected, err := a.revokeAccountCredentials(ctx, tx, target, "password_reset")
 	if letterError(w, err) {
 		return
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO admin_account_actions(actor,target,action,affected,stamp)
-		VALUES(?,?,?,?,?)`, actor, target, action, affected, time.Now().Unix()); letterError(w, err) {
-		return
-	}
-	if letterError(w, a.commitMailbox(tx, target)) {
+	affected, err := a.replacePrimaryPassword(ctx, tx, actor, target, action, hash)
+	if letterError(w, err) || letterError(w, a.commitMailbox(tx, target)) {
 		return
 	}
 	if actor == target {
 		a.cookie(w, "", -1)
 	}
 	reply(w, http.StatusOK, map[string]any{"affected": affected, "signedOut": actor == target})
+}
+
+func (a *app) replacePrimaryPassword(ctx context.Context, tx *sql.Tx, actor, target, action string, hash []byte) (int64, error) {
+	if err := a.storePrimaryPassword(ctx, tx, target, hash); err != nil {
+		return 0, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM password_recovery_codes WHERE owner=?`, target); err != nil {
+		return 0, err
+	}
+	affected, err := a.revokeAccountCredentials(ctx, tx, target, "password_reset")
+	if err != nil {
+		return 0, err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO admin_account_actions(actor,target,action,affected,stamp)
+		VALUES(?,?,?,?,?)`, actor, target, action, affected, time.Now().Unix())
+	return affected, err
 }

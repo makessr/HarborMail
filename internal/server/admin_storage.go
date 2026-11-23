@@ -4,7 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -37,6 +40,83 @@ type storageQuota struct {
 // Keep on-demand scans from piling up on the mailbox database.
 var storageQuerySlot = make(chan struct{}, 1)
 
+func (a *app) adminStorageList(w http.ResponseWriter, r *http.Request, actor string) {
+	const pageSize = 25
+	type row struct {
+		Email        string `json:"email"`
+		MessageBytes int64  `json:"messageBytes"`
+		MessageCount int64  `json:"messageCount"`
+		QueueBytes   int64  `json:"queueBytes"`
+	}
+	page, err := strconv.Atoi(r.URL.Query().Get("page"))
+	if r.URL.Query().Get("page") == "" {
+		page, err = 1, nil
+	}
+	if err != nil || page < 1 {
+		fail(w, http.StatusBadRequest, "页码无效")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	accounts, err := a.allAccountNames(ctx)
+	if letterError(w, err) {
+		return
+	}
+	names := make([]string, 0, len(accounts))
+	for name := range accounts {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	last := max(1, (len(names)+pageSize-1)/pageSize)
+	page = min(page, last)
+	offset := (page - 1) * pageSize
+	names = names[offset:min(offset+pageSize, len(names))]
+	items := make([]row, len(names))
+	if len(names) != 0 {
+		select {
+		case storageQuerySlot <- struct{}{}:
+			defer func() { <-storageQuerySlot }()
+		default:
+			fail(w, http.StatusTooManyRequests, "已有存储统计在运行，请稍后刷新")
+			return
+		}
+		positions := make(map[string]int, len(names))
+		args := make([]any, 0, 2*len(names))
+		for i, name := range names {
+			items[i].Email = name
+			positions[name] = i
+			args = append(args, name)
+		}
+		args = append(args, args...)
+		in := strings.TrimSuffix(strings.Repeat("?,", len(names)), ",")
+		rows, err := a.db.QueryContext(ctx, `SELECT 0,owner,COUNT(*),SUM(LENGTH(raw)) FROM letters WHERE owner IN (`+in+`) GROUP BY owner
+			UNION ALL SELECT 1,sender,COUNT(*),SUM(LENGTH(raw)) FROM outbox WHERE sender IN (`+in+`) GROUP BY sender`, args...)
+		if letterError(w, err) {
+			return
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var kind int
+			var name string
+			var count, size int64
+			if letterError(w, rows.Scan(&kind, &name, &count, &size)) {
+				return
+			}
+			item := &items[positions[name]]
+			if kind == 0 {
+				item.MessageBytes, item.MessageCount = size, count
+			} else {
+				item.QueueBytes = size
+			}
+		}
+		if letterError(w, rows.Err()) {
+			return
+		}
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	reply(w, http.StatusOK, map[string]any{"email": actor, "items": items, "page": page, "pages": last, "total": len(accounts)})
+}
+
 func (a *app) adminAccountStorage(w http.ResponseWriter, r *http.Request, _ string) {
 	target, valid := storageAccountAddress(w, r)
 	if !valid {
@@ -44,14 +124,15 @@ func (a *app) adminAccountStorage(w http.ResponseWriter, r *http.Request, _ stri
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
-	if _, err := a.baseAccountHash(ctx, a.db, target); errors.Is(err, sql.ErrNoRows) {
+	identity, err := a.baseAccountDigest(ctx, a.db, target)
+	if errors.Is(err, sql.ErrNoRows) {
 		fail(w, http.StatusNotFound, "未找到该主邮箱")
 		return
 	} else if err != nil {
 		fail(w, http.StatusServiceUnavailable, "无法读取邮箱账号，请稍后刷新")
 		return
 	}
-	key := storageCacheKey(target)
+	key := fmt.Sprintf("%s:%x", storageCacheKey(target), identity)
 	var cached accountStorage
 	hit, reachable := a.adminCache.read(ctx, key, &cached)
 	if hit && cached.Email == target && cached.At > 0 && cached.Folders != nil && cached.Queue != nil {

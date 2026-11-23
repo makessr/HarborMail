@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"errors"
+	"math/rand/v2"
 	"net/http"
 	"slices"
 	"strings"
@@ -158,6 +159,10 @@ func (a *app) adminCreateAccount(w http.ResponseWriter, r *http.Request, actor s
 		return
 	}
 	target, err := a.destination(ctx, tx, email)
+	if errors.Is(err, errMailboxRetired) {
+		fail(w, 409, "此地址已回收，仍由原邮箱保留。请在账号列表中恢复邮箱，或删除并释放地址后再创建。")
+		return
+	}
 	if errors.Is(err, errDestinationChanged) || (err == nil && target.owner != "") {
 		fail(w, 409, "此地址已用作主邮箱或收信别名")
 		return
@@ -176,7 +181,8 @@ func (a *app) adminCreateAccount(w http.ResponseWriter, r *http.Request, actor s
 	if _, err := tx.ExecContext(ctx, `INSERT INTO managed_accounts(email,password_hash) VALUES(?,?)`, email, hash); letterError(w, err) {
 		return
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO account_access(owner,suspended) VALUES(?,FALSE)`, email); letterError(w, err) {
+	// Reissued addresses must not match an old mail client's generation.
+	if _, err := tx.ExecContext(ctx, `INSERT INTO account_access(owner,suspended,protocol_generation) VALUES(?,FALSE,?)`, email, 1+rand.Int64N(1<<62)); letterError(w, err) {
 		return
 	}
 	if letterError(w, a.seedMailboxLimits(ctx, tx, email)) {

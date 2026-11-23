@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"net/http"
+	"slices"
+	"strings"
 	"time"
 )
 
@@ -53,8 +55,24 @@ func (a *app) adminAccountList(w http.ResponseWriter, r *http.Request, actor str
 	if letterError(w, err) {
 		return
 	}
+	accounts := a.adminAccounts(names, suspended, retired, admins, aliases)
+	if admins[actor] {
+		for i := range accounts {
+			email := accounts[i].Email
+			accounts[i].CanDelete = !admins[email] && !a.mailboxReleaseConfigured(email)
+		}
+		for email := range retired {
+			if !names[email] {
+				_, configured := a.accounts[email]
+				if !configured {
+					accounts = append(accounts, adminAccount{Email: email, Managed: true, Retired: true, Purged: true, CanDelete: !a.mailboxReleaseConfigured(email)})
+				}
+			}
+		}
+		slices.SortFunc(accounts, func(left, right adminAccount) int { return strings.Compare(left.Email, right.Email) })
+	}
 	reply(w, http.StatusOK, map[string]any{
-		"email": actor, "accounts": a.adminAccounts(names, suspended, retired, admins, aliases), "domains": a.scopedDomains(actor, domains, admins[actor]),
+		"email": actor, "accounts": accounts, "domains": a.scopedDomains(actor, domains, admins[actor]),
 	})
 }
 

@@ -116,6 +116,9 @@ function showLogin() {
   byId("app-password-secret").value = "";
   if (byId("app-passwords-dialog").open) byId("app-passwords-dialog").close();
   if (byId("web-sessions-dialog").open) byId("web-sessions-dialog").close();
+  for (const id of ["password-settings-dialog", "recovery-code-dialog"]) {
+    if (byId(id).open) byId(id).close();
+  }
   resetTwoFactor();
   if (byId("mail-transfer-dialog").open) byId("mail-transfer-dialog").close();
   if (filterDialog.open) filterDialog.close();
@@ -134,6 +137,8 @@ async function openSession({ email, role, recoveryMode = false, attachmentMiB = 
   }
   state.recoveryMode = recoveryMode;
   byId("show-two-factor").disabled = recoveryMode;
+  byId("show-password-settings").disabled = recoveryMode;
+  byId("show-recovery-code").disabled = recoveryMode;
   state.canTranslate = configureLetterTranslation(translationProviders ?? (canTranslate ? ["microsoft"] : []), !recoveryMode);
   attachmentSizeLimit = attachmentMiB * 1048576;
   mailMessageMiB = messageMiB;
@@ -158,6 +163,7 @@ async function showMailbox(email) {
   byId("account-initial").textContent = email[0].toUpperCase();
   byId("login-form").reset();
   byId("login-error").textContent = "";
+  byId("login-password-status").textContent = "";
   editorForm.reset();
   byId("login").hidden = true;
   byId("mailbox").hidden = false;
@@ -378,7 +384,10 @@ async function load(append = false, quiet = false) {
     messageList.replaceChildren();
   }
   more.hidden = true;
-  if (!quiet) text.textContent = "正在读取邮件…";
+  if (!quiet) {
+    text.classList.remove("is-empty");
+    text.textContent = "正在读取邮件…";
+  }
   const filters = filterParams(state.filterValues);
   const query = new URLSearchParams({ folder: state.folder, q: state.query, ...filters });
   if (state.label) query.set("label", state.label);
@@ -430,6 +439,7 @@ async function load(append = false, quiet = false) {
     more.hidden = !state.next;
     const emptyMessage = state.label ? "此标签暂无邮件。" : state.folder === "snoozed" ? "暂无稍后处理的邮件。" : "此文件夹暂无邮件。";
     const searching = state.savedSearch || state.query || Object.keys(filters).length;
+    text.classList.toggle("is-empty", messageList.children.length === 0);
     text.textContent = messageList.children.length ? "" : searching ? "没有找到匹配的邮件。" : emptyMessage;
     renderBatchSelection();
     refreshOutboxUndoExpiry();
@@ -939,6 +949,7 @@ async function submit(form, action, errorId) {
 byId("login-form").addEventListener("submit", (event) => {
   event.preventDefault();
   const form = event.currentTarget;
+  byId("login-password-status").textContent = "";
   void submit(form, async data => {
     try {
       await openSession(await api("login", "POST", data));

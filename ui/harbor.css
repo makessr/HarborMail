@@ -432,7 +432,7 @@ dialog:not(.app-drawer, .admin-account-sheet, #editor) {
 .messages .row:focus-within { border-bottom-color: var(--accent); }
 .messages .row:hover { @apply bg-harbor-recess; }
 .messages .row:is([aria-current="true"], [aria-pressed="true"]) { @apply bg-harbor-active; }
-.list-status:not(:empty) {
+.list-status:not(:empty, .is-empty) {
   @apply rounded-harbor-control border border-dashed border-harbor-line bg-harbor-recess p-3;
 }
 button.more { @apply rounded-harbor-control border border-harbor-line bg-harbor-recess px-3 py-2; }

@@ -168,6 +168,7 @@ body.admin { display: grid; grid-template: auto 1fr / 208px minmax(0, 1fr); }
 .admin-table th { background: var(--paper); color: var(--muted); font-size: 13px; font-weight: 600; }
 .admin-table th:nth-child(2) { width: 100px; }
 .admin-table a { color: var(--accent-ink); }
+.admin-list-empty { margin: 0; padding: 24px 16px; color: var(--muted); text-align: center; font-size: 13px; }
 .admin-account-toolbar { align-items: center; gap: 8px; margin-bottom: 14px; }
 .admin-account-toolbar :is(select, button) { min-height: 38px; }
 .admin-account-toolbar select { min-width: 0; }
@@ -201,8 +202,7 @@ body.admin { display: grid; grid-template: auto 1fr / 208px minmax(0, 1fr); }
 .admin-account-state::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .admin-account-state[data-state="active"]::before { background: #28946e; }
 .admin-account-state[data-state="suspended"]::before { background: #b67429; }
-.admin-account-count, #admin-empty { margin: 0; padding: 11px 16px; color: var(--muted); font-size: 13px; }
-#admin-empty { border-bottom: 1px solid var(--line); }
+.admin-account-count { margin: 0; padding: 11px 16px; color: var(--muted); font-size: 13px; }
 
 dialog.admin-account-sheet {
   inset: 0 0 0 auto;
@@ -248,9 +248,8 @@ dialog.admin-account-sheet {
   .admin-account-list th:nth-child(3) { width: 25%; }
   .admin-account-list td { font-size: 13px; }
 }
-.admin-storage-controls form { margin-top: 0; }
-.admin-storage-controls label { flex: 1 1 230px; max-width: 430px; }
-.admin-storage-controls .admin-note { margin-bottom: 0; }
+#admin-storage-result { margin-top: 20px; }
+#admin-account-sheet-delete { color: var(--danger); }
 .admin-storage-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 385px), 1fr)); }
 .admin-storage-table table { min-width: 0; font-variant-numeric: tabular-nums; }
 .admin-storage-table th:nth-child(2) { width: auto; }
@@ -357,6 +356,7 @@ dialog.admin-account-sheet {
 #admin-delivery-table table { min-width: 720px; }
 #admin-delivery td { white-space: pre-line; }
 .admin-audit-table table { min-width: 730px; }
+.admin-audit-table :is(th, td):nth-child(2) { width: 1%; min-width: 10em; white-space: nowrap; }
 .admin-audit-table td:last-child { white-space: pre-line; }
 #admin-audit-status { color: var(--muted); }
 .admin-heading .admin-related-page { margin-inline-start: auto; font-size: 13px; }
