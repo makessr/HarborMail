@@ -8,13 +8,17 @@ on:
   workflow_dispatch:
     inputs:
       from:
-        description: Release tag to upgrade from and to install from
+        description: Release tag to upgrade from
         required: true
         default: v0.2.24
       to:
         description: Commit or ref to upgrade to
         required: false
         default: main
+      tag:
+        description: Published release tag whose packages are installed
+        required: false
+        default: v0.2.25
 
 permissions:
   contents: read
@@ -78,7 +82,7 @@ jobs:
     timeout-minutes: 20
     env:
       GH_TOKEN: ${{ github.token }}
-      VERSION: ${{ inputs.from }}
+      VERSION: ${{ inputs.tag || 'v0.2.25' }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -95,6 +99,7 @@ jobs:
           grep -E 'harbormail-systemd\.tar\.gz|harbormail-linux-amd64' SHA256SUMS | sha256sum --check -
           tar -tzf harbormail-systemd.tar.gz
           tar -xzf harbormail-systemd.tar.gz
+          chmod 0755 harbormail-linux-amd64
           test "$(./harbormail-linux-amd64 version)" = "$VERSION"
       - name: Install and start the tagged package
         shell: bash
