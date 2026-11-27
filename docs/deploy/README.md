@@ -21,4 +21,4 @@ Docker 会启动所选方案的配套服务。Linux 三种方案使用同一个�
 
 ![Harbor Mail 管理后台概览，包含系统状态和关于 Harbor Mail 的入口](../assets/admin-overview.webp)
 
-截图来自 v0.2.18 Docker 标准版，使用演示数据，用于定位管理后台。另可查看[网页邮箱](../assets/webmail.webp)和 [DNS 记录界面](../assets/admin-dns.webp)。
+截图来自 v0.2.25 演示实例，使用演示数据，用于定位管理后台。另可查看[网页邮箱](../assets/webmail.webp)和 [DNS 记录界面](../assets/admin-dns.webp)。

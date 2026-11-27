@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "build:ui": "tailwindcss -i ./ui/harbor.css -o ./web/harbor-ui.css --minify",
+    "screenshots": "node .github/scripts/capture-screenshots.mjs --out docs/assets --webp",
     "test:web": "node .github/scripts/test-web.mjs"
   },
   "devDependencies": {

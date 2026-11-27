@@ -376,6 +376,17 @@ MySQL 备份账户需读取整个 Harbor 数据库，以涵盖后续版本增加
 
 全量部署可把 `harbor-compose-maintenance@.service`、`harbor-compose-check.timer` 和 `harbor-compose-backup.timer` 安装到 `/etc/systemd/system/`，把脚本安装到 `/opt/harbor-mail/ops/` 并设为可执行。创建 `/etc/harbor/compose-maintenance.env`，设置 `HARBOR_MAINTENANCE_PUBLIC_URL=https://mail.example.com`。同一主机开放邮件 TLS 时，可设 `HARBOR_MAINTENANCE_MAIL_TLS=25,587,993`，只列出实际提供 TLS 的端口。改变部署或备份目录时，同时设置 `HARBOR_MAINTENANCE_COMPOSE_DIR` 或 `HARBOR_MAINTENANCE_BACKUP_DIR`。先手动运行两个服务并确认成功，再启用定时器。
 
+以上步骤由 `ops/install-compose-maintenance.sh` 一次完成。脚本在 root 下校验参数和部署目录，写入权限为 `0600` 的环境文件，把维护脚本安装到部署目录的 `ops/` 下，按实际部署目录改写服务单元，先运行一次巡检，最后启用两个定时器。
+
+```sh
+sudo bash ops/install-compose-maintenance.sh \
+  --public-url https://mail.example.com --mail-tls 25,587,993
+sudo systemctl list-timers 'harbor-compose-*'
+journalctl -u 'harbor-compose-maintenance@*.service' -n 50 --no-pager
+```
+
+`--compose-dir` 默认 `/opt/harbor-mail`，`--backup-dir` 默认 `/var/backups/harbor-mail`，由 root 独占并自动创建。首次安装时加 `--run-backup` 会在巡检之后完整运行一次备份并回读；`--no-enable` 只安装和试运行，`--dry-run` 只打印将要执行的操作。环境文件已存在时脚本不会覆盖，确需重写时加 `--force`。重复运行是安全的，会保留已有配置。
+
 巡检每五分钟检查已到期队列、磁盘可用空间和 inode、公开 HTTPS、证书到期、Rspamd 与 ClamAV 的容器健康，以及最近的扫描异常。失败时服务以非零状态退出，可通过 `journalctl -u 'harbor-compose-maintenance@*.service'` 查看；跨主机告警仍由 Prometheus、Alertmanager 或现有监控接收。
 
 外部发信验收应从收件端下载合成测试邮件的 EML 文件，同时记录测试时间、编号、文件夹分类及收件服务添加的 `Authentication-Results`。邮件原件应保存在访问受限的验收目录。每次调整出站路由或签名后复验，并分别记录 SPF、DKIM、DMARC 和是否进收件箱。

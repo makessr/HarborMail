@@ -87,13 +87,13 @@ Docker 自动启动配套服务。Linux 三种方案使用同一发行二进制�
 
 ## 界面演示
 
-截图来自正式版 **v0.2.18** 的 Docker 标准版。账号、域名、IP 和邮件均为演示数据。
+截图来自正式版 **v0.2.25** 的演示实例。账号、域名、IP 和邮件均为演示数据。
 
 ### 网页邮箱
 
 侧栏可切换收件箱、草稿、发件箱和自定义文件夹。阅读页可查看发件人详情、下载原始邮件、打印、回复或转发。
 
-![Harbor Mail v0.2.18 网页邮箱，展示收件箱与邮件阅读页](docs/assets/webmail.webp)
+![Harbor Mail v0.2.25 网页邮箱，展示收件箱与邮件阅读页](docs/assets/webmail.webp)
 
 <details>
 <summary>查看更多实机截图 · 管理后台、DNS、写信和运行监控</summary>
@@ -102,13 +102,13 @@ Docker 自动启动配套服务。Linux 三种方案使用同一发行二进制�
 
 概览显示账号数、近期管理操作和投递队列。后台也提供别名、配额、扫描隔离与审计管理。
 
-![Harbor Mail v0.2.18 管理后台的概览、趋势和队列](docs/assets/admin-overview.webp)
+![Harbor Mail v0.2.25 管理后台的概览、趋势和队列](docs/assets/admin-overview.webp)
 
 ### 域名与 DNS
 
 新增邮件域名后，从「DNS 记录」查看并复制 A、MX、SPF、DKIM 和 DMARC 配置。发布记录后可在后台运行域名上线检查。
 
-![Harbor Mail v0.2.18 域名 DNS 记录生成界面](docs/assets/admin-dns.webp)
+![Harbor Mail v0.2.25 域名 DNS 记录生成界面](docs/assets/admin-dns.webp)
 
 ### 写邮件
 
@@ -118,15 +118,15 @@ Docker 自动启动配套服务。Linux 三种方案使用同一发行二进制�
 
 ### 账号管理
 
-按域名、角色和状态筛选账号，打开详情查看可用管理操作。
+按域名、角色和状态筛选账号，打开详情查看可用管理操作，包括重置密码和交接并回收邮箱。
 
 ![Harbor Mail 账号列表和账号详情面板](docs/assets/admin-accounts.webp)
 
 ### 存储用量
 
-查看单个邮箱的邮件、文件夹和投递队列用量，并管理容量预警。
+按邮箱汇总邮件数量、原始占用和队列占用，再进入单个邮箱查看文件夹明细和容量预警。
 
-![Harbor Mail 存储用量和容量预警页面](docs/assets/admin-storage.webp)
+![Harbor Mail 存储用量页按邮箱汇总占用](docs/assets/admin-storage.webp)
 
 ### 运行监控
 
