@@ -155,6 +155,7 @@ jobs:
           set -Eeuo pipefail
           find web -name '*.js' -print0 | xargs -0 -n 1 node --check
           node --check .github/scripts/capture-screenshots.mjs
+          node --check .github/scripts/test-upgrade-drill.mjs
           node --check .github/scripts/test-web.mjs
           bash -n ops/backup.sh
           bash -n ops/compose-maintenance.sh

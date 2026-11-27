@@ -1,0 +1,150 @@
+name: Drill
+
+# Manual drills for the release checklist:
+#   - upgrade, backup and rollback on SQLite and MySQL
+#   - install the systemd package that was published for a tag
+#   - parse the Compose package at that tag
+on:
+  workflow_dispatch:
+    inputs:
+      from:
+        description: Release tag to upgrade from and to install from
+        required: true
+        default: v0.2.24
+      to:
+        description: Commit or ref to upgrade to
+        required: false
+        default: main
+
+permissions:
+  contents: read
+
+jobs:
+  upgrade-drill:
+    name: Upgrade drill (${{ matrix.provider }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [sqlite, mysql]
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.to || 'main' }}
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install MySQL client
+        if: matrix.provider == 'mysql'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends mysql-client ||
+            sudo apt-get install -y --no-install-recommends default-mysql-client
+          command -v mysqldump
+      - name: Run upgrade drill
+        shell: bash
+        env:
+          HARBOR_DRILL_PROVIDER: ${{ matrix.provider }}
+          HARBOR_DRILL_FROM: ${{ inputs.from }}
+          HARBOR_DRILL_MYSQL_DSN: root:root@tcp(127.0.0.1:3306)/harbor_drill?parseTime=true
+          HARBOR_DRILL_PYTHON: python3
+        run: |
+          set -Eeuo pipefail
+          node .github/scripts/test-upgrade-drill.mjs --provider "$HARBOR_DRILL_PROVIDER" --from "$HARBOR_DRILL_FROM"
+
+  tag-install:
+    name: Install the tagged systemd package
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ inputs.from }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Download the published package
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p pkg
+          gh release download "$VERSION" --pattern SHA256SUMS --pattern harbormail-systemd.tar.gz \
+            --pattern harbormail-linux-amd64 --dir pkg
+          cd pkg
+          grep -E 'harbormail-systemd\.tar\.gz|harbormail-linux-amd64' SHA256SUMS | sha256sum --check -
+          tar -tzf harbormail-systemd.tar.gz
+          tar -xzf harbormail-systemd.tar.gz
+          test "$(./harbormail-linux-amd64 version)" = "$VERSION"
+      - name: Install and start the tagged package
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cat > "$RUNNER_TEMP/cleanup.sh" <<'SH'
+          sudo journalctl -u harbormail.service --no-pager -n 50 || true
+          sudo systemctl stop harbormail.service || true
+          SH
+          trap 'bash "$RUNNER_TEMP/cleanup.sh"' EXIT
+          password=$(openssl rand -hex 24)
+          printf '::add-mask::%s\n' "$password"
+          hash=$(printf '%s\n' "$password" | ./pkg/harbormail-linux-amd64 hash-password)
+          printf '{"probe@harbor.test":"%s"}\n' "$hash" > pkg/accounts.json
+          cp pkg/ops/harbormail.env.example pkg/harbormail.env
+          printf '\nHARBOR_WEB=127.0.0.1:18080\nHARBOR_SMTP=127.0.0.1:12525\n' >> pkg/harbormail.env
+          sudo useradd --system --user-group --home-dir /var/lib/harbormail --shell /usr/sbin/nologin harbormail
+          sudo install -d -m 0700 /etc/harbormail
+          sudo install -m 0600 pkg/accounts.json pkg/harbormail.env /etc/harbormail/
+          sudo install -m 0755 pkg/harbormail-linux-amd64 /usr/local/bin/harbormail
+          sudo install -m 0644 pkg/ops/harbormail.service /etc/systemd/system/harbormail.service
+          sudo systemd-analyze verify /etc/systemd/system/harbormail.service
+          sudo systemctl daemon-reload
+          sudo systemctl start harbormail.service
+          ready=false
+          for attempt in {1..60}; do
+            if curl --fail --silent --max-time 2 http://127.0.0.1:18080/healthz >/dev/null; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          if [[ $ready != true ]]; then
+            printf 'The tagged package did not become healthy\n' >&2
+            exit 1
+          fi
+          curl --fail --silent http://127.0.0.1:18080/healthz
+          sudo systemctl is-active harbormail.service
+          printf 'installed version: %s\n' "$(/usr/local/bin/harbormail version)"
+      - name: Check the Compose package at the tag
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git worktree add --detach "$RUNNER_TEMP/tag" "$VERSION"
+          cd "$RUNNER_TEMP/tag"
+          export HARBOR_DATA_PATH=/tmp/harbor-data HARBOR_MYSQL_DATA_PATH=/tmp/harbor-mysql
+          export HARBOR_ACME_HOSTS=mail.harbor.test
+          for edition in minimal standard full; do
+            docker compose -f "compose.$edition.yaml" config --quiet
+          done
+          docker compose -f compose.yaml -f compose.ops.yaml config --quiet
+          docker compose -f compose.yaml -f compose.mysql.yaml -f compose.registry.yaml config --quiet
+          printf 'The Compose package at %s parses\n' "$VERSION"
